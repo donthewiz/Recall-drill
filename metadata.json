@@ -1,0 +1,6 @@
+{
+  "name": "Recall Drill",
+  "description": "Deliberate practice and spaced retrieval tool for memorizing text, facts, and code with chunking and progressive remediation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
