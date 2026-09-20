@@ -58,7 +58,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       // A miss first: streak stays at 0, misses tallied, same trial.
       let res = driver.answer('totally wrong');
       expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
-      expect(driver.stats()).toEqual({ attempts: 1, misses: 1 });
+      expect(driver.stats()).toEqual({ attempts: 1, misses: 1, nearMisses: 0, overrides: 0 });
       expect(driver.snapshotItem(itemId)).toMatchObject({ encodeStreak: 0, status: 'encoding' });
 
       // First correct: streak 1, still 'encoding' (encodeReps=2), now blind.
@@ -75,13 +75,13 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       expect(driver.snapshotItem(itemId)).toMatchObject({ status: 'ready' });
       trial = driver.currentTrial();
       expect(trial).toEqual({ itemId, stage: 'cycle', target: FULL_STAGE_BACK, isBlind: true });
-      expect(driver.stats()).toEqual({ attempts: 3, misses: 1 });
+      expect(driver.stats()).toEqual({ attempts: 3, misses: 1, nearMisses: 0, overrides: 0 });
 
       // Cycle miss: streak resets to 0, manual advance required.
       res = driver.answer('nope');
       expect(res).toEqual({ verdict: 'wrong', advance: 'manual' });
       expect(driver.snapshotItem(itemId)).toMatchObject({ cycleStreak: 0 });
-      expect(driver.stats()).toEqual({ attempts: 4, misses: 2 });
+      expect(driver.stats()).toEqual({ attempts: 4, misses: 2, nearMisses: 0, overrides: 0 });
       driver.next();
 
       // Cycle correct, not yet mastered (needs streak 2).
@@ -312,7 +312,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
 
       driver.next();
       expect(driver.isFinished()).toBe(true);
-      expect(driver.stats()).toEqual({ attempts: 4, misses: 1 });
+      expect(driver.stats()).toEqual({ attempts: 4, misses: 1, nearMisses: 0, overrides: 0 });
     });
   });
 }

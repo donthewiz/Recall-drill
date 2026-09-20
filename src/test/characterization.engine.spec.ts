@@ -21,10 +21,10 @@ describe('applyAnswer purity: never mutates its input state', () => {
       items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
       phase: 'encode',
       queue: [],
-      stats: { attempts: 0, misses: 0 },
+      stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
-      config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY },
+      config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true },
     });
 
     // Walk to a combine miss that enters remediate.
@@ -72,7 +72,7 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const res = driver.answer(FULL_STAGE_BACK);
     expect(res).toEqual({ verdict: 'revealed', advance: 'auto' });
     expect(driver.snapshotItem(itemId)).toMatchObject({ status: 'encoding', encodeStreak: 0 });
-    expect(driver.stats()).toEqual({ attempts: 2, misses: 0 });
+    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0 });
 
     // The trial stays put (same item, same stage) -- not blind again until
     // another genuine correct answer.
@@ -94,7 +94,7 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const res = driver.answer('nonsense');
     expect(res).toEqual({ verdict: 'revealed', advance: 'auto' });
     expect(driver.snapshotItem(itemId)).toMatchObject({ encodeStreak: 0 });
-    expect(driver.stats()).toEqual({ attempts: 2, misses: 0 });
+    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0 });
   });
 
   it('combine stage: reveal resets combineStreak, not combineMissCount', () => {
@@ -130,6 +130,6 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const res = driver.answer(FULL_STAGE_BACK);
     expect(res).toEqual({ verdict: 'revealed', advance: 'manual' });
     expect(driver.snapshotItem(itemId)).toMatchObject({ cycleStreak: 0 });
-    expect(driver.stats()).toEqual({ attempts: 2, misses: 0 });
+    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0 });
   });
 });

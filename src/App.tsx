@@ -37,6 +37,8 @@ export default function App() {
   const [sessionStats, setSessionStats] = useState<SessionStats>({
     attempts: 0,
     misses: 0,
+    nearMisses: 0,
+    overrides: 0,
   });
   const [encodeReps, setEncodeReps] = useState<number>(() => {
     try {
@@ -55,6 +57,15 @@ export default function App() {
       // ignore
     }
     return 35;
+  });
+  const [stemTolerance, setStemTolerance] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('recall_drill_stem_tolerance');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // ignore
+    }
+    return true;
   });
 
   // Setup theme listener & class assignment
@@ -93,7 +104,8 @@ export default function App() {
     parsed: DeckItem[],
     name: string,
     reps: number,
-    difficultyPct?: number
+    difficultyPct?: number,
+    stemToleranceParam?: boolean
   ) => {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
     const items = buildItems(parsed, diff);
@@ -103,7 +115,7 @@ export default function App() {
     setSessionItems(items);
     setSessionPhase('encode');
     setSessionQueue([]);
-    setSessionStats({ attempts: 0, misses: 0, startTime: Date.now() });
+    setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
     setEncodeReps(reps);
     try {
       localStorage.setItem('recall_drill_encode_reps', String(reps));
@@ -113,6 +125,9 @@ export default function App() {
     if (difficultyPct !== undefined) {
       setChunkDifficulty(difficultyPct);
     }
+    if (stemToleranceParam !== undefined) {
+      setStemTolerance(stemToleranceParam);
+    }
     setView('session');
   };
 
@@ -121,10 +136,13 @@ export default function App() {
     setSessionItems(state.items.map(normalizeItem));
     setSessionPhase(state.phase);
     setSessionQueue(state.queue || []);
-    setSessionStats(state.stats || { attempts: 0, misses: 0 });
+    setSessionStats(state.stats || { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setEncodeReps(state.encodeReps || 3);
     if (state.chunkDifficulty !== undefined) {
       setChunkDifficulty(state.chunkDifficulty);
+    }
+    if (state.stemTolerance !== undefined) {
+      setStemTolerance(state.stemTolerance);
     }
     setView('session');
   };
@@ -146,6 +164,7 @@ export default function App() {
         items,
         encodeReps,
         chunkDifficulty,
+        stemTolerance,
         timestamp: Date.now(),
       });
     }
@@ -208,7 +227,7 @@ export default function App() {
     setSessionItems(freshItems);
     setSessionPhase('encode');
     setSessionQueue([]);
-    setSessionStats({ attempts: 0, misses: 0, startTime: Date.now() });
+    setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
     setView('session');
   };
 
@@ -244,6 +263,7 @@ export default function App() {
               initialItems={editorDeckItems}
               initialEncodeReps={encodeReps}
               initialChunkDifficulty={chunkDifficulty}
+              initialStemTolerance={stemTolerance}
               initialIsEditingCards={autoOpenEditor}
               initialFolderId={activeFolderId}
             />
@@ -258,6 +278,7 @@ export default function App() {
               initialStats={sessionStats}
               encodeReps={encodeReps}
               chunkDifficulty={chunkDifficulty}
+              stemTolerance={stemTolerance}
               onFinishSession={handleFinishSession}
             />
           )}

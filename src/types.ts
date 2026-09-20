@@ -36,6 +36,11 @@ export interface DrillItem {
 export interface SessionStats {
   attempts: number;
   misses: number;
+  // C2: near-misses (lenient grading forgave the difference) and manual
+  // overrides ("Count as correct" on a wrong verdict) are tracked separately
+  // from misses -- neither counts toward `misses`.
+  nearMisses: number;
+  overrides: number;
   startTime?: number;
 }
 
@@ -74,15 +79,18 @@ export interface SavedSessionState {
   items: DrillItem[];
   encodeReps: number;
   chunkDifficulty?: number;
+  stemTolerance?: boolean;
   timestamp?: number;
 }
 
 export type ViewState = 'setup' | 'decks' | 'session' | 'done';
 
-// 'near' is added by C2 (lenient grading); Phase 0 grading is still exact-match only.
+// 'near' (Phase 2, C2): lenient grading forgave the difference (stopword-only,
+// or a light-stem difference on an otherwise very close answer) -- advances
+// the streak like 'exact', but never counts as a miss.
 // 'revealed' (Phase 1, B2 fix): the trial was answered after Show Answer --
 // streak resets to 0 and it never counts as a miss, regardless of what was typed.
-export type Verdict = 'exact' | 'wrong' | 'revealed';
+export type Verdict = 'exact' | 'near' | 'wrong' | 'revealed';
 
 export interface Feedback {
   text: string;
@@ -96,8 +104,14 @@ export interface Feedback {
 export interface SessionConfig {
   encodeReps: number;
   chunkDifficulty: number;
-  // batchSize, ladderMode, lenient, stemTolerance are added by C1-C3;
-  // intentionally absent in Phase 0.
+  // C2: whether grade() forgives a light-stem difference (e.g. a dropped
+  // plural) on an otherwise very close answer. Default true; the doc calls
+  // out turning it off for terminology decks where inflection matters.
+  // `lenient` itself isn't user-configurable (the doc only asks for a
+  // stemTolerance setting), so it's passed as a fixed `true` from
+  // applyAnswer rather than living here.
+  // batchSize, ladderMode are added by C1/C3; intentionally absent here.
+  stemTolerance: boolean;
 }
 
 export interface SessionState {

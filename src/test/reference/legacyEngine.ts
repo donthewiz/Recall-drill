@@ -28,9 +28,10 @@ export interface DriverTrial {
 
 export interface DriverAnswerResult {
   // LegacyEngine (frozen pre-Phase-1 snapshot) only ever produces 'exact' |
-  // 'wrong' -- 'revealed' is a Phase 1 (B2 fix) outcome only the real engine
-  // driver can produce, since showAnswer()/revealed is a no-op here by design.
-  verdict: 'exact' | 'wrong' | 'revealed';
+  // 'wrong' -- 'revealed' (Phase 1, B2) and 'near' (Phase 2, C2) are outcomes
+  // only the real engine driver can produce, since LegacyEngine's grading
+  // never reads a revealed flag and never applies lenient grading.
+  verdict: 'exact' | 'near' | 'wrong' | 'revealed';
   advance: 'auto' | 'manual';
 }
 
@@ -120,7 +121,7 @@ export class LegacyEngine implements EngineDriver {
   private items: DrillItem[] = [];
   private phase: 'encode' | 'cycle' = 'encode';
   private queue: number[] = [];
-  private sessionStats: SessionStats = { attempts: 0, misses: 0 };
+  private sessionStats: SessionStats = { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 };
   private currentId = 0;
   private encodeReps = 3;
   private finished = false;
@@ -128,7 +129,7 @@ export class LegacyEngine implements EngineDriver {
   init(deck: DeckItem[], config: { encodeReps: number; chunkDifficulty?: number }): void {
     this.encodeReps = config.encodeReps;
     this.items = buildItems(deck, config.chunkDifficulty ?? 35);
-    this.sessionStats = { attempts: 0, misses: 0 };
+    this.sessionStats = { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 };
     this.phase = 'encode';
     this.queue = [];
     this.finished = false;

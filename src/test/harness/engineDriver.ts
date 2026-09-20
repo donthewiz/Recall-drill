@@ -21,22 +21,29 @@ export class RealEngineDriver implements EngineDriver {
     items: [],
     phase: 'encode',
     queue: [],
-    stats: { attempts: 0, misses: 0 },
+    stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
-    config: { encodeReps: 3, chunkDifficulty: 35 },
+    config: { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true },
   };
 
-  init(deck: DeckItem[], config: { encodeReps: number; chunkDifficulty?: number }): void {
+  init(
+    deck: DeckItem[],
+    config: { encodeReps: number; chunkDifficulty?: number; stemTolerance?: boolean }
+  ): void {
     const items: DrillItem[] = buildItems(deck, config.chunkDifficulty ?? 35);
     this.state = initSession({
       items,
       phase: 'encode',
       queue: [],
-      stats: { attempts: 0, misses: 0 },
+      stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
-      config: { encodeReps: config.encodeReps, chunkDifficulty: config.chunkDifficulty ?? 35 },
+      config: {
+        encodeReps: config.encodeReps,
+        chunkDifficulty: config.chunkDifficulty ?? 35,
+        stemTolerance: config.stemTolerance ?? true,
+      },
     });
   }
 

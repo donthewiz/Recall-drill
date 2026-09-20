@@ -38,7 +38,13 @@ import {
 } from 'lucide-react';
 
 interface SetupViewProps {
-  onStartSession: (parsed: DeckItem[], name: string, reps: number, chunkDifficulty: number) => void;
+  onStartSession: (
+    parsed: DeckItem[],
+    name: string,
+    reps: number,
+    chunkDifficulty: number,
+    stemTolerance: boolean
+  ) => void;
   onResumeSession: (state: SavedSessionState) => void;
   onNavigateDecks: () => void;
   initialDeckName?: string;
@@ -46,6 +52,7 @@ interface SetupViewProps {
   initialRawText?: string;
   initialEncodeReps?: number;
   initialChunkDifficulty?: number;
+  initialStemTolerance?: boolean;
   initialIsEditingCards?: boolean;
   initialFolderId?: string | null;
 }
@@ -134,6 +141,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   initialRawText = '',
   initialEncodeReps = 3,
   initialChunkDifficulty,
+  initialStemTolerance,
   initialIsEditingCards = false,
   initialFolderId = null,
 }) => {
@@ -215,6 +223,16 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     return 35;
   });
+  const [stemTolerance, setStemTolerance] = useState<boolean>(() => {
+    if (initialStemTolerance !== undefined) return initialStemTolerance;
+    try {
+      const saved = localStorage.getItem('recall_drill_stem_tolerance');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // ignore
+    }
+    return true;
+  });
   const [msg, setMsg] = useState('');
   const [resumePrompt, setResumePrompt] = useState<{
     state: SavedSessionState;
@@ -239,6 +257,15 @@ export const SetupView: React.FC<SetupViewProps> = ({
     setChunkDifficulty(clamped);
     try {
       localStorage.setItem('recall_drill_chunk_difficulty', String(clamped));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleStemToleranceChange = (val: boolean) => {
+    setStemTolerance(val);
+    try {
+      localStorage.setItem('recall_drill_stem_tolerance', String(val));
     } catch {
       // ignore
     }
@@ -453,7 +480,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       });
       setMsg(`Found a previous session for "${name}" with ${mastered} of ${existingState.items.length} items mastered.`);
     } else {
-      onStartSession(currentItems, name, reps, chunkDifficulty);
+      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance);
     }
   };
 
@@ -467,7 +494,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     if (resumePrompt) {
       const slug = slugify(resumePrompt.name);
       clearSessionState(slug);
-      onStartSession(resumePrompt.parsed, resumePrompt.name, encodeReps, chunkDifficulty);
+      onStartSession(resumePrompt.parsed, resumePrompt.name, encodeReps, chunkDifficulty, stemTolerance);
     }
   };
 
@@ -734,6 +761,38 @@ export const SetupView: React.FC<SetupViewProps> = ({
               <span>{getDifficultyDescription(chunkDifficulty, avgWordsPerCard)}</span>
             </div>
           </div>
+        </div>
+
+        {/* Lenient Grading: stem tolerance toggle */}
+        <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="stem-tolerance-toggle" className="text-xs text-[var(--text-secondary)] flex items-center gap-2 cursor-pointer">
+              <span className="w-2 h-2 rounded-full bg-[var(--success)]" />
+              <span>Forgive minor word endings (e.g. plurals):</span>
+            </label>
+            <button
+              type="button"
+              id="stem-tolerance-toggle"
+              role="switch"
+              aria-checked={stemTolerance}
+              onClick={() => handleStemToleranceChange(!stemTolerance)}
+              className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 cursor-pointer ${
+                stemTolerance ? 'bg-[var(--success)]' : 'bg-[var(--surface-2)] border border-[var(--border)]'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                  stemTolerance ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            When on, a typo-free answer that only differs by a plural or verb ending
+            (e.g. "cat" vs "cats") counts as a close match instead of a miss. Turn this
+            off for terminology decks where exact word endings matter (e.g. medical or
+            legal vocabulary).
+          </p>
         </div>
 
         {/* Primary Action Buttons (Top Placement) */}

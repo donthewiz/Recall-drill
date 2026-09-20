@@ -47,7 +47,7 @@ export function simulate(
     items,
     phase: 'encode',
     queue: [],
-    stats: { attempts: 0, misses: 0 },
+    stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
     config,

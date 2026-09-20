@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DrillItem, Feedback, SessionState, SessionStats } from '../types';
+import { DrillItem, Feedback, SessionState, SessionStats, Verdict } from '../types';
 import {
   slugify,
   saveSessionState,
@@ -10,7 +10,7 @@ import {
   SESSION_COMPLETE_ID,
   DWELL_MS,
 } from '../utils/drillEngine';
-import { Check, ArrowRight, Eye, LogOut } from 'lucide-react';
+import { Check, CheckCheck, ArrowRight, Eye, LogOut } from 'lucide-react';
 
 interface SessionViewProps {
   deckName: string;
@@ -20,6 +20,7 @@ interface SessionViewProps {
   initialStats: SessionStats;
   encodeReps: number;
   chunkDifficulty?: number;
+  stemTolerance?: boolean;
   onFinishSession: (items: DrillItem[], stats: SessionStats) => void;
 }
 
@@ -40,6 +41,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   initialStats,
   encodeReps,
   chunkDifficulty = 35,
+  stemTolerance = true,
   onFinishSession,
 }) => {
   const [sessionState, setSessionState] = useState<SessionState>(() =>
@@ -50,13 +52,17 @@ export const SessionView: React.FC<SessionViewProps> = ({
       stats: initialStats,
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
-      config: { encodeReps, chunkDifficulty },
+      config: { encodeReps, chunkDifficulty, stemTolerance },
     })
   );
   const [typedValue, setTypedValue] = useState('');
   const [showNextBtn, setShowNextBtn] = useState(false);
   const [userRevealedAnswer, setUserRevealedAnswer] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  // C2: tracks the verdict of the currently-displayed feedback, so the
+  // "Count as correct" override can be offered only while a 'wrong' verdict
+  // is still showing (i.e. before its dwell timer commits the miss).
+  const [lastVerdict, setLastVerdict] = useState<Verdict | null>(null);
   const [flash, setFlash] = useState<'idle' | 'success' | 'danger'>('idle');
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -74,6 +80,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       items: state.items,
       encodeReps: state.config.encodeReps,
       chunkDifficulty: state.config.chunkDifficulty,
+      stemTolerance: state.config.stemTolerance,
       timestamp: Date.now(),
     });
   };
@@ -142,7 +149,8 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
     const result = applyAnswer(sessionState, typedValue, { revealed: userRevealedAnswer });
     setFeedback(result.feedback);
-    triggerFlash(result.verdict === 'exact');
+    setLastVerdict(result.verdict);
+    triggerFlash(result.verdict === 'exact' || result.verdict === 'near');
     persistState(result.state);
 
     if (result.advance === 'auto') {
@@ -152,6 +160,41 @@ export const SessionView: React.FC<SessionViewProps> = ({
         setTypedValue('');
         setUserRevealedAnswer(false);
         setFeedback(null);
+        setLastVerdict(null);
+        setIsProcessing(false);
+      }, delay);
+    } else {
+      setSessionState(result.state);
+      setShowNextBtn(true);
+      setIsProcessing(false);
+    }
+  };
+
+  // C2 manual override: retroactively counts a still-pending 'wrong' verdict
+  // as correct. Only reachable while that verdict's feedback is still showing
+  // (i.e. before handleCheck's dwell timer commits it) -- cancels that timer
+  // and re-grades the SAME trial against its own target, which always grades
+  // 'exact'; applyAnswer's override flag then swaps the stats accounting
+  // (no new attempt, +1 override) instead of +1 attempt/+1 miss.
+  const handleOverride = () => {
+    if (lastVerdict !== 'wrong' || !trial) return;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsProcessing(true);
+
+    const result = applyAnswer(sessionState, trial.target, { revealed: false, override: true });
+    setFeedback(result.feedback);
+    setLastVerdict(result.verdict);
+    triggerFlash(true);
+    persistState(result.state);
+
+    if (result.advance === 'auto') {
+      const delay = DWELL_MS[result.feedback.dwellKey] ?? 0;
+      timeoutRef.current = setTimeout(() => {
+        setSessionState(result.state);
+        setTypedValue('');
+        setUserRevealedAnswer(false);
+        setFeedback(null);
+        setLastVerdict(null);
         setIsProcessing(false);
       }, delay);
     } else {
@@ -169,11 +212,20 @@ export const SessionView: React.FC<SessionViewProps> = ({
     setIsProcessing(true);
     setShowNextBtn(false);
     setSessionState(applyNext(sessionState));
+    setTypedValue('');
+    setUserRevealedAnswer(false);
+    setFeedback(null);
+    setLastVerdict(null);
     setIsProcessing(false);
   };
 
+  const canOverride = lastVerdict === 'wrong';
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && canOverride) {
+      e.preventDefault();
+      handleOverride();
+    } else if (e.key === 'Enter') {
       if (showNextBtn) {
         handleNext();
       } else {
@@ -349,6 +401,18 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </button>
         )}
 
+        {canOverride && (
+          <button
+            type="button"
+            id="override-btn"
+            onClick={handleOverride}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[var(--surface-card)] hover:bg-[var(--success-bg)] text-[var(--text-secondary)] hover:text-[var(--success)] border border-[var(--border)] hover:border-[var(--success)]/40 text-sm font-medium transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+            title="Ctrl+Enter: count this as correct anyway"
+          >
+            <CheckCheck size={15} /> Count as correct
+          </button>
+        )}
+
         <button
           type="button"
           id="end-btn"
@@ -379,6 +443,8 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
           <span className="text-[11px] font-medium hidden sm:inline text-[var(--text-muted)]">
             Attempts: {sessionState.stats.attempts} • Misses: {sessionState.stats.misses}
+            {sessionState.stats.nearMisses > 0 && <> • Near: {sessionState.stats.nearMisses}</>}
+            {sessionState.stats.overrides > 0 && <> • Overrides: {sessionState.stats.overrides}</>}
           </span>
         </div>
 

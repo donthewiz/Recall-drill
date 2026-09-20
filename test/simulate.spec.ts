@@ -3,7 +3,7 @@ import { shortDeck } from './fixtures/shortDeck';
 import { proseDeck } from './fixtures/proseDeck';
 import { perfectLearner, realisticLearner, simulate, strugglingLearner } from './simulate';
 
-const config = { encodeReps: 3, chunkDifficulty: 35 };
+const config = { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true };
 
 describe('simulate', () => {
   it('runs a nonzero number of trials for every learner/deck combination', () => {

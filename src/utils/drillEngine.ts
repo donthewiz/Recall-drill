@@ -25,9 +25,18 @@ export interface WordDiffResult {
   matched: boolean;
 }
 
-export function computeWordDiff(typedStr: string, targetStr: string): WordDiffResult[] {
-  const typedWords = typedStr.trim().length ? typedStr.trim().split(/\s+/) : [];
-  const targetWords = targetStr.trim().split(/\s+/);
+interface WordAlignment {
+  matchedTypedIdx: boolean[];
+  matchedTargetIdx: boolean[];
+  lcsLength: number;
+}
+
+// Shared LCS (longest common subsequence) alignment between two word lists,
+// order-preserving. Used by computeWordDiff (target-side match flags, for the
+// red/green diff UI) and grade() (both-side match flags + similarity, for C2
+// lenient grading) -- extracted once so both stay in sync rather than
+// duplicating the DP.
+function alignWords(typedWords: string[], targetWords: string[]): WordAlignment {
   const tN = typedWords.map(w => norm(w));
   const gN = targetWords.map(w => norm(w));
   const n = tN.length;
@@ -48,11 +57,13 @@ export function computeWordDiff(typedStr: string, targetStr: string): WordDiffRe
     }
   }
 
+  const matchedTyped = new Array(n).fill(false);
   const matchedTarget = new Array(m).fill(false);
   let i = n;
   let jj = m;
   while (i > 0 && jj > 0) {
     if (tN[i - 1] === gN[jj - 1]) {
+      matchedTyped[i - 1] = true;
       matchedTarget[jj - 1] = true;
       i--;
       jj--;
@@ -63,10 +74,99 @@ export function computeWordDiff(typedStr: string, targetStr: string): WordDiffRe
     }
   }
 
+  return { matchedTypedIdx: matchedTyped, matchedTargetIdx: matchedTarget, lcsLength: dp[n][m] };
+}
+
+export function computeWordDiff(typedStr: string, targetStr: string): WordDiffResult[] {
+  const typedWords = typedStr.trim().length ? typedStr.trim().split(/\s+/) : [];
+  const targetWords = targetStr.trim().split(/\s+/);
+  const { matchedTargetIdx } = alignWords(typedWords, targetWords);
+
   return targetWords.map((word, idx) => ({
     word,
-    matched: matchedTarget[idx],
+    matched: matchedTargetIdx[idx],
   }));
+}
+
+// C2: stopwords whose omission/insertion alone shouldn't fail a trial.
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'to', 'in', 'on', 'for', 'and', 'or', 'is', 'are',
+  'was', 'were', 'that', 'this', 'it', 'its', 'as', 'at', 'by', 'with', 'from',
+]);
+
+// C2: strips a light inflectional suffix so "cats"~"cat", "walking"~"walk",
+// "walked"~"walk" compare equal. Deliberately shallow -- not a real stemmer.
+function lightStem(word: string): string {
+  if (word.endsWith('ing') && word.length > 4) return word.slice(0, -3);
+  if (word.endsWith('ed') && word.length > 3) return word.slice(0, -2);
+  if (word.endsWith('es') && word.length > 3) return word.slice(0, -2);
+  if (word.endsWith('s') && word.length > 2) return word.slice(0, -1);
+  return word;
+}
+
+export interface GradeResult {
+  verdict: 'exact' | 'near' | 'wrong';
+  diff: WordDiffResult[];
+  missingWords: string[];
+  extraWords: string[];
+  similarity: number; // 0..1
+}
+
+// C2: lenient grading. Exact match always wins; otherwise a near-miss tier
+// forgives stopword-only differences outright, and forgives a light-stem
+// difference (e.g. a dropped plural) too, but only when the rest of the
+// answer is otherwise very close (similarity >= 0.9) -- a single stem-level
+// slip in a short answer is still `wrong`, since it's too large a fraction of
+// the content to wave through; the same slip in a long answer is `near`.
+export function grade(
+  typed: string,
+  target: string,
+  opts?: { lenient?: boolean; stemTolerance?: boolean }
+): GradeResult {
+  const lenient = opts?.lenient ?? true;
+  const stemTolerance = opts?.stemTolerance ?? true;
+
+  const diff = computeWordDiff(typed, target);
+
+  if (norm(typed) === norm(target)) {
+    return { verdict: 'exact', diff, missingWords: [], extraWords: [], similarity: 1 };
+  }
+
+  const typedWords = typed.trim().length ? typed.trim().split(/\s+/) : [];
+  const targetWords = target.trim().split(/\s+/);
+  const { matchedTypedIdx, matchedTargetIdx, lcsLength } = alignWords(typedWords, targetWords);
+
+  const missingWords = targetWords.filter((_, idx) => !matchedTargetIdx[idx]);
+  const extraWords = typedWords.filter((_, idx) => !matchedTypedIdx[idx]);
+  const totalLen = typedWords.length + targetWords.length;
+  const similarity = totalLen > 0 ? (2 * lcsLength) / totalLen : 0;
+
+  if (!lenient) {
+    return { verdict: 'wrong', diff, missingWords, extraWords, similarity };
+  }
+
+  const isStopword = (w: string) => STOPWORDS.has(norm(w));
+
+  const stopwordOnlyDifference =
+    missingWords.every(isStopword) && extraWords.every(isStopword);
+
+  if (stopwordOnlyDifference) {
+    return { verdict: 'near', diff, missingWords, extraWords, similarity };
+  }
+
+  if (similarity >= 0.9) {
+    const everyMissingIsStopwordOrStemMatch = missingWords.every(w => {
+      if (isStopword(w)) return true;
+      if (!stemTolerance) return false;
+      const stemmed = lightStem(norm(w));
+      return extraWords.some(e => lightStem(norm(e)) === stemmed);
+    });
+    if (everyMissingIsStopwordOrStemMatch) {
+      return { verdict: 'near', diff, missingWords, extraWords, similarity };
+    }
+  }
+
+  return { verdict: 'wrong', diff, missingWords, extraWords, similarity };
 }
 
 export function parseDeck(text: string): DeckItem[] {
@@ -661,27 +761,33 @@ export const SESSION_COMPLETE_ID = -1;
 // total: 3 chunks + 5 combine + 6 remediate + 3 full; cycle phase never uses
 // a timeout -- it always waits for an explicit "Continue"/Enter action).
 // 'revealed-reset' is new in Phase 1 (B2 fix): not pinned by the handoff doc,
-// chosen to sit between the 500ms streak-progress dwell and the 1600ms miss
-// dwells since it's informational, not punitive.
+// chosen to sit between the 500ms streak-progress dwell and the miss dwells
+// since it's informational, not punitive.
+// 'near-miss' is new in Phase 2 (C2): the doc pins this at ~1200ms.
+// The six wrong-verdict dwells (*-miss, *-miss-retry, *-miss-split,
+// combine-miss-remediate) were extended from their Phase 0 values (1600-1800)
+// to 2200ms per C2's "must be reachable before auto-advance fires" -- the
+// "Count as correct" override needs a window to be clickable in.
 export const DWELL_MS: Record<string, number> = {
   'chunks-advance': 700,
   'chunks-streak-progress': 500,
-  'chunks-miss': 1800,
+  'chunks-miss': 2200,
   'combine-ready': 600,
   'combine-advance': 700,
   'combine-streak-progress': 500,
-  'combine-miss-remediate': 1800,
-  'combine-miss-retry': 1600,
+  'combine-miss-remediate': 2200,
+  'combine-miss-retry': 2200,
   'remediate-next-spot': 900,
   'remediate-resume-combine': 700,
   'remediate-expand-parent': 1100,
   'remediate-streak-progress': 500,
-  'remediate-miss-split': 1800,
-  'remediate-miss-retry': 1600,
+  'remediate-miss-split': 2200,
+  'remediate-miss-retry': 2200,
   'full-advance': 600,
   'full-streak-progress': 500,
-  'full-miss': 1600,
+  'full-miss': 2200,
   'revealed-reset': 1200,
+  'near-miss': 1200,
 };
 
 function advanceEncodeState(
@@ -825,8 +931,11 @@ export interface ApplyAnswerResult {
 export function applyAnswer(
   state: SessionState,
   typed: string,
-  // override is reserved for C2 (lenient grading's manual override) -- inert
-  // in Phase 0/1.
+  // override (C2): retroactively counts a still-pending wrong verdict as
+  // exact. The shell implements this by re-calling applyAnswer with the
+  // trial's own target text as `typed` (which always grades 'exact') and
+  // override: true -- override only changes stats accounting below (no new
+  // attempt, +1 to overrides instead), not the grading itself.
   opts: { revealed: boolean; override?: boolean }
 ): ApplyAnswerResult {
   const currentItem = state.items.find(i => i.id === state.currentId);
@@ -834,7 +943,12 @@ export function applyAnswer(
     throw new Error('applyAnswer called with no current item');
   }
 
-  const nextStats: SessionStats = { ...state.stats, attempts: state.stats.attempts + 1 };
+  const isOverride = opts.override === true;
+  const nextStats: SessionStats = {
+    ...state.stats,
+    attempts: state.stats.attempts + (isOverride ? 0 : 1),
+    overrides: state.stats.overrides + (isOverride ? 1 : 0),
+  };
   const newItems = [...state.items];
   const itIdx = newItems.findIndex(i => i.id === currentItem.id);
   const it = { ...newItems[itIdx] };
@@ -843,15 +957,30 @@ export function applyAnswer(
   // B2 fix: a revealed trial must not advance the streak and must not count
   // as a miss, regardless of what was typed (including typing the now-visible
   // answer correctly). Resets the current stage's streak to 0 and stays on
-  // the same trial -- it never reaches the per-stage isOk branching below.
+  // the same trial -- it never reaches the per-stage grading below.
   if (opts.revealed) {
     return applyRevealedAnswer(state, it, newItems, itIdx, base);
   }
 
+  const gradeOpts = { lenient: true, stemTolerance: state.config.stemTolerance };
+
+  // C2: a near-miss verdict always shows the diff with a neutral note and the
+  // 1200ms dwell, overriding whatever stage-specific success feedback/dwell
+  // an exact match would have used -- the doc treats every near-miss
+  // uniformly regardless of which transition it triggered.
+  const successFeedback = (gr: GradeResult, defaultFeedback: Feedback): Feedback => {
+    if (gr.verdict === 'near') {
+      return { text: 'Close — compare the wording:', type: 'info', diff: gr.diff, dwellKey: 'near-miss' };
+    }
+    return defaultFeedback;
+  };
+
   if (state.phase === 'encode') {
     if (it.stage === 'chunks' && it.chunks) {
       const targetChunk = it.chunks[it.chunkIndex];
-      const isOk = norm(typed) === norm(targetChunk);
+      const gr = grade(typed, targetChunk, gradeOpts);
+      const isOk = gr.verdict !== 'wrong';
+      if (gr.verdict === 'near') nextStats.nearMisses++;
 
       if (isOk) {
         it.chunkStreak++;
@@ -863,34 +992,37 @@ export function applyAnswer(
             it.stage = 'combine';
             it.combineSeqIdx = 0;
             it.combineStreak = 0;
-            feedback = {
+            feedback = successFeedback(gr, {
               text: 'All parts learned — now combining them',
               type: 'success',
               dwellKey: 'chunks-advance',
-            };
+            });
           } else {
-            feedback = { text: 'Part learned!', type: 'success', dwellKey: 'chunks-advance' };
+            feedback = successFeedback(gr, {
+              text: 'Part learned!',
+              type: 'success',
+              dwellKey: 'chunks-advance',
+            });
           }
           newItems[itIdx] = it;
           const advancedState = advanceEncodeState(newItems, nextStats, base);
-          return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+          return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
-        const feedback: Feedback = {
+        const feedback = successFeedback(gr, {
           text: `${it.chunkStreak} of ${state.config.encodeReps} streaks`,
           type: 'success',
           dwellKey: 'chunks-streak-progress',
-        };
+        });
         newItems[itIdx] = it;
-        return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+        return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
       it.chunkStreak = 0;
-      const diff = computeWordDiff(typed, targetChunk);
       const feedback: Feedback = {
         text: 'Streak reset — compare your answer:',
         type: 'danger',
-        diff,
+        diff: gr.diff,
         dwellKey: 'chunks-miss',
       };
       newItems[itIdx] = it;
@@ -906,7 +1038,9 @@ export function applyAnswer(
       const seqItem = it.combineSeq[it.combineSeqIdx];
       const combinedTarget = it.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
       const wasBlind = it.combineStreak >= 1;
-      const isOk = norm(typed) === norm(combinedTarget);
+      const gr = grade(typed, combinedTarget, gradeOpts);
+      const isOk = gr.verdict !== 'wrong';
+      if (gr.verdict === 'near') nextStats.nearMisses++;
 
       if (isOk) {
         it.combineStreak++;
@@ -918,25 +1052,25 @@ export function applyAnswer(
           let feedback: Feedback;
           if (it.combineSeqIdx >= it.combineSeq.length) {
             it.status = 'ready';
-            feedback = { text: 'Encoded!', type: 'success', dwellKey: 'combine-ready' };
+            feedback = successFeedback(gr, { text: 'Encoded!', type: 'success', dwellKey: 'combine-ready' });
           } else {
-            feedback = {
+            feedback = successFeedback(gr, {
               text: 'Combination learned!',
               type: 'success',
               dwellKey: 'combine-advance',
-            };
+            });
           }
           newItems[itIdx] = it;
           const advancedState = advanceEncodeState(newItems, nextStats, base);
-          return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+          return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
-        const feedback: Feedback = {
+        const feedback = successFeedback(gr, {
           text: `${it.combineStreak} of ${state.config.encodeReps} streaks`,
           type: 'success',
           dwellKey: 'combine-streak-progress',
-        };
+        });
         newItems[itIdx] = it;
-        return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+        return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
@@ -962,11 +1096,10 @@ export function applyAnswer(
           dwellKey: 'combine-miss-remediate',
         };
       } else {
-        const diff = computeWordDiff(typed, combinedTarget);
         feedback = {
           text: 'Streak reset — check the wording:',
           type: 'danger',
-          diff,
+          diff: gr.diff,
           dwellKey: 'combine-miss-retry',
         };
       }
@@ -987,7 +1120,9 @@ export function applyAnswer(
       it.remediateStack = it.remediateStack.map(r => ({ ...r }));
       it.remediateQueue = [...it.remediateQueue];
       const rTop = it.remediateStack[it.remediateStack.length - 1];
-      const isOk = norm(typed) === norm(rTop.text);
+      const gr = grade(typed, rTop.text, gradeOpts);
+      const isOk = gr.verdict !== 'wrong';
+      if (gr.verdict === 'near') nextStats.nearMisses++;
 
       if (isOk) {
         rTop.streak++;
@@ -998,15 +1133,15 @@ export function applyAnswer(
             if (it.remediateQueue.length > 0) {
               const nextPiece = it.remediateQueue.shift()!;
               it.remediateStack = [{ text: nextPiece, streak: 0, missCount: 0 }];
-              const feedback: Feedback = {
+              const feedback = successFeedback(gr, {
                 text: 'Trouble spot solid! Now checking the next spot',
                 type: 'success',
                 dwellKey: 'remediate-next-spot',
-              };
+              });
               newItems[itIdx] = it;
               return {
                 state: { ...base, items: newItems },
-                verdict: 'exact',
+                verdict: gr.verdict,
                 feedback,
                 advance: 'auto',
               };
@@ -1014,33 +1149,33 @@ export function applyAnswer(
             it.stage = 'combine';
             it.combineSeqIdx = it.remediateReturnSeqIdx;
             it.combineStreak = 0;
-            const feedback: Feedback = {
+            const feedback = successFeedback(gr, {
               text: 'Reinforced! Resuming progressive combining',
               type: 'success',
               dwellKey: 'remediate-resume-combine',
-            };
+            });
             newItems[itIdx] = it;
             const advancedState = advanceEncodeState(newItems, nextStats, base);
-            return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+            return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
           }
           const parentLevel = it.remediateStack[it.remediateStack.length - 1];
           parentLevel.streak = 0;
           const parentWordCount = parentLevel.text.split(' ').length;
-          const feedback: Feedback = {
+          const feedback = successFeedback(gr, {
             text: `Isolated piece mastered — expanding to ${parentWordCount}-word parent`,
             type: 'success',
             dwellKey: 'remediate-expand-parent',
-          };
+          });
           newItems[itIdx] = it;
-          return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+          return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
         }
-        const feedback: Feedback = {
+        const feedback = successFeedback(gr, {
           text: `${rTop.streak} of ${state.config.encodeReps} streaks`,
           type: 'success',
           dwellKey: 'remediate-streak-progress',
-        };
+        });
         newItems[itIdx] = it;
-        return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+        return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
@@ -1059,11 +1194,10 @@ export function applyAnswer(
           dwellKey: 'remediate-miss-split',
         };
       } else {
-        const diff = computeWordDiff(typed, rTop.text);
         feedback = {
           text: 'Not quite — compare with target:',
           type: 'danger',
-          diff,
+          diff: gr.diff,
           dwellKey: 'remediate-miss-retry',
         };
       }
@@ -1077,33 +1211,34 @@ export function applyAnswer(
     }
 
     // Stage: full (short phrase <= 3 words, or chunkDifficulty >= 100)
-    const isOk = norm(typed) === norm(it.back);
+    const gr = grade(typed, it.back, gradeOpts);
+    const isOk = gr.verdict !== 'wrong';
+    if (gr.verdict === 'near') nextStats.nearMisses++;
 
     if (isOk) {
       it.encodeStreak++;
       if (it.encodeStreak >= state.config.encodeReps) {
         it.status = 'ready';
-        const feedback: Feedback = { text: 'Encoded!', type: 'success', dwellKey: 'full-advance' };
+        const feedback = successFeedback(gr, { text: 'Encoded!', type: 'success', dwellKey: 'full-advance' });
         newItems[itIdx] = it;
         const advancedState = advanceEncodeState(newItems, nextStats, base);
-        return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
-      const feedback: Feedback = {
+      const feedback = successFeedback(gr, {
         text: `${it.encodeStreak} of ${state.config.encodeReps} streaks`,
         type: 'success',
         dwellKey: 'full-streak-progress',
-      };
+      });
       newItems[itIdx] = it;
-      return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+      return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
     }
 
     nextStats.misses++;
     it.encodeStreak = 0;
-    const diff = computeWordDiff(typed, it.back);
     const feedback: Feedback = {
       text: 'Streak reset — compare your answer:',
       type: 'danger',
-      diff,
+      diff: gr.diff,
       dwellKey: 'full-miss',
     };
     newItems[itIdx] = it;
@@ -1118,7 +1253,9 @@ export function applyAnswer(
   // Phase: cycle (spaced retrieval interleaving) -- always manual advance;
   // grading updates items/queue/stats immediately but the item switch itself
   // waits for an explicit applyNext() call (mirrors handleNext/advanceCycle).
-  const isOkCycle = norm(typed) === norm(it.back);
+  const gr = grade(typed, it.back, gradeOpts);
+  const isOkCycle = gr.verdict !== 'wrong';
+  if (gr.verdict === 'near') nextStats.nearMisses++;
   const updatedQueue = [...state.queue];
   let feedback: Feedback;
 
@@ -1126,23 +1263,26 @@ export function applyAnswer(
     it.cycleStreak++;
     if (it.cycleStreak >= 2) {
       it.status = 'mastered';
-      feedback = { text: 'Mastered! Item retired.', type: 'success', dwellKey: 'cycle-mastered' };
+      feedback = successFeedback(gr, {
+        text: 'Mastered! Item retired.',
+        type: 'success',
+        dwellKey: 'cycle-mastered',
+      });
     } else {
-      feedback = {
+      feedback = successFeedback(gr, {
         text: 'Correct — will test once more later in the session.',
         type: 'success',
         dwellKey: 'cycle-correct',
-      };
+      });
       updatedQueue.splice(Math.min(3, updatedQueue.length), 0, it.id);
     }
   } else {
     nextStats.misses++;
     it.cycleStreak = 0;
-    const diff = computeWordDiff(typed, it.back);
     feedback = {
       text: 'Missed — review answer below before continuing:',
       type: 'danger',
-      diff,
+      diff: gr.diff,
       dwellKey: 'cycle-miss',
     };
     const gap = 2 + Math.floor(Math.random() * 2);
@@ -1152,7 +1292,7 @@ export function applyAnswer(
   newItems[itIdx] = it;
   return {
     state: { ...base, items: newItems, queue: updatedQueue, stats: nextStats },
-    verdict: isOkCycle ? 'exact' : 'wrong',
+    verdict: gr.verdict,
     feedback,
     advance: 'manual',
   };
