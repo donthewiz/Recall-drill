@@ -1,12 +1,25 @@
-// Characterization suite for the session state machine (Phase 0 of the v2
-// handoff). Written against src/components/SessionView.tsx's CURRENT behavior
-// -- including known bugs B1 (findAllCulpritChunks positional misfire) and B2
-// (reveal doesn't affect grading) -- and must pass unchanged both:
-//   1. against src/test/reference/legacyEngine.ts (a synchronous transcription
-//      of today's handleCheck/advanceEncode/advanceCycle), and
-//   2. against the pure drillEngine.ts reducer once Phase 0's extraction lands.
+// Characterization suite for the session state machine. Originally written in
+// Phase 0 against src/components/SessionView.tsx's pre-fix behavior (including
+// bugs B1/B2), and run against both reference/legacyEngine.ts (a frozen
+// synchronous transcription of the pre-fix handleCheck/advanceEncode/
+// advanceCycle) and the pure drillEngine.ts reducer, to prove the Phase 0
+// extraction was behavior-preserving.
 //
-// Out of scope for this suite (see docs/V2-HANDOFF.md Phase 0 plan):
+// Phase 1 (see docs/V2-HANDOFF.md) deliberately fixes B1 and B2, so this
+// shared suite's B1-related assertions were UPDATED to expect the correct,
+// post-fix culprit attribution (see the two-chunk and four-chunk describe
+// blocks below) -- this suite still runs against both drivers because B1's
+// fix lives in findAllCulpritChunks, a low-level helper legacyEngine.ts
+// imports live from drillEngine.ts rather than hand-transcribing, so it picks
+// the fix up automatically. B2's test was MOVED OUT of this shared suite
+// entirely, into characterization.engine.spec.ts -- legacyEngine.ts's
+// showAnswer()/answer() never read a revealed flag at all (that's part of the
+// hand-transcribed orchestration layer B2 changes, not a shared low-level
+// helper), so it can never satisfy the fixed behavior, and there's no more
+// value in continuing to prove it still exhibits the old bug (already proven
+// and committed in Phase 0's history).
+//
+// Out of scope for this suite:
 //   - B5 (unguarded double-Enter race) -- a timing/re-entrancy issue that needs
 //     a DOM-level harness to observe meaningfully; not characterized here.
 //   - App.tsx's handleFinishSession stale-persist quirk -- lives outside the
@@ -89,7 +102,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
   });
 
   describe('two-chunk card: chunks -> combine miss -> remediate -> combine -> ready', () => {
-    it('walks the exact (stage,target,streak,status) sequence, including a B1-shaped remediate entry', () => {
+    it('walks the exact (stage,target,streak,status) sequence, correctly attributing the miss to only the culprit chunk (post-B1-fix)', () => {
       const driver = makeDriver();
       driver.init([{ front: 'Q2', back: TWO_CHUNK_BACK }], {
         encodeReps: 2,
@@ -114,17 +127,19 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       trial = driver.currentTrial()!;
       expect(trial).toEqual({ itemId, stage: 'combine', target: TWO_CHUNK_BACK, isBlind: false });
 
-      // Miss the combine window with a wrong answer that doesn't line up with
-      // either chunk. windowChunkCount=2 -> missThreshold=1 -> remediates
-      // immediately. B1: findAllCulpritChunks flags BOTH chunks here because
-      // it slices positionally rather than aligning meaningfully.
+      // Miss the combine window by typing only the second chunk's content --
+      // everything the user typed matches chunk 1 in order, so chunk 1 is
+      // genuinely NOT at fault; only chunk 0 ("the mitochondria") is missing.
+      // windowChunkCount=2 -> missThreshold=1 -> remediates immediately.
+      // Post-B1-fix: findAllCulpritChunks uses the LCS alignment, so it
+      // correctly flags only chunk 0, not both.
       const res = driver.answer('makes cell energy');
       expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
       expect(driver.snapshotItem(itemId)).toMatchObject({
         stage: 'remediate',
         combineMissCount: 0,
         remediateStackLen: 1,
-        remediateQueueLen: 1,
+        remediateQueueLen: 0,
       });
       trial = driver.currentTrial()!;
       expect(trial).toEqual({
@@ -134,22 +149,10 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
         isBlind: false,
       });
 
-      // Resolve remediate spot 1 -> shifts to remediate spot 2 (same trial, no advance).
+      // Resolve the single remediate spot -> queue already empty -> resumes
+      // combine at the window that originally failed.
       driver.answer(TWO_CHUNK_CHUNKS[0]);
       driver.answer(TWO_CHUNK_CHUNKS[0]);
-      expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 1, remediateQueueLen: 0 });
-      trial = driver.currentTrial()!;
-      expect(trial).toEqual({
-        itemId,
-        stage: 'remediate',
-        target: TWO_CHUNK_CHUNKS[1],
-        isBlind: false,
-      });
-
-      // Resolve remediate spot 2 -> queue empty -> resumes combine at the
-      // window that originally failed.
-      driver.answer(TWO_CHUNK_CHUNKS[1]);
-      driver.answer(TWO_CHUNK_CHUNKS[1]);
       expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineSeqIdx: 0, combineStreak: 0 });
       trial = driver.currentTrial()!;
       expect(trial).toEqual({ itemId, stage: 'combine', target: TWO_CHUNK_BACK, isBlind: false });
@@ -164,8 +167,8 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
     });
   });
 
-  describe('four-chunk card: B1 cascading misattribution + full remediate branch coverage', () => {
-    it('a single dropped word flags every remaining chunk as a culprit (B1, preserved as-is)', () => {
+  describe('four-chunk card: post-B1-fix culprit attribution + full remediate branch coverage', () => {
+    it('flags only the chunks that actually mismatch, not the whole window (B1 fixed)', () => {
       const driver = makeDriver();
       driver.init([{ front: 'Q3', back: FOUR_CHUNK_BACK }], {
         encodeReps: 1,
@@ -202,22 +205,23 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
         isBlind: false,
       });
 
-      // Drop the word "green" -- windowChunkCount=4 -> missThreshold=2, so it
+      // Drop "green" (from chunk 0) and "near" (from chunk 2), leaving chunks
+      // 1 and 3 typed correctly. windowChunkCount=4 -> missThreshold=2, so it
       // takes two identical misses to trigger remediation.
-      const dropped = 'large trees grow slowly near the quiet river';
+      const dropped = 'large trees grow slowly the quiet river';
       let res = driver.answer(dropped);
       expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
       expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineMissCount: 1 });
 
       res = driver.answer(dropped);
       expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
-      // B1: every one of the 4 chunks gets flagged, even though only one word
-      // ("green") was actually dropped -- the positional slice after that
-      // point is shifted for every subsequent chunk.
+      // Post-B1-fix: the LCS alignment correctly flags only chunks 0 and 2
+      // (the ones with an actually-missing word) -- chunks 1 and 3, which
+      // were typed correctly, are NOT flagged.
       expect(driver.snapshotItem(itemId)).toMatchObject({
         stage: 'remediate',
         remediateStackLen: 1,
-        remediateQueueLen: 3,
+        remediateQueueLen: 1,
       });
       expect(driver.currentTrial()).toEqual({
         itemId,
@@ -250,17 +254,14 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
         isBlind: false,
       });
 
-      // Solve the parent -> stack empties -> shifts the next queued spot in.
+      // Solve the parent (chunk 0 fully reinforced) -> stack empties -> shifts
+      // the one remaining queued spot (chunk 2, the other genuine culprit) in.
       driver.answer(FOUR_CHUNK_CHUNKS[0]);
-      expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 1, remediateQueueLen: 2 });
-      expect(driver.currentTrial()!.target).toBe(FOUR_CHUNK_CHUNKS[1]);
-
-      // Drain the remaining two queued spots.
-      driver.answer(FOUR_CHUNK_CHUNKS[1]);
+      expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 1, remediateQueueLen: 0 });
       expect(driver.currentTrial()!.target).toBe(FOUR_CHUNK_CHUNKS[2]);
+
+      // Drain the last queued spot.
       driver.answer(FOUR_CHUNK_CHUNKS[2]);
-      expect(driver.currentTrial()!.target).toBe(FOUR_CHUNK_CHUNKS[3]);
-      driver.answer(FOUR_CHUNK_CHUNKS[3]);
 
       // Queue now empty -> resumes combine at the window that originally failed.
       expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineSeqIdx: 5, remediateStackLen: 0 });
@@ -281,25 +282,6 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
         target: FOUR_CHUNK_BACK,
         isBlind: true,
       });
-    });
-  });
-
-  describe('B2: revealing the answer does not affect grading (preserved as-is)', () => {
-    it('a revealed-then-typed answer scores identically to a genuine blind correct', () => {
-      const driver = makeDriver();
-      driver.init([{ front: 'Q4', back: FULL_STAGE_BACK }], { encodeReps: 2 });
-      const itemId = driver.currentTrial()!.itemId;
-
-      // Reach a blind trial (streak 1).
-      driver.answer(FULL_STAGE_BACK);
-      expect(driver.currentTrial()!.isBlind).toBe(true);
-
-      // Reveal, then type the now-visible answer -- streak still advances as
-      // a normal correct answer would (B2: revealed is never read by grading).
-      driver.showAnswer();
-      const res = driver.answer(FULL_STAGE_BACK);
-      expect(res).toEqual({ verdict: 'exact', advance: 'auto' });
-      expect(driver.snapshotItem(itemId)).toMatchObject({ status: 'ready', encodeStreak: 2 });
     });
   });
 

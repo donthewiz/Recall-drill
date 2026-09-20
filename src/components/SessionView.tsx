@@ -61,7 +61,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const persistState = (state: SessionState) => {
     if (!state.items.length || !deckName) return;
@@ -162,8 +162,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
   };
 
   const handleNext = () => {
+    // B5 fix: guard against a fast double-Enter (or double-click) firing
+    // handleNext twice before the UI settles, which could otherwise skip a
+    // trial -- mirrors handleCheck's own self-guard.
+    if (isProcessing) return;
+    setIsProcessing(true);
     setShowNextBtn(false);
     setSessionState(applyNext(sessionState));
+    setIsProcessing(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

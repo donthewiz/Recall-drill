@@ -80,7 +80,9 @@ export interface SavedSessionState {
 export type ViewState = 'setup' | 'decks' | 'session' | 'done';
 
 // 'near' is added by C2 (lenient grading); Phase 0 grading is still exact-match only.
-export type Verdict = 'exact' | 'wrong';
+// 'revealed' (Phase 1, B2 fix): the trial was answered after Show Answer --
+// streak resets to 0 and it never counts as a miss, regardless of what was typed.
+export type Verdict = 'exact' | 'wrong' | 'revealed';
 
 export interface Feedback {
   text: string;

@@ -1,7 +1,8 @@
 // Real, extracted-engine-backed EngineDriver -- drives selectTrial/applyAnswer/
 // applyNext/initSession from src/utils/drillEngine.ts directly. Fed into the
-// same runCharacterizationSuite as reference/legacyEngine.ts's driver; both
-// must produce identical assertions, proving the extraction preserved behavior.
+// same runCharacterizationSuite as reference/legacyEngine.ts's driver for the
+// parts of the suite that still apply to both (everything except B2, which
+// LegacyEngine can never satisfy post-fix -- see characterization.engine.spec.ts).
 import { DeckItem, DrillItem, SessionState, SessionStats } from '../../types';
 import {
   buildItems,
@@ -15,6 +16,7 @@ import type { DriverAnswerResult, DriverTrial, EngineDriver, ItemSnapshot } from
 import { snapshotOf } from '../reference/legacyEngine';
 
 export class RealEngineDriver implements EngineDriver {
+  private revealed = false;
   private state: SessionState = {
     items: [],
     phase: 'encode',
@@ -50,14 +52,14 @@ export class RealEngineDriver implements EngineDriver {
   }
 
   answer(typed: string): DriverAnswerResult {
-    const result = applyAnswer(this.state, typed, { revealed: false });
+    const result = applyAnswer(this.state, typed, { revealed: this.revealed });
+    this.revealed = false;
     this.state = result.state;
     return { verdict: result.verdict, advance: result.advance };
   }
 
   showAnswer(): void {
-    // No-op, matching legacyEngine.ts: userRevealedAnswer never affects
-    // grading in applyAnswer (B2 preserved).
+    this.revealed = true;
   }
 
   next(): void {

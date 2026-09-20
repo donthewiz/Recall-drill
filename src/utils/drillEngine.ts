@@ -155,26 +155,31 @@ export function culpritHalf(typed: string, left: string, right: string): string 
   return right;
 }
 
+// B1 fix: attribute mismatches to chunks using the LCS alignment computeWordDiff
+// already builds (order-preserving subsequence match against the combined
+// target), instead of slicing typedWords by cumulative chunk word-counts. The
+// old positional approach misfired catastrophically: a single dropped word
+// anywhere before the end shifted every subsequent chunk's slice, so nearly
+// any miss flagged the entire window for remediation regardless of where the
+// actual mistake was.
 export function findAllCulpritChunks(
   typed: string,
   chunks: string[],
   startIdx: number,
   endIdx: number
 ): number[] {
-  const typedWords = typed
-    .trim()
-    .split(/\s+/)
-    .filter(w => w.length > 0);
-  let pos = 0;
-  const culprits: number[] = [];
+  const combinedTarget = chunks.slice(startIdx, endIdx + 1).join(' ');
+  const diff = computeWordDiff(typed, combinedTarget);
 
+  const culprits: number[] = [];
+  let wordCursor = 0;
   for (let idx = startIdx; idx <= endIdx; idx++) {
     const chunkWordCount = chunks[idx].split(' ').length;
-    const segment = typedWords.slice(pos, pos + chunkWordCount).join(' ');
-    if (norm(segment) !== norm(chunks[idx])) {
+    const chunkDiff = diff.slice(wordCursor, wordCursor + chunkWordCount);
+    if (chunkDiff.some(d => !d.matched)) {
       culprits.push(idx);
     }
-    pos += chunkWordCount;
+    wordCursor += chunkWordCount;
   }
 
   if (culprits.length === 0) {
@@ -655,6 +660,9 @@ export const SESSION_COMPLETE_ID = -1;
 // One key per distinct setTimeout call site in the original handleCheck (17
 // total: 3 chunks + 5 combine + 6 remediate + 3 full; cycle phase never uses
 // a timeout -- it always waits for an explicit "Continue"/Enter action).
+// 'revealed-reset' is new in Phase 1 (B2 fix): not pinned by the handoff doc,
+// chosen to sit between the 500ms streak-progress dwell and the 1600ms miss
+// dwells since it's informational, not punitive.
 export const DWELL_MS: Record<string, number> = {
   'chunks-advance': 700,
   'chunks-streak-progress': 500,
@@ -673,6 +681,7 @@ export const DWELL_MS: Record<string, number> = {
   'full-advance': 600,
   'full-streak-progress': 500,
   'full-miss': 1600,
+  'revealed-reset': 1200,
 };
 
 function advanceEncodeState(
@@ -816,14 +825,10 @@ export interface ApplyAnswerResult {
 export function applyAnswer(
   state: SessionState,
   typed: string,
-  // revealed is accepted for interface stability (B2 fix lands in Phase 1) --
-  // NOT read here, so a revealed-then-typed answer scores as a normal blind
-  // success, exactly like today.
   // override is reserved for C2 (lenient grading's manual override) -- inert
-  // in Phase 0.
+  // in Phase 0/1.
   opts: { revealed: boolean; override?: boolean }
 ): ApplyAnswerResult {
-  void opts;
   const currentItem = state.items.find(i => i.id === state.currentId);
   if (!currentItem) {
     throw new Error('applyAnswer called with no current item');
@@ -834,6 +839,14 @@ export function applyAnswer(
   const itIdx = newItems.findIndex(i => i.id === currentItem.id);
   const it = { ...newItems[itIdx] };
   const base: SessionState = { ...state, stats: nextStats };
+
+  // B2 fix: a revealed trial must not advance the streak and must not count
+  // as a miss, regardless of what was typed (including typing the now-visible
+  // answer correctly). Resets the current stage's streak to 0 and stays on
+  // the same trial -- it never reaches the per-stage isOk branching below.
+  if (opts.revealed) {
+    return applyRevealedAnswer(state, it, newItems, itIdx, base);
+  }
 
   if (state.phase === 'encode') {
     if (it.stage === 'chunks' && it.chunks) {
@@ -967,6 +980,12 @@ export function applyAnswer(
     }
 
     if (it.stage === 'remediate') {
+      // Clone remediateStack/remediateQueue (and the RemediateItem objects
+      // within) before mutating -- they're shared array/object references
+      // with the input state's item until cloned, and applyAnswer must never
+      // mutate its input.
+      it.remediateStack = it.remediateStack.map(r => ({ ...r }));
+      it.remediateQueue = [...it.remediateQueue];
       const rTop = it.remediateStack[it.remediateStack.length - 1];
       const isOk = norm(typed) === norm(rTop.text);
 
@@ -1139,9 +1158,62 @@ export function applyAnswer(
   };
 }
 
-// Equivalent of SessionView's handleNext -> advanceCycle. Not guarded against
-// being called when there's no manual-advance trial pending (B5's shell-level
-// double-Enter race is preserved verbatim there, not fixed here).
+// B2 fix: handles a revealed trial uniformly across every stage/phase. Resets
+// only the current stage's own streak field to 0 -- never touches status,
+// combineMissCount, remediateStack/Queue contents, or the cycle queue's
+// contents beyond the same reinsertion a miss would need (the item still has
+// to be retested) -- and never increments stats.misses.
+function applyRevealedAnswer(
+  state: SessionState,
+  it: DrillItem,
+  newItems: DrillItem[],
+  itIdx: number,
+  base: SessionState
+): ApplyAnswerResult {
+  const feedback: Feedback = {
+    text: 'Revealed — streak reset for this part.',
+    type: 'danger',
+    dwellKey: 'revealed-reset',
+  };
+
+  if (state.phase === 'cycle') {
+    it.cycleStreak = 0;
+    const updatedQueue = [...state.queue];
+    const gap = 2 + Math.floor(Math.random() * 2);
+    updatedQueue.splice(Math.min(gap, updatedQueue.length), 0, it.id);
+    newItems[itIdx] = it;
+    return {
+      state: { ...base, items: newItems, queue: updatedQueue },
+      verdict: 'revealed',
+      feedback,
+      advance: 'manual',
+    };
+  }
+
+  if (it.stage === 'chunks') {
+    it.chunkStreak = 0;
+  } else if (it.stage === 'combine') {
+    it.combineStreak = 0;
+  } else if (it.stage === 'remediate') {
+    it.remediateStack = it.remediateStack.map(r => ({ ...r }));
+    const rTop = it.remediateStack[it.remediateStack.length - 1];
+    if (rTop) rTop.streak = 0;
+  } else {
+    it.encodeStreak = 0;
+  }
+
+  newItems[itIdx] = it;
+  return {
+    state: { ...base, items: newItems },
+    verdict: 'revealed',
+    feedback,
+    advance: 'auto',
+  };
+}
+
+// Equivalent of SessionView's handleNext -> advanceCycle. The re-entrancy
+// guard for a manual advance (B5) is shell-level UI state (isProcessing),
+// not part of SessionState, so it belongs in SessionView, not here.
 export function applyNext(state: SessionState): SessionState {
   return advanceCycleState(state.items, state.queue, state.stats, state);
 }

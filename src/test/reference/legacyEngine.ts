@@ -27,7 +27,10 @@ export interface DriverTrial {
 }
 
 export interface DriverAnswerResult {
-  verdict: 'exact' | 'wrong';
+  // LegacyEngine (frozen pre-Phase-1 snapshot) only ever produces 'exact' |
+  // 'wrong' -- 'revealed' is a Phase 1 (B2 fix) outcome only the real engine
+  // driver can produce, since showAnswer()/revealed is a no-op here by design.
+  verdict: 'exact' | 'wrong' | 'revealed';
   advance: 'auto' | 'manual';
 }
 
