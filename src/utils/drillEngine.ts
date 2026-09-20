@@ -5,6 +5,11 @@ import {
   SavedDeckEntry,
   SavedSessionState,
   DeckFolder,
+  SessionState,
+  SessionStats,
+  Trial,
+  Feedback,
+  Verdict,
 } from '../types';
 
 export function norm(s: string): string {
@@ -631,4 +636,512 @@ export function saveSessionState(slug: string, state: SavedSessionState): boolea
 
 export function clearSessionState(slug: string): boolean {
   return lsDelete(`session:${slug}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 0 extraction: pure session state machine (selectTrial / applyAnswer /
+// applyNext / initSession). Transcribed verbatim from src/components/
+// SessionView.tsx's handleCheck/advanceEncode/advanceCycle -- no behavior
+// changes, including known bugs B1 (findAllCulpritChunks positional misfire)
+// and B2 (a revealed answer is never read by grading). Do not fix those here;
+// they ship as Phase 1.
+//
+// currentId: -1 is the sentinel selectTrial uses to signal "session complete"
+// (buildItems' ids start at 0, so -1 never collides with a real item).
+// ---------------------------------------------------------------------------
+
+export const SESSION_COMPLETE_ID = -1;
+
+// One key per distinct setTimeout call site in the original handleCheck (17
+// total: 3 chunks + 5 combine + 6 remediate + 3 full; cycle phase never uses
+// a timeout -- it always waits for an explicit "Continue"/Enter action).
+export const DWELL_MS: Record<string, number> = {
+  'chunks-advance': 700,
+  'chunks-streak-progress': 500,
+  'chunks-miss': 1800,
+  'combine-ready': 600,
+  'combine-advance': 700,
+  'combine-streak-progress': 500,
+  'combine-miss-remediate': 1800,
+  'combine-miss-retry': 1600,
+  'remediate-next-spot': 900,
+  'remediate-resume-combine': 700,
+  'remediate-expand-parent': 1100,
+  'remediate-streak-progress': 500,
+  'remediate-miss-split': 1800,
+  'remediate-miss-retry': 1600,
+  'full-advance': 600,
+  'full-streak-progress': 500,
+  'full-miss': 1600,
+};
+
+function advanceEncodeState(
+  items: DrillItem[],
+  stats: SessionStats,
+  base: SessionState
+): SessionState {
+  const remaining = items.filter(i => i.status === 'new' || i.status === 'encoding');
+  if (!remaining.length) {
+    const newQueue = shuffle(items.filter(i => i.status !== 'mastered').map(i => i.id));
+    return advanceCycleState(items, newQueue, stats, {
+      ...base,
+      items,
+      phase: 'cycle',
+      queue: newQueue,
+      stats,
+    });
+  }
+
+  const nextItem = remaining[0];
+  const newItems = items.map(i =>
+    i.id === nextItem.id ? { ...i, status: 'encoding' as const } : i
+  );
+  return { ...base, items: newItems, phase: 'encode', currentId: nextItem.id, stats };
+}
+
+function advanceCycleState(
+  items: DrillItem[],
+  currentQueue: number[],
+  stats: SessionStats,
+  base: SessionState
+): SessionState {
+  let q = [...currentQueue];
+  if (!q.length) {
+    const remaining = items.filter(i => i.status !== 'mastered');
+    if (!remaining.length) {
+      return { ...base, items, phase: 'cycle', queue: [], stats, currentId: SESSION_COMPLETE_ID };
+    }
+    q = shuffle(remaining.map(i => i.id));
+  }
+
+  const nextId = q.shift()!;
+  return { ...base, items, phase: 'cycle', queue: q, stats, currentId: nextId };
+}
+
+// Equivalent of SessionView's mount useEffect: picks the first trial of a
+// fresh or resumed session before any answer has been submitted.
+export function initSession(state: SessionState): SessionState {
+  if (state.phase === 'cycle') {
+    return advanceCycleState(state.items, state.queue, state.stats, state);
+  }
+  return advanceEncodeState(state.items, state.stats, state);
+}
+
+export function selectTrial(state: SessionState): Trial | null {
+  const it = state.items.find(i => i.id === state.currentId);
+  if (!it) return null;
+
+  if (state.phase === 'cycle') {
+    return {
+      itemId: it.id,
+      stage: 'cycle',
+      prompt: it.front,
+      target: it.back,
+      isBlind: true,
+      label: 'Spaced Retrieval Cycle',
+      detail: 'Spaced Retrieval • Cycling review',
+    };
+  }
+
+  if (it.stage === 'chunks' && it.chunks) {
+    const chunk = it.chunks[it.chunkIndex];
+    return {
+      itemId: it.id,
+      stage: 'chunks',
+      prompt: it.front,
+      target: chunk,
+      isBlind: it.chunkStreak >= 1,
+      label: `Chunk Practice • ${it.chunkIndex + 1}/${it.chunks.length}`,
+      detail: `Encoding • Part ${it.chunkIndex + 1} of ${it.chunks.length}`,
+    };
+  }
+
+  if (it.stage === 'combine' && it.chunks && it.combineSeq) {
+    const seqItem = it.combineSeq[it.combineSeqIdx];
+    const combined = it.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
+    return {
+      itemId: it.id,
+      stage: 'combine',
+      prompt: it.front,
+      target: combined,
+      isBlind: it.combineStreak >= 1,
+      label: 'Combination Practice',
+      detail: `Encoding • Combining parts ${seqItem.start}-${seqItem.end} (${it.combineSeqIdx + 1}/${it.combineSeq.length})`,
+    };
+  }
+
+  if (it.stage === 'remediate') {
+    const rTop = it.remediateStack[it.remediateStack.length - 1];
+    const rWordCount = rTop.text.split(' ').length;
+    const queueSuffix =
+      it.remediateQueue.length > 0
+        ? ` (${it.remediateQueue.length} more spot${it.remediateQueue.length > 1 ? 's' : ''} after this)`
+        : '';
+    const detail =
+      it.remediateStack.length > 1
+        ? `Isolating exact spot • drilled down ${it.remediateStack.length - 1} level${
+            it.remediateStack.length - 1 > 1 ? 's' : ''
+          }, now on ${rWordCount} word${rWordCount === 1 ? '' : 's'}${queueSuffix}`
+        : `Reinforcing this ${rWordCount}-word part before combining again${queueSuffix}`;
+    return {
+      itemId: it.id,
+      stage: 'remediate',
+      prompt: it.front,
+      target: rTop.text,
+      isBlind: rTop.streak >= 1,
+      label: 'Precision Repair',
+      detail,
+    };
+  }
+
+  // Stage: full (short phrase <= 3 words, or chunkDifficulty >= 100)
+  return {
+    itemId: it.id,
+    stage: 'full',
+    prompt: it.front,
+    target: it.back,
+    isBlind: it.encodeStreak >= 1,
+    label: 'Full Recall',
+    detail: 'Encoding • Full item',
+  };
+}
+
+export interface ApplyAnswerResult {
+  state: SessionState;
+  verdict: Verdict;
+  feedback: Feedback;
+  advance: 'auto' | 'manual';
+}
+
+export function applyAnswer(
+  state: SessionState,
+  typed: string,
+  // revealed is accepted for interface stability (B2 fix lands in Phase 1) --
+  // NOT read here, so a revealed-then-typed answer scores as a normal blind
+  // success, exactly like today.
+  // override is reserved for C2 (lenient grading's manual override) -- inert
+  // in Phase 0.
+  opts: { revealed: boolean; override?: boolean }
+): ApplyAnswerResult {
+  void opts;
+  const currentItem = state.items.find(i => i.id === state.currentId);
+  if (!currentItem) {
+    throw new Error('applyAnswer called with no current item');
+  }
+
+  const nextStats: SessionStats = { ...state.stats, attempts: state.stats.attempts + 1 };
+  const newItems = [...state.items];
+  const itIdx = newItems.findIndex(i => i.id === currentItem.id);
+  const it = { ...newItems[itIdx] };
+  const base: SessionState = { ...state, stats: nextStats };
+
+  if (state.phase === 'encode') {
+    if (it.stage === 'chunks' && it.chunks) {
+      const targetChunk = it.chunks[it.chunkIndex];
+      const isOk = norm(typed) === norm(targetChunk);
+
+      if (isOk) {
+        it.chunkStreak++;
+        if (it.chunkStreak >= state.config.encodeReps) {
+          it.chunkIndex++;
+          it.chunkStreak = 0;
+          let feedback: Feedback;
+          if (it.chunkIndex >= it.chunks.length) {
+            it.stage = 'combine';
+            it.combineSeqIdx = 0;
+            it.combineStreak = 0;
+            feedback = {
+              text: 'All parts learned — now combining them',
+              type: 'success',
+              dwellKey: 'chunks-advance',
+            };
+          } else {
+            feedback = { text: 'Part learned!', type: 'success', dwellKey: 'chunks-advance' };
+          }
+          newItems[itIdx] = it;
+          const advancedState = advanceEncodeState(newItems, nextStats, base);
+          return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+        }
+        const feedback: Feedback = {
+          text: `${it.chunkStreak} of ${state.config.encodeReps} streaks`,
+          type: 'success',
+          dwellKey: 'chunks-streak-progress',
+        };
+        newItems[itIdx] = it;
+        return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+      }
+
+      nextStats.misses++;
+      it.chunkStreak = 0;
+      const diff = computeWordDiff(typed, targetChunk);
+      const feedback: Feedback = {
+        text: 'Streak reset — compare your answer:',
+        type: 'danger',
+        diff,
+        dwellKey: 'chunks-miss',
+      };
+      newItems[itIdx] = it;
+      return {
+        state: { ...base, items: newItems, stats: nextStats },
+        verdict: 'wrong',
+        feedback,
+        advance: 'auto',
+      };
+    }
+
+    if (it.stage === 'combine' && it.chunks && it.combineSeq) {
+      const seqItem = it.combineSeq[it.combineSeqIdx];
+      const combinedTarget = it.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
+      const wasBlind = it.combineStreak >= 1;
+      const isOk = norm(typed) === norm(combinedTarget);
+
+      if (isOk) {
+        it.combineStreak++;
+        if (wasBlind) it.combineMissCount = 0;
+
+        if (it.combineStreak >= state.config.encodeReps) {
+          it.combineSeqIdx++;
+          it.combineStreak = 0;
+          let feedback: Feedback;
+          if (it.combineSeqIdx >= it.combineSeq.length) {
+            it.status = 'ready';
+            feedback = { text: 'Encoded!', type: 'success', dwellKey: 'combine-ready' };
+          } else {
+            feedback = {
+              text: 'Combination learned!',
+              type: 'success',
+              dwellKey: 'combine-advance',
+            };
+          }
+          newItems[itIdx] = it;
+          const advancedState = advanceEncodeState(newItems, nextStats, base);
+          return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+        }
+        const feedback: Feedback = {
+          text: `${it.combineStreak} of ${state.config.encodeReps} streaks`,
+          type: 'success',
+          dwellKey: 'combine-streak-progress',
+        };
+        newItems[itIdx] = it;
+        return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+      }
+
+      nextStats.misses++;
+      it.combineStreak = 0;
+      it.combineMissCount++;
+      const windowChunkCount = seqItem.end - seqItem.start + 1;
+      const missThreshold = windowChunkCount <= 2 ? 1 : 2;
+
+      let feedback: Feedback;
+      if (it.combineMissCount >= missThreshold) {
+        const culprits = findAllCulpritChunks(typed, it.chunks, seqItem.start - 1, seqItem.end - 1);
+        it.remediateStack = [{ text: it.chunks[culprits[0]], streak: 0, missCount: 0 }];
+        it.remediateQueue = culprits.slice(1).map(idx => it.chunks![idx]);
+        it.remediateReturnSeqIdx = it.combineSeqIdx;
+        it.combineMissCount = 0;
+        it.stage = 'remediate';
+
+        const spotWord = culprits.length > 1 ? 'spots' : 'part';
+        const missMsg = missThreshold === 1 ? 'Missed it — isolating ' : 'Repeated miss — isolating ';
+        feedback = {
+          text: `${missMsg} ${culprits.length} trouble ${spotWord} to reinforce`,
+          type: 'danger',
+          dwellKey: 'combine-miss-remediate',
+        };
+      } else {
+        const diff = computeWordDiff(typed, combinedTarget);
+        feedback = {
+          text: 'Streak reset — check the wording:',
+          type: 'danger',
+          diff,
+          dwellKey: 'combine-miss-retry',
+        };
+      }
+      newItems[itIdx] = it;
+      return {
+        state: { ...base, items: newItems, stats: nextStats },
+        verdict: 'wrong',
+        feedback,
+        advance: 'auto',
+      };
+    }
+
+    if (it.stage === 'remediate') {
+      const rTop = it.remediateStack[it.remediateStack.length - 1];
+      const isOk = norm(typed) === norm(rTop.text);
+
+      if (isOk) {
+        rTop.streak++;
+        rTop.missCount = 0;
+        if (rTop.streak >= state.config.encodeReps) {
+          it.remediateStack.pop();
+          if (it.remediateStack.length === 0) {
+            if (it.remediateQueue.length > 0) {
+              const nextPiece = it.remediateQueue.shift()!;
+              it.remediateStack = [{ text: nextPiece, streak: 0, missCount: 0 }];
+              const feedback: Feedback = {
+                text: 'Trouble spot solid! Now checking the next spot',
+                type: 'success',
+                dwellKey: 'remediate-next-spot',
+              };
+              newItems[itIdx] = it;
+              return {
+                state: { ...base, items: newItems },
+                verdict: 'exact',
+                feedback,
+                advance: 'auto',
+              };
+            }
+            it.stage = 'combine';
+            it.combineSeqIdx = it.remediateReturnSeqIdx;
+            it.combineStreak = 0;
+            const feedback: Feedback = {
+              text: 'Reinforced! Resuming progressive combining',
+              type: 'success',
+              dwellKey: 'remediate-resume-combine',
+            };
+            newItems[itIdx] = it;
+            const advancedState = advanceEncodeState(newItems, nextStats, base);
+            return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+          }
+          const parentLevel = it.remediateStack[it.remediateStack.length - 1];
+          parentLevel.streak = 0;
+          const parentWordCount = parentLevel.text.split(' ').length;
+          const feedback: Feedback = {
+            text: `Isolated piece mastered — expanding to ${parentWordCount}-word parent`,
+            type: 'success',
+            dwellKey: 'remediate-expand-parent',
+          };
+          newItems[itIdx] = it;
+          return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+        }
+        const feedback: Feedback = {
+          text: `${rTop.streak} of ${state.config.encodeReps} streaks`,
+          type: 'success',
+          dwellKey: 'remediate-streak-progress',
+        };
+        newItems[itIdx] = it;
+        return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+      }
+
+      nextStats.misses++;
+      rTop.streak = 0;
+      rTop.missCount++;
+      const rWordCount = rTop.text.split(' ').length;
+
+      let feedback: Feedback;
+      if (rTop.missCount >= 2 && rWordCount > 1) {
+        const halves = splitInHalf(rTop.text);
+        const culpritPiece = culpritHalf(typed, halves[0], halves[1]);
+        it.remediateStack.push({ text: culpritPiece, streak: 0, missCount: 0 });
+        feedback = {
+          text: 'Still struggling — zooming into smaller sub-phrase',
+          type: 'danger',
+          dwellKey: 'remediate-miss-split',
+        };
+      } else {
+        const diff = computeWordDiff(typed, rTop.text);
+        feedback = {
+          text: 'Not quite — compare with target:',
+          type: 'danger',
+          diff,
+          dwellKey: 'remediate-miss-retry',
+        };
+      }
+      newItems[itIdx] = it;
+      return {
+        state: { ...base, items: newItems, stats: nextStats },
+        verdict: 'wrong',
+        feedback,
+        advance: 'auto',
+      };
+    }
+
+    // Stage: full (short phrase <= 3 words, or chunkDifficulty >= 100)
+    const isOk = norm(typed) === norm(it.back);
+
+    if (isOk) {
+      it.encodeStreak++;
+      if (it.encodeStreak >= state.config.encodeReps) {
+        it.status = 'ready';
+        const feedback: Feedback = { text: 'Encoded!', type: 'success', dwellKey: 'full-advance' };
+        newItems[itIdx] = it;
+        const advancedState = advanceEncodeState(newItems, nextStats, base);
+        return { state: advancedState, verdict: 'exact', feedback, advance: 'auto' };
+      }
+      const feedback: Feedback = {
+        text: `${it.encodeStreak} of ${state.config.encodeReps} streaks`,
+        type: 'success',
+        dwellKey: 'full-streak-progress',
+      };
+      newItems[itIdx] = it;
+      return { state: { ...base, items: newItems }, verdict: 'exact', feedback, advance: 'auto' };
+    }
+
+    nextStats.misses++;
+    it.encodeStreak = 0;
+    const diff = computeWordDiff(typed, it.back);
+    const feedback: Feedback = {
+      text: 'Streak reset — compare your answer:',
+      type: 'danger',
+      diff,
+      dwellKey: 'full-miss',
+    };
+    newItems[itIdx] = it;
+    return {
+      state: { ...base, items: newItems, stats: nextStats },
+      verdict: 'wrong',
+      feedback,
+      advance: 'auto',
+    };
+  }
+
+  // Phase: cycle (spaced retrieval interleaving) -- always manual advance;
+  // grading updates items/queue/stats immediately but the item switch itself
+  // waits for an explicit applyNext() call (mirrors handleNext/advanceCycle).
+  const isOkCycle = norm(typed) === norm(it.back);
+  const updatedQueue = [...state.queue];
+  let feedback: Feedback;
+
+  if (isOkCycle) {
+    it.cycleStreak++;
+    if (it.cycleStreak >= 2) {
+      it.status = 'mastered';
+      feedback = { text: 'Mastered! Item retired.', type: 'success', dwellKey: 'cycle-mastered' };
+    } else {
+      feedback = {
+        text: 'Correct — will test once more later in the session.',
+        type: 'success',
+        dwellKey: 'cycle-correct',
+      };
+      updatedQueue.splice(Math.min(3, updatedQueue.length), 0, it.id);
+    }
+  } else {
+    nextStats.misses++;
+    it.cycleStreak = 0;
+    const diff = computeWordDiff(typed, it.back);
+    feedback = {
+      text: 'Missed — review answer below before continuing:',
+      type: 'danger',
+      diff,
+      dwellKey: 'cycle-miss',
+    };
+    const gap = 2 + Math.floor(Math.random() * 2);
+    updatedQueue.splice(Math.min(gap, updatedQueue.length), 0, it.id);
+  }
+
+  newItems[itIdx] = it;
+  return {
+    state: { ...base, items: newItems, queue: updatedQueue, stats: nextStats },
+    verdict: isOkCycle ? 'exact' : 'wrong',
+    feedback,
+    advance: 'manual',
+  };
+}
+
+// Equivalent of SessionView's handleNext -> advanceCycle. Not guarded against
+// being called when there's no manual-advance trial pending (B5's shell-level
+// double-Enter race is preserved verbatim there, not fixed here).
+export function applyNext(state: SessionState): SessionState {
+  return advanceCycleState(state.items, state.queue, state.stats, state);
 }

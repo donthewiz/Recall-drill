@@ -78,3 +78,45 @@ export interface SavedSessionState {
 }
 
 export type ViewState = 'setup' | 'decks' | 'session' | 'done';
+
+// 'near' is added by C2 (lenient grading); Phase 0 grading is still exact-match only.
+export type Verdict = 'exact' | 'wrong';
+
+export interface Feedback {
+  text: string;
+  type: 'success' | 'danger' | 'info';
+  diff?: WordDiffResult[];
+  // One of 17 keys enumerated in drillEngine.ts's DWELL_MS table -- drives
+  // SessionView's setTimeout delay lookup without re-deriving the branch logic.
+  dwellKey: string;
+}
+
+export interface SessionConfig {
+  encodeReps: number;
+  chunkDifficulty: number;
+  // batchSize, ladderMode, lenient, stemTolerance are added by C1-C3;
+  // intentionally absent in Phase 0.
+}
+
+export interface SessionState {
+  items: DrillItem[];
+  phase: 'encode' | 'cycle';
+  queue: number[];
+  stats: SessionStats;
+  currentId: number;
+  // Always 0 in Phase 0; never read or branched on until C3 (batching).
+  batchIndex: number;
+  config: SessionConfig;
+}
+
+export interface Trial {
+  itemId: number;
+  stage: EncodeStage | 'cycle';
+  prompt: string;
+  target: string;
+  // Stands in for C5's not-yet-built Cue type; today's only signal is
+  // streak-derived blind/not-blind.
+  isBlind: boolean;
+  label: string;
+  detail: string;
+}

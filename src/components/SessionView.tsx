@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useRef, useTransition } from 'react';
-import { DrillItem, SessionStats, WordDiffResult } from '../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { DrillItem, Feedback, SessionState, SessionStats } from '../types';
 import {
-  norm,
-  computeWordDiff,
-  findAllCulpritChunks,
-  splitInHalf,
-  culpritHalf,
-  shuffle,
   slugify,
   saveSessionState,
+  selectTrial,
+  applyAnswer,
+  applyNext,
+  initSession,
+  SESSION_COMPLETE_ID,
+  DWELL_MS,
 } from '../utils/drillEngine';
-import { Check, ArrowRight, Eye, LogOut, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Check, ArrowRight, Eye, LogOut } from 'lucide-react';
 
 interface SessionViewProps {
   deckName: string;
@@ -23,6 +23,15 @@ interface SessionViewProps {
   onFinishSession: (items: DrillItem[], stats: SessionStats) => void;
 }
 
+// Stage-specific placeholder hint shown while blind (no cue text visible).
+const BLIND_PLACEHOLDER: Record<string, string> = {
+  chunks: 'Type this part from memory...',
+  combine: 'Type it from memory...',
+  remediate: 'Type this from memory...',
+  full: 'Type the full answer from memory...',
+  cycle: 'Type the answer from memory...',
+};
+
 export const SessionView: React.FC<SessionViewProps> = ({
   deckName,
   initialItems,
@@ -33,67 +42,71 @@ export const SessionView: React.FC<SessionViewProps> = ({
   chunkDifficulty = 35,
   onFinishSession,
 }) => {
-  const [items, setItems] = useState<DrillItem[]>(initialItems);
-  const [phase, setPhase] = useState<'encode' | 'cycle'>(initialPhase);
-  const [queue, setQueue] = useState<number[]>(initialQueue);
-  const [stats, setStats] = useState<SessionStats>(initialStats);
-  const [currentId, setCurrentId] = useState<number>(0);
+  const [sessionState, setSessionState] = useState<SessionState>(() =>
+    initSession({
+      items: initialItems,
+      phase: initialPhase,
+      queue: initialQueue,
+      stats: initialStats,
+      currentId: SESSION_COMPLETE_ID,
+      batchIndex: 0,
+      config: { encodeReps, chunkDifficulty },
+    })
+  );
   const [typedValue, setTypedValue] = useState('');
   const [showNextBtn, setShowNextBtn] = useState(false);
   const [userRevealedAnswer, setUserRevealedAnswer] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    text: string;
-    type: 'success' | 'danger' | 'info';
-    diff?: WordDiffResult[];
-  } | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [flash, setFlash] = useState<'idle' | 'success' | 'danger'>('idle');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Keep state synced to localStorage automatically
-  const persistState = (
-    currentItems: DrillItem[],
-    currentPhase: 'encode' | 'cycle',
-    currentQueue: number[],
-    currentStats: SessionStats
-  ) => {
-    if (!currentItems.length || !deckName) return;
+  const persistState = (state: SessionState) => {
+    if (!state.items.length || !deckName) return;
     const slug = slugify(deckName);
     saveSessionState(slug, {
       deckName,
-      phase: currentPhase,
-      queue: currentQueue,
-      stats: currentStats,
-      items: currentItems,
-      encodeReps,
-      chunkDifficulty,
+      phase: state.phase,
+      queue: state.queue,
+      stats: state.stats,
+      items: state.items,
+      encodeReps: state.config.encodeReps,
+      chunkDifficulty: state.config.chunkDifficulty,
       timestamp: Date.now(),
     });
   };
 
-  const currentItem = items.find(i => i.id === currentId) || items[0];
-
-  // Pick initial item on mount
+  // Persist on every state change, mirroring the original's persistState call
+  // at the end of every handleCheck/advanceEncode/advanceCycle branch.
   useEffect(() => {
-    if (initialPhase === 'cycle') {
-      advanceCycle(initialItems, initialQueue, initialStats);
-    } else {
-      advanceEncode(initialItems, initialStats);
-    }
+    persistState(sessionState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionState]);
 
+  // Session complete: selectTrial has no item left to show (currentId hit the
+  // SESSION_COMPLETE_ID sentinel). Mirrors advanceCycle calling
+  // onFinishSession directly once everything is mastered.
+  useEffect(() => {
+    if (sessionState.currentId === SESSION_COMPLETE_ID && sessionState.items.length) {
+      onFinishSession(sessionState.items, sessionState.stats);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionState.currentId]);
+
+  useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
-  // Autofocus input on item transition
+  // Autofocus input on item transition.
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
-  }, [currentId, feedback, showNextBtn]);
+  }, [sessionState.currentId, feedback, showNextBtn]);
 
   const triggerFlash = (ok: boolean) => {
     setFlash(ok ? 'success' : 'danger');
@@ -102,530 +115,55 @@ export const SessionView: React.FC<SessionViewProps> = ({
     }, 400);
   };
 
-  // Determine current prompt, subtext, placeholder, and blind state
-  let promptText = '';
+  const trial = selectTrial(sessionState);
+  const isBlind = trial?.isBlind ?? false;
+  const promptText = trial?.prompt ?? '';
+  const phaseDetail = trial?.detail ?? '';
+
   let subText = '';
   let placeholderText = '';
-  let isBlind = false;
-  let phaseDetail = '';
-
-  if (currentItem) {
-    promptText = currentItem.front;
-
-    if (phase === 'encode') {
-      if (currentItem.stage === 'chunks' && currentItem.chunks) {
-        const chunk = currentItem.chunks[currentItem.chunkIndex];
-        isBlind = currentItem.chunkStreak >= 1;
-        phaseDetail = `Encoding • Part ${currentItem.chunkIndex + 1} of ${currentItem.chunks.length}`;
-        if (isBlind) {
-          subText = userRevealedAnswer ? chunk : '';
-          placeholderText = 'Type this part from memory...';
-        } else {
-          subText = chunk;
-          placeholderText = chunk;
-        }
-      } else if (currentItem.stage === 'combine' && currentItem.chunks && currentItem.combineSeq) {
-        const seqItem = currentItem.combineSeq[currentItem.combineSeqIdx];
-        const combined = currentItem.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
-        isBlind = currentItem.combineStreak >= 1;
-        phaseDetail = `Encoding • Combining parts ${seqItem.start}-${seqItem.end} (${currentItem.combineSeqIdx + 1}/${currentItem.combineSeq.length})`;
-        if (isBlind) {
-          subText = userRevealedAnswer ? combined : '';
-          placeholderText = 'Type it from memory...';
-        } else {
-          subText = combined;
-          placeholderText = combined;
-        }
-      } else if (currentItem.stage === 'remediate') {
-        const rTop = currentItem.remediateStack[currentItem.remediateStack.length - 1];
-        if (rTop) {
-          isBlind = rTop.streak >= 1;
-          const rWordCount = rTop.text.split(' ').length;
-          const queueSuffix =
-            currentItem.remediateQueue.length > 0
-              ? ` (${currentItem.remediateQueue.length} more spot${currentItem.remediateQueue.length > 1 ? 's' : ''} after this)`
-              : '';
-
-          phaseDetail =
-            currentItem.remediateStack.length > 1
-              ? `Isolating exact spot • drilled down ${currentItem.remediateStack.length - 1} level${currentItem.remediateStack.length - 1 > 1 ? 's' : ''}, now on ${rWordCount} word${rWordCount === 1 ? '' : 's'}${queueSuffix}`
-              : `Reinforcing this ${rWordCount}-word part before combining again${queueSuffix}`;
-
-          if (isBlind) {
-            subText = userRevealedAnswer ? rTop.text : '';
-            placeholderText = 'Type this from memory...';
-          } else {
-            subText = rTop.text;
-            placeholderText = rTop.text;
-          }
-        }
-      } else {
-        // Full (no chunks)
-        isBlind = currentItem.encodeStreak >= 1;
-        phaseDetail = 'Encoding • Full item';
-        if (isBlind) {
-          subText = userRevealedAnswer ? currentItem.back : '';
-          placeholderText = 'Type the full answer from memory...';
-        } else {
-          subText = currentItem.back;
-          placeholderText = currentItem.back;
-        }
-      }
+  if (trial) {
+    if (isBlind) {
+      subText = userRevealedAnswer ? trial.target : '';
+      placeholderText = BLIND_PLACEHOLDER[trial.stage] ?? 'Type from memory...';
     } else {
-      // Cycle phase
-      phaseDetail = 'Spaced Retrieval • Cycling review';
-      isBlind = true;
-      subText = userRevealedAnswer ? currentItem.back : '';
-      placeholderText = 'Type the answer from memory...';
+      subText = trial.target;
+      placeholderText = trial.target;
     }
   }
-
-  const advanceEncode = (updatedItems: DrillItem[], updatedStats: SessionStats) => {
-    const remaining = updatedItems.filter(i => i.status === 'new' || i.status === 'encoding');
-    if (!remaining.length) {
-      // Switch to cycling phase
-      const newQueue = shuffle(
-        updatedItems.filter(i => i.status !== 'mastered').map(i => i.id)
-      );
-      setPhase('cycle');
-      setQueue(newQueue);
-      persistState(updatedItems, 'cycle', newQueue, updatedStats);
-      advanceCycle(updatedItems, newQueue, updatedStats);
-      return;
-    }
-
-    const nextItem = remaining[0];
-    const newItems = updatedItems.map(i =>
-      i.id === nextItem.id ? { ...i, status: 'encoding' as const } : i
-    );
-    setItems(newItems);
-    setCurrentId(nextItem.id);
-    setTypedValue('');
-    setUserRevealedAnswer(false);
-    setShowNextBtn(false);
-    setFeedback(null);
-    setIsProcessing(false);
-    persistState(newItems, 'encode', queue, updatedStats);
-  };
-
-  const advanceCycle = (
-    updatedItems: DrillItem[],
-    currentQueue: number[],
-    updatedStats: SessionStats
-  ) => {
-    let q = [...currentQueue];
-    if (!q.length) {
-      const remaining = updatedItems.filter(i => i.status !== 'mastered');
-      if (!remaining.length) {
-        onFinishSession(updatedItems, updatedStats);
-        return;
-      }
-      q = shuffle(remaining.map(i => i.id));
-    }
-
-    const nextId = q.shift()!;
-    setQueue(q);
-    setCurrentId(nextId);
-    setTypedValue('');
-    setUserRevealedAnswer(false);
-    setShowNextBtn(false);
-    setFeedback(null);
-    setIsProcessing(false);
-    persistState(updatedItems, 'cycle', q, updatedStats);
-  };
 
   const handleShowAnswer = () => {
     setUserRevealedAnswer(true);
   };
 
   const handleCheck = () => {
-    if (isProcessing || !currentItem) return;
+    if (isProcessing || !trial) return;
     setIsProcessing(true);
 
-    const typed = typedValue;
-    const nextStats = { ...stats, attempts: stats.attempts + 1 };
-    setStats(nextStats);
+    const result = applyAnswer(sessionState, typedValue, { revealed: userRevealedAnswer });
+    setFeedback(result.feedback);
+    triggerFlash(result.verdict === 'exact');
+    persistState(result.state);
 
-    const newItems = [...items];
-    const itIdx = newItems.findIndex(i => i.id === currentItem.id);
-    const it = { ...newItems[itIdx] };
-
-    if (phase === 'encode') {
-      if (it.stage === 'chunks' && it.chunks) {
-        const targetChunk = it.chunks[it.chunkIndex];
-        const isOk = norm(typed) === norm(targetChunk);
-        triggerFlash(isOk);
-
-        if (isOk) {
-          it.chunkStreak++;
-          if (it.chunkStreak >= encodeReps) {
-            it.chunkIndex++;
-            it.chunkStreak = 0;
-            if (it.chunkIndex >= it.chunks.length) {
-              it.stage = 'combine';
-              it.combineSeqIdx = 0;
-              it.combineStreak = 0;
-              setFeedback({
-                text: 'All parts learned — now combining them',
-                type: 'success',
-              });
-            } else {
-              setFeedback({ text: 'Part learned!', type: 'success' });
-            }
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              advanceEncode(newItems, nextStats);
-            }, 700);
-          } else {
-            setFeedback({
-              text: `${it.chunkStreak} of ${encodeReps} streaks`,
-              type: 'success',
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 500);
-          }
-        } else {
-          nextStats.misses++;
-          it.chunkStreak = 0;
-          const diff = computeWordDiff(typed, targetChunk);
-          setFeedback({
-            text: 'Streak reset — compare your answer:',
-            type: 'danger',
-            diff,
-          });
-          newItems[itIdx] = it;
-          setItems(newItems);
-          timeoutRef.current = setTimeout(() => {
-            setTypedValue('');
-            setUserRevealedAnswer(false);
-            setFeedback(null);
-            setIsProcessing(false);
-          }, 1800);
-        }
-        persistState(newItems, 'encode', queue, nextStats);
-        return;
-      }
-
-      if (it.stage === 'combine' && it.chunks && it.combineSeq) {
-        const seqItem = it.combineSeq[it.combineSeqIdx];
-        const combinedTarget = it.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
-        const wasBlind = it.combineStreak >= 1;
-        const isOk = norm(typed) === norm(combinedTarget);
-        triggerFlash(isOk);
-
-        if (isOk) {
-          it.combineStreak++;
-          if (wasBlind) it.combineMissCount = 0;
-
-          if (it.combineStreak >= encodeReps) {
-            it.combineSeqIdx++;
-            it.combineStreak = 0;
-            if (it.combineSeqIdx >= it.combineSeq.length) {
-              it.status = 'ready';
-              setFeedback({ text: 'Encoded!', type: 'success' });
-              newItems[itIdx] = it;
-              setItems(newItems);
-              timeoutRef.current = setTimeout(() => {
-                advanceEncode(newItems, nextStats);
-              }, 600);
-            } else {
-              setFeedback({ text: 'Combination learned!', type: 'success' });
-              newItems[itIdx] = it;
-              setItems(newItems);
-              timeoutRef.current = setTimeout(() => {
-                advanceEncode(newItems, nextStats);
-              }, 700);
-            }
-          } else {
-            setFeedback({
-              text: `${it.combineStreak} of ${encodeReps} streaks`,
-              type: 'success',
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 500);
-          }
-        } else {
-          nextStats.misses++;
-          it.combineStreak = 0;
-          it.combineMissCount++;
-          const windowChunkCount = seqItem.end - seqItem.start + 1;
-          const missThreshold = windowChunkCount <= 2 ? 1 : 2;
-
-          if (it.combineMissCount >= missThreshold) {
-            const culprits = findAllCulpritChunks(
-              typed,
-              it.chunks,
-              seqItem.start - 1,
-              seqItem.end - 1
-            );
-            it.remediateStack = [
-              { text: it.chunks[culprits[0]], streak: 0, missCount: 0 },
-            ];
-            it.remediateQueue = culprits.slice(1).map(idx => it.chunks![idx]);
-            it.remediateReturnSeqIdx = it.combineSeqIdx;
-            it.combineMissCount = 0;
-            it.stage = 'remediate';
-
-            const spotWord = culprits.length > 1 ? 'spots' : 'part';
-            const missMsg =
-              missThreshold === 1
-                ? 'Missed it — isolating '
-                : 'Repeated miss — isolating ';
-            setFeedback({
-              text: `${missMsg} ${culprits.length} trouble ${spotWord} to reinforce`,
-              type: 'danger',
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 1800);
-          } else {
-            const diff = computeWordDiff(typed, combinedTarget);
-            setFeedback({
-              text: 'Streak reset — check the wording:',
-              type: 'danger',
-              diff,
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 1600);
-          }
-        }
-        persistState(newItems, 'encode', queue, nextStats);
-        return;
-      }
-
-      if (it.stage === 'remediate') {
-        const rTop = it.remediateStack[it.remediateStack.length - 1];
-        const isOk = norm(typed) === norm(rTop.text);
-        triggerFlash(isOk);
-
-        if (isOk) {
-          rTop.streak++;
-          rTop.missCount = 0;
-          if (rTop.streak >= encodeReps) {
-            it.remediateStack.pop();
-            if (it.remediateStack.length === 0) {
-              if (it.remediateQueue.length > 0) {
-                const nextPiece = it.remediateQueue.shift()!;
-                it.remediateStack = [{ text: nextPiece, streak: 0, missCount: 0 }];
-                setFeedback({
-                  text: 'Trouble spot solid! Now checking the next spot',
-                  type: 'success',
-                });
-                newItems[itIdx] = it;
-                setItems(newItems);
-                timeoutRef.current = setTimeout(() => {
-                  setTypedValue('');
-                  setUserRevealedAnswer(false);
-                  setFeedback(null);
-                  setIsProcessing(false);
-                }, 900);
-              } else {
-                it.stage = 'combine';
-                it.combineSeqIdx = it.remediateReturnSeqIdx;
-                it.combineStreak = 0;
-                setFeedback({
-                  text: 'Reinforced! Resuming progressive combining',
-                  type: 'success',
-                });
-                newItems[itIdx] = it;
-                setItems(newItems);
-                timeoutRef.current = setTimeout(() => {
-                  advanceEncode(newItems, nextStats);
-                }, 700);
-              }
-            } else {
-              const parentLevel = it.remediateStack[it.remediateStack.length - 1];
-              parentLevel.streak = 0;
-              const parentWordCount = parentLevel.text.split(' ').length;
-              setFeedback({
-                text: `Isolated piece mastered — expanding to ${parentWordCount}-word parent`,
-                type: 'success',
-              });
-              newItems[itIdx] = it;
-              setItems(newItems);
-              timeoutRef.current = setTimeout(() => {
-                setTypedValue('');
-                setUserRevealedAnswer(false);
-                setFeedback(null);
-                setIsProcessing(false);
-              }, 1100);
-            }
-          } else {
-            setFeedback({
-              text: `${rTop.streak} of ${encodeReps} streaks`,
-              type: 'success',
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 500);
-          }
-        } else {
-          nextStats.misses++;
-          rTop.streak = 0;
-          rTop.missCount++;
-          const rWordCount = rTop.text.split(' ').length;
-
-          if (rTop.missCount >= 2 && rWordCount > 1) {
-            const halves = splitInHalf(rTop.text);
-            const culpritPiece = culpritHalf(typed, halves[0], halves[1]);
-            it.remediateStack.push({
-              text: culpritPiece,
-              streak: 0,
-              missCount: 0,
-            });
-            setFeedback({
-              text: 'Still struggling — zooming into smaller sub-phrase',
-              type: 'danger',
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 1800);
-          } else {
-            const diff = computeWordDiff(typed, rTop.text);
-            setFeedback({
-              text: 'Not quite — compare with target:',
-              type: 'danger',
-              diff,
-            });
-            newItems[itIdx] = it;
-            setItems(newItems);
-            timeoutRef.current = setTimeout(() => {
-              setTypedValue('');
-              setUserRevealedAnswer(false);
-              setFeedback(null);
-              setIsProcessing(false);
-            }, 1600);
-          }
-        }
-        persistState(newItems, 'encode', queue, nextStats);
-        return;
-      }
-
-      // Stage: full (short phrase <= 5 words)
-      const isOk = norm(typed) === norm(it.back);
-      triggerFlash(isOk);
-
-      if (isOk) {
-        it.encodeStreak++;
-        if (it.encodeStreak >= encodeReps) {
-          it.status = 'ready';
-          setFeedback({ text: 'Encoded!', type: 'success' });
-          newItems[itIdx] = it;
-          setItems(newItems);
-          timeoutRef.current = setTimeout(() => {
-            advanceEncode(newItems, nextStats);
-          }, 600);
-        } else {
-          setFeedback({
-            text: `${it.encodeStreak} of ${encodeReps} streaks`,
-            type: 'success',
-          });
-          newItems[itIdx] = it;
-          setItems(newItems);
-          timeoutRef.current = setTimeout(() => {
-            setTypedValue('');
-            setUserRevealedAnswer(false);
-            setFeedback(null);
-            setIsProcessing(false);
-          }, 500);
-        }
-      } else {
-        nextStats.misses++;
-        it.encodeStreak = 0;
-        const diff = computeWordDiff(typed, it.back);
-        setFeedback({
-          text: 'Streak reset — compare your answer:',
-          type: 'danger',
-          diff,
-        });
-        newItems[itIdx] = it;
-        setItems(newItems);
-        timeoutRef.current = setTimeout(() => {
-          setTypedValue('');
-          setUserRevealedAnswer(false);
-          setFeedback(null);
-          setIsProcessing(false);
-        }, 1600);
-      }
-      persistState(newItems, 'encode', queue, nextStats);
-      return;
-    }
-
-    // Phase: Cycle (spaced retrieval interleaving)
-    const isOkCycle = norm(typed) === norm(it.back);
-    triggerFlash(isOkCycle);
-    const updatedQueue = [...queue];
-
-    if (isOkCycle) {
-      it.cycleStreak++;
-      if (it.cycleStreak >= 2) {
-        it.status = 'mastered';
-        setFeedback({ text: 'Mastered! Item retired.', type: 'success' });
-      } else {
-        setFeedback({
-          text: 'Correct — will test once more later in the session.',
-          type: 'success',
-        });
-        updatedQueue.splice(Math.min(3, updatedQueue.length), 0, it.id);
-      }
+    if (result.advance === 'auto') {
+      const delay = DWELL_MS[result.feedback.dwellKey] ?? 0;
+      timeoutRef.current = setTimeout(() => {
+        setSessionState(result.state);
+        setTypedValue('');
+        setUserRevealedAnswer(false);
+        setFeedback(null);
+        setIsProcessing(false);
+      }, delay);
     } else {
-      nextStats.misses++;
-      it.cycleStreak = 0;
-      const diff = computeWordDiff(typed, it.back);
-      setFeedback({
-        text: 'Missed — review answer below before continuing:',
-        type: 'danger',
-        diff,
-      });
-      const gap = 2 + Math.floor(Math.random() * 2);
-      updatedQueue.splice(Math.min(gap, updatedQueue.length), 0, it.id);
+      setSessionState(result.state);
+      setShowNextBtn(true);
+      setIsProcessing(false);
     }
-
-    newItems[itIdx] = it;
-    setItems(newItems);
-    setQueue(updatedQueue);
-    setShowNextBtn(true);
-    setIsProcessing(false);
-    persistState(newItems, 'cycle', updatedQueue, nextStats);
   };
 
   const handleNext = () => {
     setShowNextBtn(false);
-    advanceCycle(items, queue, stats);
+    setSessionState(applyNext(sessionState));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -640,11 +178,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
     }
   };
 
+  const items = sessionState.items;
   const masteredCount = items.filter(i => i.status === 'mastered').length;
   const readyCount = items.filter(i => i.status === 'ready').length;
   const encodingCount = items.filter(i => i.status === 'encoding').length;
   const newCount = items.filter(i => i.status === 'new').length;
-  const progressPercent = Math.round((masteredCount / items.length) * 100);
+  const progressPercent = items.length
+    ? Math.round((masteredCount / items.length) * 100)
+    : 0;
 
   return (
     <div className="space-y-4">
@@ -654,7 +195,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
           <span className="flex items-center gap-1.5">
             <span
               className={`w-2 h-2 rounded-full ${
-                phase === 'encode' ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'
+                sessionState.phase === 'encode' ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'
               }`}
             />
             {phaseDetail}
@@ -686,15 +227,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
         {/* Stage / Chunk indicator pill */}
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-bg)] px-2.5 py-0.5 rounded-full border border-[var(--accent)]/15">
-            {phase === 'encode'
-              ? currentItem?.stage === 'chunks'
-                ? `Chunk Practice • ${currentItem.chunkIndex + 1}/${currentItem.chunks?.length || 1}`
-                : currentItem?.stage === 'combine'
-                ? 'Combination Practice'
-                : currentItem?.stage === 'remediate'
-                ? 'Precision Repair'
-                : 'Full Recall'
-              : 'Spaced Retrieval Cycle'}
+            {trial?.label ?? ''}
           </span>
           {isBlind && (
             <span className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
@@ -813,7 +346,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
         <button
           type="button"
           id="end-btn"
-          onClick={() => onFinishSession(items, stats)}
+          onClick={() => onFinishSession(sessionState.items, sessionState.stats)}
           className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger-bg)] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[var(--danger)]/30"
         >
           <LogOut size={14} /> End session
@@ -839,14 +372,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </div>
 
           <span className="text-[11px] font-medium hidden sm:inline text-[var(--text-muted)]">
-            Attempts: {stats.attempts} • Misses: {stats.misses}
+            Attempts: {sessionState.stats.attempts} • Misses: {sessionState.stats.misses}
           </span>
         </div>
 
         {/* Matrix of dots */}
         <div id="item-status" className="flex flex-wrap gap-1.5">
           {items.map(it => {
-            const isCurrent = it.id === currentItem?.id;
+            const isCurrent = it.id === trial?.itemId;
             const dotColor =
               it.status === 'mastered'
                 ? 'bg-[var(--success)]'
