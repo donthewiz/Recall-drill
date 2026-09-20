@@ -42,7 +42,7 @@ export function simulate(
   config: SessionConfig,
   learner: LearnerModel
 ): SimulationResult {
-  const items = buildItems(deck, config.chunkDifficulty);
+  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode);
   let state: SessionState = initSession({
     items,
     phase: 'encode',

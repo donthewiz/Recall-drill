@@ -80,8 +80,14 @@ export interface SavedSessionState {
   encodeReps: number;
   chunkDifficulty?: number;
   stemTolerance?: boolean;
+  ladderMode?: LadderMode;
   timestamp?: number;
 }
+
+// C1: 'exhaustive' is buildCombineSequence's original n(n-1)/2-window ladder,
+// kept available so the trial-count claim below can be measured against it
+// rather than trusted. 'cumulative' (forward chaining) is the new default.
+export type LadderMode = 'cumulative' | 'exhaustive';
 
 export type ViewState = 'setup' | 'decks' | 'session' | 'done';
 
@@ -110,8 +116,12 @@ export interface SessionConfig {
   // `lenient` itself isn't user-configurable (the doc only asks for a
   // stemTolerance setting), so it's passed as a fixed `true` from
   // applyAnswer rather than living here.
-  // batchSize, ladderMode are added by C1/C3; intentionally absent here.
   stemTolerance: boolean;
+  // C1: which combine-window sequence buildCombineSequence produced this
+  // item's combineSeq with, and which per-window rep rule applyAnswer's
+  // combine branch applies (see requiredRepsForWindow). batchSize is added
+  // by C3; intentionally absent here.
+  ladderMode: LadderMode;
 }
 
 export interface SessionState {

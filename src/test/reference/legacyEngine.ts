@@ -8,7 +8,7 @@
 //
 // This file must NOT fix any of B1-B5; it exists to lock in current (buggy)
 // behavior before extraction. Do not "improve" this file during Phase 0.
-import { DeckItem, DrillItem, SessionStats } from '../../types';
+import { DeckItem, DrillItem, LadderMode, SessionStats } from '../../types';
 import {
   norm,
   computeWordDiff,
@@ -52,7 +52,18 @@ export interface ItemSnapshot {
 }
 
 export interface EngineDriver {
-  init(deck: DeckItem[], config: { encodeReps: number; chunkDifficulty?: number }): void;
+  init(
+    deck: DeckItem[],
+    config: {
+      encodeReps: number;
+      chunkDifficulty?: number;
+      stemTolerance?: boolean;
+      // LegacyEngine ignores this -- it predates C1 and always rebuilds
+      // items with the original exhaustive ladder, regardless of what's
+      // passed, to stay a faithful pre-C1 snapshot. RealEngineDriver honors it.
+      ladderMode?: LadderMode;
+    }
+  ): void;
   currentTrial(): DriverTrial | null;
   answer(typed: string): DriverAnswerResult;
   showAnswer(): void;
@@ -128,7 +139,8 @@ export class LegacyEngine implements EngineDriver {
 
   init(deck: DeckItem[], config: { encodeReps: number; chunkDifficulty?: number }): void {
     this.encodeReps = config.encodeReps;
-    this.items = buildItems(deck, config.chunkDifficulty ?? 35);
+    // Always exhaustive -- see the EngineDriver.init doc comment.
+    this.items = buildItems(deck, config.chunkDifficulty ?? 35, 'exhaustive');
     this.sessionStats = { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 };
     this.phase = 'encode';
     this.queue = [];

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   DeckItem,
+  LadderMode,
   SavedDeckEntry,
   SavedSessionState,
   DeckFolder,
@@ -43,7 +44,8 @@ interface SetupViewProps {
     name: string,
     reps: number,
     chunkDifficulty: number,
-    stemTolerance: boolean
+    stemTolerance: boolean,
+    ladderMode: LadderMode
   ) => void;
   onResumeSession: (state: SavedSessionState) => void;
   onNavigateDecks: () => void;
@@ -53,6 +55,7 @@ interface SetupViewProps {
   initialEncodeReps?: number;
   initialChunkDifficulty?: number;
   initialStemTolerance?: boolean;
+  initialLadderMode?: LadderMode;
   initialIsEditingCards?: boolean;
   initialFolderId?: string | null;
 }
@@ -142,6 +145,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   initialEncodeReps = 3,
   initialChunkDifficulty,
   initialStemTolerance,
+  initialLadderMode,
   initialIsEditingCards = false,
   initialFolderId = null,
 }) => {
@@ -233,6 +237,16 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     return true;
   });
+  const [ladderMode, setLadderMode] = useState<LadderMode>(() => {
+    if (initialLadderMode !== undefined) return initialLadderMode;
+    try {
+      const saved = localStorage.getItem('recall_drill_ladder_mode');
+      if (saved === 'cumulative' || saved === 'exhaustive') return saved;
+    } catch {
+      // ignore
+    }
+    return 'cumulative';
+  });
   const [msg, setMsg] = useState('');
   const [resumePrompt, setResumePrompt] = useState<{
     state: SavedSessionState;
@@ -266,6 +280,15 @@ export const SetupView: React.FC<SetupViewProps> = ({
     setStemTolerance(val);
     try {
       localStorage.setItem('recall_drill_stem_tolerance', String(val));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleLadderModeChange = (val: LadderMode) => {
+    setLadderMode(val);
+    try {
+      localStorage.setItem('recall_drill_ladder_mode', val);
     } catch {
       // ignore
     }
@@ -480,7 +503,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       });
       setMsg(`Found a previous session for "${name}" with ${mastered} of ${existingState.items.length} items mastered.`);
     } else {
-      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance);
+      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance, ladderMode);
     }
   };
 
@@ -494,7 +517,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     if (resumePrompt) {
       const slug = slugify(resumePrompt.name);
       clearSessionState(slug);
-      onStartSession(resumePrompt.parsed, resumePrompt.name, encodeReps, chunkDifficulty, stemTolerance);
+      onStartSession(resumePrompt.parsed, resumePrompt.name, encodeReps, chunkDifficulty, stemTolerance, ladderMode);
     }
   };
 
@@ -792,6 +815,48 @@ export const SetupView: React.FC<SetupViewProps> = ({
             (e.g. "cat" vs "cats") counts as a close match instead of a miss. Turn this
             off for terminology decks where exact word endings matter (e.g. medical or
             legal vocabulary).
+          </p>
+        </div>
+
+        {/* Combine ladder mode */}
+        <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--warning)]" />
+              <span>Combine ladder:</span>
+            </span>
+            <div className="flex items-center gap-1 bg-[var(--surface-1)] border border-[var(--border)] rounded-lg p-0.5">
+              <button
+                type="button"
+                id="ladder-mode-cumulative"
+                onClick={() => handleLadderModeChange('cumulative')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  ladderMode === 'cumulative'
+                    ? 'bg-[var(--accent)] text-white shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Forward chaining
+              </button>
+              <button
+                type="button"
+                id="ladder-mode-exhaustive"
+                onClick={() => handleLadderModeChange('exhaustive')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  ladderMode === 'exhaustive'
+                    ? 'bg-[var(--accent)] text-white shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Exhaustive
+              </button>
+            </div>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Forward chaining (recommended) only re-verifies the growing prefix of a
+            card's parts, so it needs far fewer repetitions once you've combined them
+            once. Exhaustive re-drills every possible combination of parts and is kept
+            only for comparison.
           </p>
         </div>
 

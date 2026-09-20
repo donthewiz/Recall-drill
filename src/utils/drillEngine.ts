@@ -10,6 +10,7 @@ import {
   Trial,
   Feedback,
   Verdict,
+  LadderMode,
 } from '../types';
 
 export function norm(s: string): string {
@@ -231,14 +232,48 @@ export function chunkText(text: string, chunkPercent: number = 35): string[] | n
   return chunks.length > 1 ? chunks : null;
 }
 
-export function buildCombineSequence(n: number): CombineSequenceItem[] {
+// C1: 'exhaustive' is the original ladder (kept verbatim, deliberately -- see
+// LadderMode's doc comment) -- n(n-1)/2 windows, every increasing-size window
+// ending at each position. 'cumulative' (forward chaining, the new default)
+// only re-verifies growing prefixes: 1-2, 1-3, ..., 1-n -- n-1 windows. It
+// skips re-verifying sub-spans the learner already produced correctly inside
+// a longer span; findAllCulpritChunks/remediation is what catches genuine
+// weak spots, and targets better than exhaustive re-verification does.
+export function buildCombineSequence(
+  n: number,
+  mode: LadderMode = 'cumulative'
+): CombineSequenceItem[] {
+  if (mode === 'exhaustive') {
+    const seq: CombineSequenceItem[] = [];
+    for (let e = 2; e <= n; e++) {
+      for (let s = 2; s <= e; s++) {
+        seq.push({ start: e - s + 1, end: e });
+      }
+    }
+    return seq;
+  }
+
   const seq: CombineSequenceItem[] = [];
   for (let e = 2; e <= n; e++) {
-    for (let s = 2; s <= e; s++) {
-      seq.push({ start: e - s + 1, end: e });
-    }
+    seq.push({ start: 1, end: e });
   }
   return seq;
+}
+
+// C1: how many consecutive blind successes a given combine window needs.
+// Only applies under ladderMode 'cumulative' -- 'exhaustive' keeps requiring
+// encodeReps uniformly on every window (see applyAnswer's combine branch),
+// so the trial-count comparison between modes isn't itself muddied by this
+// rule. Intermediate windows (end < n) just need 1: the learner already
+// proved they can produce this growing prefix once, and the FINAL window
+// (end === n, the whole answer) is what needs to be solid, so it alone
+// requires the full encodeReps streak.
+export function requiredRepsForWindow(
+  seqItem: CombineSequenceItem,
+  n: number,
+  encodeReps: number
+): number {
+  return seqItem.end >= n ? encodeReps : 1;
 }
 
 export function splitInHalf(text: string): [string, string] {
@@ -309,7 +344,11 @@ export function slugify(name: string): string {
   return s || 'deck';
 }
 
-export function buildItems(parsed: DeckItem[], chunkPercent: number = 35): DrillItem[] {
+export function buildItems(
+  parsed: DeckItem[],
+  chunkPercent: number = 35,
+  ladderMode: LadderMode = 'cumulative'
+): DrillItem[] {
   return parsed.map((p, i) => {
     const chunks = chunkText(p.back, chunkPercent);
     return {
@@ -322,7 +361,7 @@ export function buildItems(parsed: DeckItem[], chunkPercent: number = 35): Drill
       chunks,
       chunkIndex: 0,
       chunkStreak: 0,
-      combineSeq: chunks ? buildCombineSequence(chunks.length) : null,
+      combineSeq: chunks ? buildCombineSequence(chunks.length, ladderMode) : null,
       combineSeqIdx: 0,
       combineStreak: 0,
       combineMissCount: 0,
@@ -334,7 +373,7 @@ export function buildItems(parsed: DeckItem[], chunkPercent: number = 35): Drill
   });
 }
 
-export function normalizeItem(it: any): DrillItem {
+export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): DrillItem {
   const item: DrillItem = {
     id: it.id,
     front: it.front,
@@ -345,7 +384,7 @@ export function normalizeItem(it: any): DrillItem {
     chunks: it.chunks || null,
     chunkIndex: it.chunkIndex ?? 0,
     chunkStreak: it.chunkStreak ?? 0,
-    combineSeq: it.combineSeq || (it.chunks ? buildCombineSequence(it.chunks.length) : null),
+    combineSeq: it.combineSeq || (it.chunks ? buildCombineSequence(it.chunks.length, ladderMode) : null),
     combineSeqIdx: it.combineSeqIdx ?? 0,
     combineStreak: it.combineStreak ?? 0,
     combineMissCount: it.combineMissCount ?? 0,
@@ -1041,12 +1080,20 @@ export function applyAnswer(
       const gr = grade(typed, combinedTarget, gradeOpts);
       const isOk = gr.verdict !== 'wrong';
       if (gr.verdict === 'near') nextStats.nearMisses++;
+      // C1: 'exhaustive' keeps the original uniform encodeReps-per-window
+      // requirement (so the ladder-mode trial-count comparison stays
+      // apples-to-apples); 'cumulative' needs only 1 on every window except
+      // the final (whole-answer) one.
+      const requiredReps =
+        state.config.ladderMode === 'cumulative'
+          ? requiredRepsForWindow(seqItem, it.chunks.length, state.config.encodeReps)
+          : state.config.encodeReps;
 
       if (isOk) {
         it.combineStreak++;
         if (wasBlind) it.combineMissCount = 0;
 
-        if (it.combineStreak >= state.config.encodeReps) {
+        if (it.combineStreak >= requiredReps) {
           it.combineSeqIdx++;
           it.combineStreak = 0;
           let feedback: Feedback;
@@ -1065,7 +1112,7 @@ export function applyAnswer(
           return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
         const feedback = successFeedback(gr, {
-          text: `${it.combineStreak} of ${state.config.encodeReps} streaks`,
+          text: `${it.combineStreak} of ${requiredReps} streaks`,
           type: 'success',
           dwellKey: 'combine-streak-progress',
         });

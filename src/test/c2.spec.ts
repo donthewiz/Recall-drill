@@ -21,13 +21,13 @@ function freshState(
   chunkDifficulty = 100
 ): SessionState {
   return initSession({
-    items: buildItems([{ front: 'Q', back }], chunkDifficulty),
+    items: buildItems([{ front: 'Q', back }], chunkDifficulty, 'cumulative'),
     phase: 'encode',
     queue: [],
     stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
-    config: { encodeReps, chunkDifficulty, stemTolerance },
+    config: { encodeReps, chunkDifficulty, stemTolerance, ladderMode: 'cumulative' },
   });
 }
 

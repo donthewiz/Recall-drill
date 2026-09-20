@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   DeckItem,
   DrillItem,
+  LadderMode,
   SavedSessionState,
   SessionStats,
   ViewState,
@@ -67,6 +68,15 @@ export default function App() {
     }
     return true;
   });
+  const [ladderMode, setLadderMode] = useState<LadderMode>(() => {
+    try {
+      const saved = localStorage.getItem('recall_drill_ladder_mode');
+      if (saved === 'cumulative' || saved === 'exhaustive') return saved;
+    } catch {
+      // ignore
+    }
+    return 'cumulative';
+  });
 
   // Setup theme listener & class assignment
   useEffect(() => {
@@ -105,10 +115,12 @@ export default function App() {
     name: string,
     reps: number,
     difficultyPct?: number,
-    stemToleranceParam?: boolean
+    stemToleranceParam?: boolean,
+    ladderModeParam?: LadderMode
   ) => {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
-    const items = buildItems(parsed, diff);
+    const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
+    const items = buildItems(parsed, diff, mode);
     const slug = slugify(name);
     recordDeckUsed(slug, name, parsed.length);
     setDeckName(name);
@@ -128,12 +140,16 @@ export default function App() {
     if (stemToleranceParam !== undefined) {
       setStemTolerance(stemToleranceParam);
     }
+    if (ladderModeParam !== undefined) {
+      setLadderMode(ladderModeParam);
+    }
     setView('session');
   };
 
   const handleResumeSession = (state: SavedSessionState) => {
+    const mode = state.ladderMode ?? ladderMode;
     setDeckName(state.deckName);
-    setSessionItems(state.items.map(normalizeItem));
+    setSessionItems(state.items.map(it => normalizeItem(it, mode)));
     setSessionPhase(state.phase);
     setSessionQueue(state.queue || []);
     setSessionStats(state.stats || { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
@@ -143,6 +159,9 @@ export default function App() {
     }
     if (state.stemTolerance !== undefined) {
       setStemTolerance(state.stemTolerance);
+    }
+    if (state.ladderMode !== undefined) {
+      setLadderMode(state.ladderMode);
     }
     setView('session');
   };
@@ -165,6 +184,7 @@ export default function App() {
         encodeReps,
         chunkDifficulty,
         stemTolerance,
+        ladderMode,
         timestamp: Date.now(),
       });
     }
@@ -220,7 +240,8 @@ export default function App() {
     }
     const freshItems = buildItems(
       sessionItems.map(i => ({ front: i.front, back: i.back })),
-      chunkDifficulty
+      chunkDifficulty,
+      ladderMode
     );
     const slug = slugify(deckName);
     clearSessionState(slug);
@@ -264,6 +285,7 @@ export default function App() {
               initialEncodeReps={encodeReps}
               initialChunkDifficulty={chunkDifficulty}
               initialStemTolerance={stemTolerance}
+              initialLadderMode={ladderMode}
               initialIsEditingCards={autoOpenEditor}
               initialFolderId={activeFolderId}
             />
@@ -279,6 +301,7 @@ export default function App() {
               encodeReps={encodeReps}
               chunkDifficulty={chunkDifficulty}
               stemTolerance={stemTolerance}
+              ladderMode={ladderMode}
               onFinishSession={handleFinishSession}
             />
           )}

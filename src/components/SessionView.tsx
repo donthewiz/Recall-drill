@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DrillItem, Feedback, SessionState, SessionStats, Verdict } from '../types';
+import { DrillItem, Feedback, LadderMode, SessionState, SessionStats, Verdict } from '../types';
 import {
   slugify,
   saveSessionState,
@@ -21,6 +21,7 @@ interface SessionViewProps {
   encodeReps: number;
   chunkDifficulty?: number;
   stemTolerance?: boolean;
+  ladderMode?: LadderMode;
   onFinishSession: (items: DrillItem[], stats: SessionStats) => void;
 }
 
@@ -42,6 +43,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   encodeReps,
   chunkDifficulty = 35,
   stemTolerance = true,
+  ladderMode = 'cumulative',
   onFinishSession,
 }) => {
   const [sessionState, setSessionState] = useState<SessionState>(() =>
@@ -52,7 +54,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       stats: initialStats,
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
-      config: { encodeReps, chunkDifficulty, stemTolerance },
+      config: { encodeReps, chunkDifficulty, stemTolerance, ladderMode },
     })
   );
   const [typedValue, setTypedValue] = useState('');
@@ -81,6 +83,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       encodeReps: state.config.encodeReps,
       chunkDifficulty: state.config.chunkDifficulty,
       stemTolerance: state.config.stemTolerance,
+      ladderMode: state.config.ladderMode,
       timestamp: Date.now(),
     });
   };

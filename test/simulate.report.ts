@@ -12,7 +12,7 @@ import {
   SimulationResult,
 } from './simulate';
 
-const config = { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true };
+const config = { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative' as const };
 
 const decks: { name: string; deck: typeof shortDeck }[] = [
   { name: 'shortDeck (12 term/definition cards)', deck: shortDeck },

@@ -104,9 +104,15 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
   describe('two-chunk card: chunks -> combine miss -> remediate -> combine -> ready', () => {
     it('walks the exact (stage,target,streak,status) sequence, correctly attributing the miss to only the culprit chunk (post-B1-fix)', () => {
       const driver = makeDriver();
+      // Pinned to the exhaustive ladder (pre-C1): this scenario's assertions
+      // are written around buildCombineSequence's original n(n-1)/2 window
+      // shape and uniform encodeReps-per-window requirement. C1 (Phase 3)
+      // adds a separate 'cumulative' (forward-chaining) scenario instead of
+      // redesigning this one.
       driver.init([{ front: 'Q2', back: TWO_CHUNK_BACK }], {
         encodeReps: 2,
         chunkDifficulty: CHUNK_DIFFICULTY,
+        ladderMode: 'exhaustive',
       });
 
       let trial = driver.currentTrial()!;
@@ -170,9 +176,13 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
   describe('four-chunk card: post-B1-fix culprit attribution + full remediate branch coverage', () => {
     it('flags only the chunks that actually mismatch, not the whole window (B1 fixed)', () => {
       const driver = makeDriver();
+      // Pinned to the exhaustive ladder for the same reason as the two-chunk
+      // scenario above -- this walkthrough exercises specific windows
+      // (missThreshold 1 and 2) from buildCombineSequence's original shape.
       driver.init([{ front: 'Q3', back: FOUR_CHUNK_BACK }], {
         encodeReps: 1,
         chunkDifficulty: CHUNK_DIFFICULTY,
+        ladderMode: 'exhaustive',
       });
 
       const itemId = driver.currentTrial()!.itemId;

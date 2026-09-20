@@ -3,7 +3,7 @@
 // same runCharacterizationSuite as reference/legacyEngine.ts's driver for the
 // parts of the suite that still apply to both (everything except B2, which
 // LegacyEngine can never satisfy post-fix -- see characterization.engine.spec.ts).
-import { DeckItem, DrillItem, SessionState, SessionStats } from '../../types';
+import { DeckItem, DrillItem, LadderMode, SessionState, SessionStats } from '../../types';
 import {
   buildItems,
   selectTrial,
@@ -24,14 +24,20 @@ export class RealEngineDriver implements EngineDriver {
     stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
-    config: { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true },
+    config: { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative' },
   };
 
   init(
     deck: DeckItem[],
-    config: { encodeReps: number; chunkDifficulty?: number; stemTolerance?: boolean }
+    config: {
+      encodeReps: number;
+      chunkDifficulty?: number;
+      stemTolerance?: boolean;
+      ladderMode?: LadderMode;
+    }
   ): void {
-    const items: DrillItem[] = buildItems(deck, config.chunkDifficulty ?? 35);
+    const mode = config.ladderMode ?? 'cumulative';
+    const items: DrillItem[] = buildItems(deck, config.chunkDifficulty ?? 35, mode);
     this.state = initSession({
       items,
       phase: 'encode',
@@ -43,6 +49,7 @@ export class RealEngineDriver implements EngineDriver {
         encodeReps: config.encodeReps,
         chunkDifficulty: config.chunkDifficulty ?? 35,
         stemTolerance: config.stemTolerance ?? true,
+        ladderMode: mode,
       },
     });
   }
