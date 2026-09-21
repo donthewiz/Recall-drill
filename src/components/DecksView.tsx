@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SavedDeckEntry,
   DeckItem,
@@ -22,6 +22,17 @@ import {
   getAllCardsInFolderTree,
 } from '../utils/drillEngine';
 import {
+  BackupPayload,
+  PersistenceStatus,
+  exportAllDecks,
+  triggerBackupDownload,
+  getLastExportDate,
+  daysSince,
+  EXPORT_STALE_DAYS,
+  validateBackupPayload,
+  importBackupPayload,
+} from '../utils/backup';
+import {
   FolderOpen,
   Folder,
   FolderPlus,
@@ -44,6 +55,12 @@ import {
   GripVertical,
   CheckSquare,
   Square,
+  Download,
+  Upload,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldQuestion,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface DecksViewProps {
@@ -51,6 +68,7 @@ interface DecksViewProps {
   onQuickStartDeck: (deckName: string, items: DeckItem[]) => void;
   onCreateNewDeck: (folderId?: string | null) => void;
   onPracticeFolder?: (folderName: string, items: DeckItem[]) => void;
+  storagePersistStatus?: PersistenceStatus;
 }
 
 export const DecksView: React.FC<DecksViewProps> = ({
@@ -58,6 +76,7 @@ export const DecksView: React.FC<DecksViewProps> = ({
   onQuickStartDeck,
   onCreateNewDeck,
   onPracticeFolder,
+  storagePersistStatus = 'checking',
 }) => {
   const [folders, setFolders] = useState<DeckFolder[]>([]);
   const [savedDecks, setSavedDecks] = useState<SavedDeckEntry[]>([]);
@@ -91,11 +110,18 @@ export const DecksView: React.FC<DecksViewProps> = ({
   const [showNewFolderInMove, setShowNewFolderInMove] = useState(false);
   const [newFolderInMoveInput, setNewFolderInMoveInput] = useState('');
 
+  // Backup / restore state
+  const [lastExportAt, setLastExportAt] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<BackupPayload | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
   const refreshData = () => {
     const idx = loadDeckIndex();
     const flds = loadFolderIndex();
     setSavedDecks(idx);
     setFolders(flds);
+    setLastExportAt(getLastExportDate());
   };
 
   useEffect(() => {
@@ -337,6 +363,57 @@ export const DecksView: React.FC<DecksViewProps> = ({
     showToast(`Created folder "${created.name}"`);
   };
 
+  // Export / Import handlers
+  const handleExportAllDecks = () => {
+    const payload = exportAllDecks();
+    triggerBackupDownload(payload);
+    refreshData();
+    showToast(`Exported ${payload.decks.length} deck${payload.decks.length === 1 ? '' : 's'}`);
+  };
+
+  const handleImportButtonClick = () => {
+    importFileInputRef.current?.click();
+  };
+
+  const handleImportFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const result = validateBackupPayload(parsed);
+        if (!result.valid) {
+          setImportError(result.error || 'This file could not be imported.');
+          return;
+        }
+        setImportError(null);
+        setPendingImport(parsed as BackupPayload);
+      } catch {
+        setImportError('This file is not valid JSON.');
+      }
+    };
+    reader.onerror = () => setImportError('Could not read that file.');
+    reader.readAsText(file);
+  };
+
+  const handleConfirmImport = (mode: 'merge' | 'replace') => {
+    if (!pendingImport) return;
+    const summary = importBackupPayload(pendingImport, mode);
+    refreshData();
+    setPendingImport(null);
+    const parts = [`Imported ${summary.decksImported} deck${summary.decksImported === 1 ? '' : 's'}`];
+    if (summary.decksSkipped > 0) {
+      parts.push(`skipped ${summary.decksSkipped} already present`);
+    }
+    showToast(parts.join(', '));
+  };
+
+  const exportIsStale =
+    savedDecks.length > 0 && (!lastExportAt || daysSince(lastExportAt) > EXPORT_STALE_DAYS);
+
   // Calculations for current level
   const currentFolder = currentFolderId ? folders.find(f => f.id === currentFolderId) : null;
   const breadcrumbs = getFolderPath(currentFolderId, folders);
@@ -397,6 +474,23 @@ export const DecksView: React.FC<DecksViewProps> = ({
           <button
             type="button"
             onClick={() => setToastMessage(null)}
+            className="p-1 hover:opacity-80 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Import error notification */}
+      {importError && (
+        <div className="flex items-center justify-between p-3 px-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold shadow-xs animate-in fade-in duration-150">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={15} />
+            <span>{importError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setImportError(null)}
             className="p-1 hover:opacity-80 cursor-pointer"
           >
             <X size={14} />
@@ -560,6 +654,96 @@ export const DecksView: React.FC<DecksViewProps> = ({
               <Plus size={15} strokeWidth={2.5} />
               <span>{currentFolder ? 'Add Deck Here' : 'Create Deck'}</span>
             </button>
+          </div>
+        </div>
+
+        {/* Storage & Backup Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-3.5 border-t border-[var(--border)]/70 text-xs">
+          <div className="flex items-center gap-2 flex-wrap text-[var(--text-secondary)]">
+            <span
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold ${
+                storagePersistStatus === 'protected'
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                  : storagePersistStatus === 'not-protected'
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25'
+                  : 'bg-[var(--surface-1)] text-[var(--text-muted)] border-[var(--border)]'
+              }`}
+              title={
+                storagePersistStatus === 'protected'
+                  ? "The browser granted persistent storage -- your decks are protected from automatic eviction under storage pressure."
+                  : storagePersistStatus === 'not-protected'
+                  ? 'The browser did not grant persistent storage. Decks could be evicted under storage pressure -- export a backup periodically.'
+                  : storagePersistStatus === 'checking'
+                  ? 'Checking storage persistence...'
+                  : "This browser doesn't support the Storage API -- persistence status is unknown."
+              }
+            >
+              {storagePersistStatus === 'protected' ? (
+                <ShieldCheck size={13} />
+              ) : storagePersistStatus === 'not-protected' ? (
+                <ShieldAlert size={13} />
+              ) : (
+                <ShieldQuestion size={13} />
+              )}
+              <span>
+                Storage:{' '}
+                {storagePersistStatus === 'protected'
+                  ? 'protected'
+                  : storagePersistStatus === 'not-protected'
+                  ? 'not protected'
+                  : storagePersistStatus === 'checking'
+                  ? 'checking…'
+                  : 'unsupported'}
+              </span>
+            </span>
+
+            {savedDecks.length > 0 && (
+              <span
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium ${
+                  exportIsStale
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25'
+                    : 'bg-[var(--surface-1)] text-[var(--text-muted)] border-[var(--border)]'
+                }`}
+              >
+                {exportIsStale && <AlertTriangle size={13} />}
+                <span>
+                  {lastExportAt
+                    ? `Last backup: ${new Date(lastExportAt).toLocaleDateString()}${
+                        exportIsStale ? ` (${Math.floor(daysSince(lastExportAt))}d ago — back up soon)` : ''
+                      }`
+                    : "You haven't exported a backup yet"}
+                </span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleExportAllDecks}
+              disabled={savedDecks.length === 0}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-2)] hover:bg-[var(--surface-1)] text-[var(--text-primary)] font-semibold text-xs border border-[var(--border)] hover:border-[var(--accent)]/50 shadow-xs transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Download a JSON backup of every deck and folder"
+            >
+              <Download size={14} className="text-[var(--accent)]" />
+              <span>Export all decks</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleImportButtonClick}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-2)] hover:bg-[var(--surface-1)] text-[var(--text-primary)] font-semibold text-xs border border-[var(--border)] hover:border-[var(--accent)]/50 shadow-xs transition-all cursor-pointer active:scale-[0.98]"
+              title="Restore decks from a previously exported backup file"
+            >
+              <Upload size={14} className="text-[var(--accent)]" />
+              <span>Import decks</span>
+            </button>
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleImportFileSelected}
+              className="hidden"
+            />
           </div>
         </div>
       </div>
@@ -1473,6 +1657,70 @@ export const DecksView: React.FC<DecksViewProps> = ({
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT BACKUP CONFIRMATION MODAL */}
+      {pendingImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Upload size={18} className="text-[var(--accent)]" />
+                <h3 className="text-base font-bold text-[var(--text-primary)]">Import Backup</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingImport(null)}
+                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-[var(--text-secondary)]">
+              This file contains <strong>{pendingImport.decks.length}</strong>{' '}
+              deck{pendingImport.decks.length === 1 ? '' : 's'} and{' '}
+              <strong>{pendingImport.folders.length}</strong>{' '}
+              folder{pendingImport.folders.length === 1 ? '' : 's'}, exported{' '}
+              {new Date(pendingImport.exportedAt).toLocaleString()}. Choose how to bring it in:
+            </p>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => handleConfirmImport('merge')}
+                className="w-full text-left px-4 py-3 rounded-xl border border-[var(--border)] hover:border-[var(--accent)] bg-[var(--surface-1)] transition-all cursor-pointer"
+              >
+                <span className="block text-sm font-bold text-[var(--text-primary)]">Merge</span>
+                <span className="block text-[11px] text-[var(--text-secondary)] mt-0.5">
+                  Add decks and folders from this file that you don&apos;t already have (matched by slug).
+                  Nothing existing is changed or removed.
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmImport('replace')}
+                className="w-full text-left px-4 py-3 rounded-xl border border-red-500/30 hover:border-red-500 bg-red-500/5 transition-all cursor-pointer"
+              >
+                <span className="block text-sm font-bold text-red-600 dark:text-red-400">Replace everything</span>
+                <span className="block text-[11px] text-[var(--text-secondary)] mt-0.5">
+                  Permanently deletes all of your current decks and folders, then restores exactly what&apos;s in
+                  this file.
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingImport(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

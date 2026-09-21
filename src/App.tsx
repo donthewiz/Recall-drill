@@ -17,6 +17,7 @@ import {
   recordDeckUsed,
   resolveBatchConfig,
 } from './utils/drillEngine';
+import { requestPersistentStorage, PersistenceStatus } from './utils/backup';
 import { Header } from './components/Header';
 import { SetupView } from './components/SetupView';
 import { DecksView } from './components/DecksView';
@@ -28,6 +29,7 @@ export default function App() {
   const [view, setView] = useState<ViewState>('setup');
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [storagePersistStatus, setStoragePersistStatus] = useState<PersistenceStatus>('checking');
 
   // Active session and editor parameters
   const [deckName, setDeckName] = useState<string>('');
@@ -98,6 +100,12 @@ export default function App() {
     }
     return 'cumulative';
   });
+
+  // Request persistent storage once on app load so the browser is less
+  // likely to evict decks under storage pressure.
+  useEffect(() => {
+    requestPersistentStorage().then(setStoragePersistStatus);
+  }, []);
 
   // Setup theme listener & class assignment
   useEffect(() => {
@@ -329,6 +337,7 @@ export default function App() {
               onQuickStartDeck={handleQuickStartFromLibrary}
               onCreateNewDeck={handleCreateNewDeckFromLibrary}
               onPracticeFolder={handlePracticeFolder}
+              storagePersistStatus={storagePersistStatus}
             />
           )}
 
