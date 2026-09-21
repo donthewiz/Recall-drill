@@ -123,11 +123,15 @@ function getRepsLabel(reps: number): string {
   return `${reps} Reps • Mastery`;
 }
 
+// C8a: individual chunks no longer scale with this setting -- every chunk
+// always needs exactly one cued attempt and one blind success, regardless
+// of encodeReps. This slider now only paces the final full-combination
+// check and short (unchunked) cards.
 function getRepsDescription(reps: number): string {
-  if (reps === 1) return '1 blind completion per chunk (quick practice & warmup)';
-  if (reps === 2) return '2 consecutive blind completions before advancing';
-  if (reps === 3) return 'Standard 3 consecutive blind completions (recommended for retention)';
-  return `${reps} consecutive blind completions for rock-solid memory locks`;
+  if (reps === 1) return '1 blind completion for the full combination or a short card (each chunk still gets one warmup + one blind rep)';
+  if (reps === 2) return '2 consecutive blind completions before the full combination is done';
+  if (reps === 3) return 'Standard 3 consecutive blind completions for the full combination (recommended for retention)';
+  return `${reps} consecutive blind completions on the full combination for rock-solid memory locks`;
 }
 
 function getDifficultyDescription(pct: number, avgWords: number): string {
@@ -721,7 +725,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label htmlFor="encode-reps-slider" className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[var(--warning)]" />
-              <span>Blind typings required to encode each chunk/card:</span>
+              <span>Blind typings required for the full combination &amp; short cards:</span>
               <span className="text-[11px] text-[var(--text-muted)] hidden sm:inline">
                 • consecutive blind completions
               </span>

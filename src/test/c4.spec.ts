@@ -55,6 +55,24 @@ describe('computeItemProgress', () => {
     expect(twoChunksDone).toBeLessThan(0.7);
   });
 
+  it('encoding: chunk progress is independent of encodeReps (C8a fixed the chunk criterion at 1 cued + 1 blind)', () => {
+    // Regression test: computeItemProgress used to divide chunkStreak by
+    // encodeReps, which was only coincidentally correct at encodeReps=2 (the
+    // value every other test in this file happens to use) -- at any other
+    // encodeReps, chunkStreak=1 (the cued success, halfway through a chunk
+    // under C8a) must always read as exactly half a chunk's worth of
+    // progress, never 1/encodeReps.
+    const [item] = buildItems([{ front: 'Q', back: FOUR_CHUNK_BACK }], CHUNK_DIFFICULTY);
+    const halfwayThroughChunk0 = { ...item, status: 'encoding' as const, chunkStreak: 1 };
+
+    const at1 = computeItemProgress(halfwayThroughChunk0, 1);
+    const at2 = computeItemProgress(halfwayThroughChunk0, 2);
+    const at5 = computeItemProgress(halfwayThroughChunk0, 5);
+
+    expect(at1).toBe(at2);
+    expect(at2).toBe(at5);
+  });
+
   it('encoding: combine-stage progress picks up where the chunks left off (all chunks pre-credited)', () => {
     const [item] = buildItems([{ front: 'Q', back: FOUR_CHUNK_BACK }], CHUNK_DIFFICULTY);
     const justFinishedChunks = { ...item, status: 'encoding' as const, chunkIndex: 4, chunkStreak: 0 };

@@ -3,6 +3,12 @@
 //   buildCombineSequence(6, 'exhaustive').length === 15
 // plus an end-to-end trial-count check matching the doc's own worked example
 // (4-chunk answer, encodeReps=3: 12 chunk + (1+1+3) combine + 2 cycle = 19).
+//
+// C8a (Phase 8) changed the chunks-stage figure in that worked example: a
+// chunk now always needs exactly 1 cued + 1 blind correct answer (2 total),
+// never encodeReps-many, so it's 4 chunks x 2 = 8, not 4 x 3 = 12. The
+// combine/cycle math this file also checks is untouched by C8a -- see the
+// updated end-to-end test below for the new total.
 import { describe, expect, it } from 'vitest';
 import {
   applyAnswer,
@@ -47,17 +53,19 @@ describe('requiredRepsForWindow', () => {
   });
 });
 
-function walkChunksToCombine(state: SessionState, chunks: string[], encodeReps: number): SessionState {
+// C8a: every chunk needs exactly one cued (attempt 0) correct answer plus
+// one blind correct answer to advance, regardless of encodeReps -- so this
+// helper always answers each chunk twice rather than encodeReps-many times.
+function walkChunksToCombine(state: SessionState, chunks: string[]): SessionState {
   for (const chunk of chunks) {
-    for (let i = 0; i < encodeReps; i++) {
-      state = applyAnswer(state, chunk, { revealed: false }).state;
-    }
+    state = applyAnswer(state, chunk, { revealed: false }).state; // cued
+    state = applyAnswer(state, chunk, { revealed: false }).state; // blind
   }
   return state;
 }
 
 describe('C1 end-to-end: cumulative ladder matches the doc\'s worked trial count', () => {
-  it('4-chunk answer, encodeReps=3: 12 chunk + (1+1+3) combine + 2 cycle = 19 trials, 0 misses', () => {
+  it('4-chunk answer, encodeReps=3: 8 chunk (C8a) + (1+1+3) combine + 2 cycle = 15 trials, 0 misses', () => {
     let state: SessionState = initSession({
       items: buildItems([{ front: 'Q', back: FOUR_CHUNK_BACK }], CHUNK_DIFFICULTY, 'cumulative'),
       phase: 'encode',
@@ -69,8 +77,8 @@ describe('C1 end-to-end: cumulative ladder matches the doc\'s worked trial count
       config: { encodeReps: 3, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
-    // 4 chunks x 3 reps = 12 trials.
-    state = walkChunksToCombine(state, FOUR_CHUNK_CHUNKS, 3);
+    // C8a: 4 chunks x 2 (1 cued + 1 blind, regardless of encodeReps) = 8 trials.
+    state = walkChunksToCombine(state, FOUR_CHUNK_CHUNKS);
     let item = state.items.find(i => i.id === state.currentId)!;
     expect(item.stage).toBe('combine');
     expect(item.combineSeq).toEqual([
@@ -102,7 +110,7 @@ describe('C1 end-to-end: cumulative ladder matches the doc\'s worked trial count
     state = applyNext(state);
     state = applyAnswer(state, FOUR_CHUNK_BACK, { revealed: false }).state;
 
-    expect(state.stats).toEqual({ attempts: 19, misses: 0, nearMisses: 0, overrides: 0 });
+    expect(state.stats).toEqual({ attempts: 15, misses: 0, nearMisses: 0, overrides: 0 });
     const finalItem = state.items[0];
     expect(finalItem.status).toBe('mastered');
   });
@@ -121,10 +129,10 @@ describe('C1 remediation still works correctly under the cumulative ladder', () 
       config: { encodeReps: 1, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
-    // encodeReps=1: each chunk/window needs only 1 rep, except the final
-    // combine window which (per requiredRepsForWindow) also needs just 1
-    // here since encodeReps itself is 1.
-    state = walkChunksToCombine(state, FOUR_CHUNK_CHUNKS, 1);
+    // C8a: chunks always need 1 cued + 1 blind regardless of encodeReps.
+    // Combine windows still follow requiredRepsForWindow -- at encodeReps=1
+    // every window (including the final one) needs just 1 rep here.
+    state = walkChunksToCombine(state, FOUR_CHUNK_CHUNKS);
     // Walk the two intermediate cumulative windows correctly.
     state = applyAnswer(state, [FOUR_CHUNK_CHUNKS[0], FOUR_CHUNK_CHUNKS[1]].join(' '), {
       revealed: false,

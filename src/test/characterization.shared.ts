@@ -31,20 +31,29 @@
 // no-op outside the cycle phase (see engineDriver.ts), so calling it
 // unconditionally is safe for both drivers.
 //
+// Phase 8 (C8a) changed the chunks stage's advance criterion from
+// "chunkStreak reaches encodeReps" to "one correct answer at cue level
+// 'none'", independent of encodeReps -- so the "four-chunk card" scenario
+// (encodeReps: 1, where old and new chunk-stage trial counts genuinely
+// diverge: 1 correct answer per chunk under the old rule, always 2 under
+// the new one) can no longer run identically against both drivers.
+// LegacyEngine is a frozen pre-C8a snapshot and will never satisfy the new
+// rule. That scenario's two variants now live separately: the original,
+// verbatim, in characterization.legacy.spec.ts (proving LegacyEngine's old
+// behavior is undisturbed), and a C8a-aware version in
+// characterization.engine.spec.ts (same remediation/B1 coverage, updated
+// chunk-walk). The "two-chunk card" scenario below stays here unmodified --
+// it uses encodeReps: 2, where the old and new chunk criteria happen to
+// require the same 2 trials per chunk, so it's still valid against both
+// drivers.
+//
 // Out of scope for this suite:
 //   - B5 (unguarded double-Enter race) -- a timing/re-entrancy issue that needs
 //     a DOM-level harness to observe meaningfully; not characterized here.
 //   - App.tsx's handleFinishSession stale-persist quirk -- lives outside the
 //     extraction target (SessionView/drillEngine), not covered here.
 import { describe, it, expect } from 'vitest';
-import {
-  FULL_STAGE_BACK,
-  TWO_CHUNK_BACK,
-  TWO_CHUNK_CHUNKS,
-  FOUR_CHUNK_BACK,
-  FOUR_CHUNK_CHUNKS,
-  CHUNK_DIFFICULTY,
-} from './fixtures/deck';
+import { FULL_STAGE_BACK, TWO_CHUNK_BACK, TWO_CHUNK_CHUNKS, CHUNK_DIFFICULTY } from './fixtures/deck';
 import type { DriverAnswerResult, EngineDriver } from './reference/legacyEngine';
 
 function expectWrong(driver: EngineDriver, res: DriverAnswerResult): void {
@@ -187,128 +196,6 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       expect(driver.snapshotItem(itemId)).toMatchObject({ status: 'ready' });
       trial = driver.currentTrial()!;
       expect(trial).toEqual({ itemId, stage: 'cycle', target: TWO_CHUNK_BACK, isBlind: true });
-    });
-  });
-
-  describe('four-chunk card: post-B1-fix culprit attribution + full remediate branch coverage', () => {
-    it('flags only the chunks that actually mismatch, not the whole window (B1 fixed)', () => {
-      const driver = makeDriver();
-      // Pinned to the exhaustive ladder for the same reason as the two-chunk
-      // scenario above -- this walkthrough exercises specific windows
-      // (missThreshold 1 and 2) from buildCombineSequence's original shape.
-      driver.init([{ front: 'Q3', back: FOUR_CHUNK_BACK }], {
-        encodeReps: 1,
-        chunkDifficulty: CHUNK_DIFFICULTY,
-        ladderMode: 'exhaustive',
-      });
-
-      const itemId = driver.currentTrial()!.itemId;
-
-      // Walk all 4 chunks (encodeReps=1 -> each correct answer advances immediately).
-      for (const chunk of FOUR_CHUNK_CHUNKS) {
-        expect(driver.currentTrial()).toEqual({ itemId, stage: 'chunks', target: chunk, isBlind: false });
-        driver.answer(chunk);
-      }
-      expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineSeqIdx: 0 });
-
-      // buildCombineSequence(4) = [{1,2},{2,3},{1,3},{3,4},{2,4},{1,4}] (6 windows).
-      // Walk the first 5 correctly to reach the final {1,4} full-answer window.
-      const windows = [
-        [FOUR_CHUNK_CHUNKS[0], FOUR_CHUNK_CHUNKS[1]].join(' '),
-        [FOUR_CHUNK_CHUNKS[1], FOUR_CHUNK_CHUNKS[2]].join(' '),
-        [FOUR_CHUNK_CHUNKS[0], FOUR_CHUNK_CHUNKS[1], FOUR_CHUNK_CHUNKS[2]].join(' '),
-        [FOUR_CHUNK_CHUNKS[2], FOUR_CHUNK_CHUNKS[3]].join(' '),
-        [FOUR_CHUNK_CHUNKS[1], FOUR_CHUNK_CHUNKS[2], FOUR_CHUNK_CHUNKS[3]].join(' '),
-      ];
-      for (const w of windows) {
-        expect(driver.currentTrial()!.target).toBe(w);
-        driver.answer(w);
-      }
-      expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineSeqIdx: 5 });
-      expect(driver.currentTrial()).toEqual({
-        itemId,
-        stage: 'combine',
-        target: FOUR_CHUNK_BACK,
-        isBlind: false,
-      });
-
-      // Drop "green" (from chunk 0) and "near" (from chunk 2), leaving chunks
-      // 1 and 3 typed correctly. windowChunkCount=4 -> missThreshold=2, so it
-      // takes two identical misses to trigger remediation.
-      const dropped = 'large trees grow slowly the quiet river';
-      let res = driver.answer(dropped);
-      expectWrong(driver, res);
-      expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineMissCount: 1 });
-
-      res = driver.answer(dropped);
-      expectWrong(driver, res);
-      // Post-B1-fix: the LCS alignment correctly flags only chunks 0 and 2
-      // (the ones with an actually-missing word) -- chunks 1 and 3, which
-      // were typed correctly, are NOT flagged.
-      expect(driver.snapshotItem(itemId)).toMatchObject({
-        stage: 'remediate',
-        remediateStackLen: 1,
-        remediateQueueLen: 1,
-      });
-      expect(driver.currentTrial()).toEqual({
-        itemId,
-        stage: 'remediate',
-        target: FOUR_CHUNK_CHUNKS[0],
-        isBlind: false,
-      });
-
-      // Miss the first remediate spot twice with unrelated text -> deeper
-      // split via splitInHalf/culpritHalf (rWordCount=2 > 1).
-      expectWrong(driver, driver.answer('zzz'));
-      res = driver.answer('zzz');
-      expectWrong(driver, res);
-      expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 2 });
-      expect(driver.currentTrial()).toEqual({
-        itemId,
-        stage: 'remediate',
-        target: 'large',
-        isBlind: false,
-      });
-
-      // Solve the deeper 1-word level -> pops back to the 2-word parent,
-      // which resets to non-blind ("expanding to parent" branch).
-      driver.answer('large');
-      expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 1 });
-      expect(driver.currentTrial()).toEqual({
-        itemId,
-        stage: 'remediate',
-        target: FOUR_CHUNK_CHUNKS[0],
-        isBlind: false,
-      });
-
-      // Solve the parent (chunk 0 fully reinforced) -> stack empties -> shifts
-      // the one remaining queued spot (chunk 2, the other genuine culprit) in.
-      driver.answer(FOUR_CHUNK_CHUNKS[0]);
-      expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 1, remediateQueueLen: 0 });
-      expect(driver.currentTrial()!.target).toBe(FOUR_CHUNK_CHUNKS[2]);
-
-      // Drain the last queued spot.
-      driver.answer(FOUR_CHUNK_CHUNKS[2]);
-
-      // Queue now empty -> resumes combine at the window that originally failed.
-      expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineSeqIdx: 5, remediateStackLen: 0 });
-      expect(driver.currentTrial()).toEqual({
-        itemId,
-        stage: 'combine',
-        target: FOUR_CHUNK_BACK,
-        isBlind: false,
-      });
-
-      // Finally pass the window for real -> status 'ready' -> only item ->
-      // auto-advances to cycle.
-      driver.answer(FOUR_CHUNK_BACK);
-      expect(driver.snapshotItem(itemId)).toMatchObject({ status: 'ready' });
-      expect(driver.currentTrial()).toEqual({
-        itemId,
-        stage: 'cycle',
-        target: FOUR_CHUNK_BACK,
-        isBlind: true,
-      });
     });
   });
 

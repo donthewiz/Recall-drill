@@ -477,6 +477,17 @@ export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): D
     item.chunkStreak = 0;
   }
 
+  // C8a: chunkStreak's valid range for stage 'chunks' shrank to {0, 1} -- a
+  // blind success now always advances chunkIndex and resets it immediately,
+  // so it never legitimately grows past 1 anymore. A save from before C8a
+  // can have chunkStreak up to encodeReps-1 for an item stopped mid-chunk;
+  // clamp it down to 1 (interpreted as "already past the cued attempt, one
+  // blind success away") rather than leave a magnitude the new comparison
+  // (`chunkStreak === 0`) never produced on its own.
+  if (item.stage === 'chunks' && item.chunkStreak > 1) {
+    item.chunkStreak = 1;
+  }
+
   return item;
 }
 
@@ -906,8 +917,18 @@ export const SESSION_COMPLETE_ID = -1;
 // in the table rather than deleted: still meaningful as "how long this
 // feedback would have shown" documentation, and DWELL_MS is a plain lookup
 // table, not something worth special-casing per advance mode.
+// 'chunks-cued-advance' is new in C8a: the chunks stage's cued (attempt 0)
+// success now always just moves to the blind attempt rather than
+// potentially advancing the chunk outright, so it needed its own key
+// distinct from 'chunks-advance' (which now only ever fires on the single
+// blind success that actually completes a chunk). 'chunks-streak-progress'
+// is dead as of C8a for the same reason B2's six keys are dead -- chunks no
+// longer has a "still accumulating, not there yet" state to show it in
+// (chunkStreak only ever holds 0 or 1) -- left in the table for the same
+// documentation reason.
 export const DWELL_MS: Record<string, number> = {
   'chunks-advance': 700,
+  'chunks-cued-advance': 500,
   'chunks-streak-progress': 500,
   'chunks-miss': 2200,
   'combine-ready': 600,
@@ -1089,7 +1110,11 @@ export function computeItemProgress(item: DrillItem, encodeReps: number): number
 
   let completedUnits: number;
   if (item.stage === 'chunks') {
-    const streakFrac = encodeReps > 0 ? clamp01(item.chunkStreak / encodeReps) : 0;
+    // C8a: a chunk always needs exactly 1 cued + 1 blind correct answer
+    // (chunkStreak only ever holds 0 or 1), independent of encodeReps --
+    // so unlike combine/full below, this fraction's denominator is a fixed
+    // 2, not encodeReps.
+    const streakFrac = clamp01(item.chunkStreak / 2);
     completedUnits = item.chunkIndex + streakFrac;
   } else if (item.stage === 'combine') {
     const streakFrac = encodeReps > 0 ? clamp01(item.combineStreak / encodeReps) : 0;
@@ -1295,8 +1320,16 @@ export function applyAnswer(
       if (gr.verdict === 'near') nextStats.nearMisses++;
 
       if (isOk) {
+        // C8a: the chunks stage's advance criterion is "one correct answer
+        // at cue level 'none'" -- encodeReps no longer paces it (unlike
+        // combine's final window and the full stage, which still use it).
+        // wasCued (chunkStreak === 0 before this answer, i.e. cue was
+        // 'firstLetter') means this correct answer only moves the chunk
+        // from cued to blind; it does not advance chunkIndex by itself, no
+        // matter what encodeReps is set to.
+        const wasCued = it.chunkStreak === 0;
         it.chunkStreak++;
-        if (it.chunkStreak >= state.config.encodeReps) {
+        if (!wasCued) {
           it.chunkIndex++;
           it.chunkStreak = 0;
           let feedback: Feedback;
@@ -1321,9 +1354,9 @@ export function applyAnswer(
           return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
         const feedback = successFeedback(gr, {
-          text: `${it.chunkStreak} of ${state.config.encodeReps} streaks`,
+          text: 'Got it — now try it from memory',
           type: 'success',
-          dwellKey: 'chunks-streak-progress',
+          dwellKey: 'chunks-cued-advance',
         });
         newItems[itIdx] = it;
         return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
