@@ -272,6 +272,100 @@ Do not spend time here until C1–C6 are merged and verified.
 
 ---
 
+### C8 — chunk-stage criterion
+
+**Why:** the chunks stage was never touched by C1–C5 and is now the largest
+single cost in a prose deck's trial count (~60% of `proseDeck`'s trials,
+per `docs/BASELINE.md`). Each chunk needs `encodeReps` consecutive correct
+answers, and then every chunk is re-tested again inside every combine
+window that includes it, and *again* in the cycle phase once the item is
+ready — the same word sequence drilled to the same criterion three separate
+times. Where a chunk is a genuine weak spot, the combine stage already
+catches it (a combine miss triggers remediation, which drills exactly the
+culprit chunk) — that's error-driven allocation, which is what the
+remediation system is for. Paying the full `encodeReps` cost *again* at the
+chunk level, before combine or cycle ever get a chance to test it, is
+redundant repetition, not learning.
+
+Split into two independently measurable parts so the Part 4 harness can
+show each one's effect before the next lands.
+
+---
+
+### C8a — chunks stage advances on one blind success
+
+**Mechanics:**
+
+- The chunks stage's advance criterion changes from "`chunkStreak` reaches
+  `encodeReps`" to "one correct answer at cue level `'none'`" (fully
+  blind). A correct answer at cue level `'firstLetter'` (attempt 0) still
+  happens and still moves the chunk from cued to blind, but it does **not**
+  advance `chunkIndex` by itself.
+- `encodeReps` no longer paces the chunks stage at all — including at
+  `encodeReps: 1`, where a chunk previously advanced on the very first
+  (cued) correct answer. After C8a every chunk needs its cued attempt
+  *and* one blind success, regardless of the `encodeReps` setting.
+- `encodeReps` continues to govern exactly what it governed before this
+  change for every other stage: the **final** combine window (intermediate
+  windows already only need 1 rep under the cumulative ladder, per C1) and
+  the `full` stage (short, unchunked answers). Remediation's own
+  `encodeReps` threshold is untouched — it isn't part of the chunks-stage
+  triple-count this change targets.
+- A miss on the blind attempt resets `chunkStreak` to 0 (back to the cued
+  attempt), unchanged from today.
+- Update `SetupView`'s reps-slider caption: it currently reads "Blind
+  typings required to encode each chunk/card" and describes e.g. "3
+  consecutive blind completions" — that's no longer true of chunks, only of
+  the final combination and short (`full`-stage) cards.
+- **Migration:** `chunkStreak`'s valid range for stage `'chunks'` shrinks
+  to `{0, 1}` (a blind success always advances and resets it immediately
+  now, so it never legitimately grows past 1). A save from before C8a can
+  have a `chunkStreak` up to `encodeReps - 1` for an item mid-chunks-stage;
+  `normalizeItem` should clamp any such value down to 1 on load
+  (interpreted as "already past the cued attempt, one blind success away").
+
+**Acceptance:** for any `encodeReps` value, a chunk needs exactly one
+correct cued (`'firstLetter'`) answer followed by exactly one correct blind
+(`'none'`) answer to advance — never fewer, never more, and never
+`encodeReps`-many. Combine's final window and the `full` stage are
+unaffected. Re-run the Part 4 harness and report the table before moving to
+C8b — if chunk trials don't drop, stop and report rather than proceeding.
+
+---
+
+### C8b — presentation trial replaces the cued chunk attempt
+
+**Mechanics:**
+
+- Add `{ kind: 'present' }` to the `Cue` union (`types.ts`). It carries no
+  payload — the text to show is `Trial.target`, same as every other cue.
+- The chunks stage's attempt 0 (`chunkStreak === 0`) becomes a
+  presentation, not a graded typing attempt: `selectTrial` returns
+  `cue: { kind: 'present' }` instead of `firstLetter`. The chunk's full
+  text is shown, no input is accepted, and the learner presses Enter (or a
+  "Continue" button) to move on — there is nothing to grade.
+- `applyAnswer` handles a presentation trial as a distinct path, short of
+  the normal grade-and-branch chunks logic: it advances `chunkStreak` from
+  0 to 1 unconditionally, does **not** call `grade()`, and does **not**
+  increment `stats.attempts` (nothing was attempted) or `stats.misses`
+  (nothing can be wrong). It returns a new `'presented'` verdict so the
+  shell can render it distinctly from a graded `'exact'`.
+- Attempt 1 (`chunkStreak === 1`, cue `'none'`) is unchanged from C8a: the
+  first — and only — typed, graded, blind attempt.
+- In `test/simulate.ts`'s harness, a presentation trial still counts as one
+  trial (`totalTrials`, `trialsByStage`) so it's represented in the
+  wall-clock estimate (reading time isn't free), but contributes 0 to
+  `keystrokes` (nothing is typed).
+
+**Acceptance:** the chunks stage never shows a graded typing attempt with
+the full answer already visible (the old `firstLetter` cue is gone from
+chunks entirely) — attempt 0 is a pure read, attempt 1 is the first real
+retrieval attempt. A presentation trial never appears in `stats.attempts`,
+`stats.misses`, or a diff. Re-run the Part 4 harness and report the table
+again.
+
+---
+
 ## Part 3 — Method: how to execute this
 
 **This sequencing is the most important instruction in the document.**
@@ -330,6 +424,12 @@ These three are the trial-count reductions and they compound. Do them in this or
 Batching changes the shape of `SessionState`; progress display depends on it.
 
 ### ~~Phase 7 — C6 (export), then C7 (MC) if time allows.~~ (DROPPED 2026-09-20 — see C6/C7 in Part 2)
+
+### Phase 8 — C8a (chunk-stage criterion, part 1) → Phase 9 — C8b (presentation trial, part 2)
+
+Two independently measurable parts, per C8's own acceptance criteria — stop
+and re-run the Part 4 harness after C8a before starting C8b, not just at
+the end of both.
 
 **Commit per phase.** Each commit: passing tests, a one-line trial-count delta from the Part 4 harness in the message.
 
