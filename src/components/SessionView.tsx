@@ -164,12 +164,17 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // C5: cue-driven display replaces the old streak-derived isBlind toggle
   // between "show nothing" and "show the full target" (copy-typing).
   // Revealing (Esc / Show Answer) always wins regardless of cue level.
+  // C8b: 'present' shows the full target too, but ungraded -- no input is
+  // accepted, and there's nothing to reveal (it's already fully shown).
   let subText = '';
   let placeholderText = '';
   if (trial) {
     if (userRevealedAnswer) {
       subText = trial.target;
       placeholderText = trial.target;
+    } else if (cue.kind === 'present') {
+      subText = trial.target;
+      placeholderText = 'Press Enter to continue';
     } else if (cue.kind === 'firstLetter') {
       subText = cue.pattern;
       placeholderText = cue.pattern;
@@ -178,6 +183,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       placeholderText = BLIND_PLACEHOLDER[trial.stage] ?? 'Type from memory...';
     }
   }
+  const isPresentation = cue.kind === 'present' && !userRevealedAnswer;
 
   const handleShowAnswer = () => {
     setUserRevealedAnswer(true);
@@ -190,7 +196,11 @@ export const SessionView: React.FC<SessionViewProps> = ({
     const result = applyAnswer(sessionState, typedValue, { revealed: userRevealedAnswer });
     setFeedback(result.feedback);
     setLastVerdict(result.verdict);
-    triggerFlash(result.verdict === 'exact' || result.verdict === 'near');
+    // C8b: acknowledging a presentation is neither a success nor a failure
+    // -- nothing was graded, so it shouldn't flash red or green.
+    if (result.verdict !== 'presented') {
+      triggerFlash(result.verdict === 'exact' || result.verdict === 'near');
+    }
     persistState(result.state);
 
     if (result.advance === 'auto') {
@@ -292,7 +302,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       } else {
         handleCheck();
       }
-    } else if (e.key === 'Escape' && !userRevealedAnswer) {
+    } else if (e.key === 'Escape' && !userRevealedAnswer && !isPresentation) {
       handleShowAnswer();
     }
   };
@@ -451,6 +461,11 @@ export const SessionView: React.FC<SessionViewProps> = ({
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-bg)] px-2.5 py-0.5 rounded-full border border-[var(--accent)]/15">
             {trial?.label ?? ''}
           </span>
+          {isPresentation && (
+            <span className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
+              <Eye size={12} /> Read &amp; Continue
+            </span>
+          )}
           {!userRevealedAnswer && cue.kind === 'firstLetter' && (
             <span className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
               <Eye size={12} /> First-Letter Cue
@@ -486,14 +501,18 @@ export const SessionView: React.FC<SessionViewProps> = ({
           )}
         </div>
 
-        {/* Typing Input */}
+        {/* Typing Input -- read-only during a presentation trial (C8b):
+            nothing is typed, the chunk is just read and acknowledged. */}
         <input
           ref={inputRef}
           id="type-input"
-          value={typedValue}
-          onChange={e => setTypedValue(e.target.value)}
+          value={isPresentation ? '' : typedValue}
+          onChange={e => {
+            if (!isPresentation) setTypedValue(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={placeholderText}
+          readOnly={isPresentation}
           autoComplete="off"
           spellCheck={false}
           className="w-full mono text-sm sm:text-base bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-4 py-3 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none shadow-xs transition-all"
@@ -547,7 +566,15 @@ export const SessionView: React.FC<SessionViewProps> = ({
             onClick={handleCheck}
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] hover:opacity-95 text-white font-semibold text-sm shadow-md active:scale-[0.98] transition-all cursor-pointer"
           >
-            <Check size={16} strokeWidth={2.5} /> Check answer
+            {isPresentation ? (
+              <>
+                Continue <ArrowRight size={16} strokeWidth={2.5} />
+              </>
+            ) : (
+              <>
+                <Check size={16} strokeWidth={2.5} /> Check answer
+              </>
+            )}
           </button>
         ) : (
           <button
@@ -560,7 +587,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </button>
         )}
 
-        {!userRevealedAnswer && !showNextBtn && (
+        {!userRevealedAnswer && !showNextBtn && !isPresentation && (
           <button
             type="button"
             id="show-answer-btn"

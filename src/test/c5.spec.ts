@@ -59,7 +59,13 @@ describe('selectTrial cue: attempt 0 is firstLetter, attempt 1+ is fully blind',
     expect(selectTrial(state)!.cue).toEqual({ kind: 'none' });
   });
 
-  it('chunks stage: each chunk gets its own firstLetter cue on its first attempt', () => {
+  // C8b (Phase 9) replaced the chunks stage's firstLetter cue entirely with
+  // an ungraded presentation -- this test originally covered firstLetter
+  // there; see c8b.spec.ts for the presentation-specific coverage this test
+  // was split into. Kept here (updated, not deleted) since it's still the
+  // place documenting the chunks stage's full cue lifecycle across a miss
+  // and a chunk-to-chunk transition.
+  it("chunks stage: each chunk starts with a presentation, not firstLetter (C8b)", () => {
     let state: SessionState = initSession({
       items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
       phase: 'encode',
@@ -71,28 +77,23 @@ describe('selectTrial cue: attempt 0 is firstLetter, attempt 1+ is fully blind',
       config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
-    expect(selectTrial(state)!.cue).toEqual({
-      kind: 'firstLetter',
-      pattern: renderFirstLetterCue(TWO_CHUNK_CHUNKS[0]),
-    });
+    expect(selectTrial(state)!.cue).toEqual({ kind: 'present' });
 
-    // A miss doesn't advance the chunk or the streak -- still attempt 0 of
-    // the same chunk, so still firstLetter (not "escalated" to blind).
-    state = applyAnswer(state, 'wrong', { revealed: false }).state;
-    expect(selectTrial(state)!.cue).toEqual({
-      kind: 'firstLetter',
-      pattern: renderFirstLetterCue(TWO_CHUNK_CHUNKS[0]),
-    });
-
-    state = applyAnswer(state, TWO_CHUNK_CHUNKS[0], { revealed: false }).state;
+    // Acknowledging the presentation (whatever's "typed" is ignored) moves
+    // to the first real, blind attempt -- never firstLetter.
+    state = applyAnswer(state, 'anything', { revealed: false }).state;
     expect(selectTrial(state)!.cue).toEqual({ kind: 'none' });
 
-    // Second rep completes chunk 0 -> chunk 1 starts back at firstLetter.
+    // A miss on the blind attempt resets to chunkStreak 0 -- re-presenting
+    // the chunk, not escalating to a hint.
+    state = applyAnswer(state, 'wrong', { revealed: false }).state;
+    expect(selectTrial(state)!.cue).toEqual({ kind: 'present' });
+
+    // Re-acknowledge, then answer the blind attempt correctly -> completes
+    // chunk 0 -> chunk 1 starts back at its own presentation.
+    state = applyAnswer(state, 'anything', { revealed: false }).state;
     state = applyAnswer(state, TWO_CHUNK_CHUNKS[0], { revealed: false }).state;
-    expect(selectTrial(state)!.cue).toEqual({
-      kind: 'firstLetter',
-      pattern: renderFirstLetterCue(TWO_CHUNK_CHUNKS[1]),
-    });
+    expect(selectTrial(state)!.cue).toEqual({ kind: 'present' });
   });
 
   it('cycle stage: always fully blind, same as before C5 (no copy-typing attempt existed there)', () => {
@@ -151,8 +152,16 @@ describe('C5: a wrong verdict in the encode phase requires manual advance', () =
   });
 });
 
-describe('C5 acceptance: no trial ever exposes the complete target before the first attempt', () => {
-  it('walking a full session (chunks -> combine -> cycle) never yields a cue that reveals the full text pre-attempt', () => {
+// C8b (Phase 9) narrowed this acceptance criterion deliberately: the chunks
+// stage's attempt 0 is now an ungraded presentation that DOES show the
+// complete target (see c8b.spec.ts) -- but it's explicitly not an
+// "attempt" at all (no typing, no grading, verdict 'presented' rather than
+// 'exact'/'wrong'), so it doesn't reintroduce the problem C5 fixed
+// (transcription being graded as if it were recall). What C5's guarantee
+// actually protects is that no *graded, typed* trial ever shows the
+// complete target pre-attempt -- which still holds.
+describe('C5 acceptance: no graded trial ever exposes the complete target before typing', () => {
+  it('walking a full session (chunks -> combine -> cycle) never yields a graded cue that reveals the full text pre-attempt', () => {
     let state: SessionState = initSession({
       items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
       phase: 'encode',
@@ -167,12 +176,16 @@ describe('C5 acceptance: no trial ever exposes the complete target before the fi
     for (let i = 0; i < 200 && state.currentId !== SESSION_COMPLETE_ID; i++) {
       const trial = selectTrial(state);
       if (!trial) break;
-      // selectTrial only ever produces 'firstLetter' or 'none' -- 'full' is
-      // reveal-only and is never what the engine hands back for a fresh trial.
-      expect(['firstLetter', 'none']).toContain(trial.cue.kind);
+      // selectTrial only ever produces 'firstLetter', 'none', or (chunks
+      // stage attempt 0, C8b) 'present' -- 'full' is reveal-only and never
+      // what the engine hands back for a fresh trial.
+      expect(['firstLetter', 'none', 'present']).toContain(trial.cue.kind);
       if (trial.cue.kind === 'firstLetter') {
         expect(trial.cue.pattern).not.toBe(trial.target);
       }
+      // 'present' is the one cue that does show the complete target --
+      // acceptable because it's explicitly not a graded attempt (see the
+      // describe block's header comment).
       const result = applyAnswer(state, trial.target, { revealed: false });
       state = result.state;
       // Mirrors SessionView's handleNext/simulate.ts's loop: only the cycle

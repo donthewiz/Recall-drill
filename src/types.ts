@@ -110,7 +110,10 @@ export type ViewState = 'setup' | 'decks' | 'session' | 'done';
 // the streak like 'exact', but never counts as a miss.
 // 'revealed' (Phase 1, B2 fix): the trial was answered after Show Answer --
 // streak resets to 0 and it never counts as a miss, regardless of what was typed.
-export type Verdict = 'exact' | 'near' | 'wrong' | 'revealed';
+// 'presented' (Phase 9, C8b): a chunks-stage presentation trial (cue
+// 'present') was acknowledged -- nothing was graded, nothing can be wrong;
+// distinct from 'exact' so the shell never mistakes it for a real answer.
+export type Verdict = 'exact' | 'near' | 'wrong' | 'revealed' | 'presented';
 
 export interface Feedback {
   text: string;
@@ -163,12 +166,18 @@ export interface SessionState {
 // blind). 'full' and 'choice' are never produced by selectTrial itself --
 // 'full' is what SessionView renders locally when the learner reveals the
 // answer (Esc / Show Answer), and 'choice' is C7 (multiple-choice rung),
-// off by default and not yet built.
+// dropped from scope.
+// 'present' (C8b): the chunks stage's attempt 0 -- the chunk's full text is
+// shown, ungraded, no input accepted; the learner presses Enter/Continue to
+// move on to the first real (blind) attempt. selectTrial produces it only
+// for stage 'chunks'; no payload needed, the text to show is Trial.target,
+// same as every other cue.
 export type Cue =
   | { kind: 'none' }
   | { kind: 'firstLetter'; pattern: string }
   | { kind: 'full'; text: string }
-  | { kind: 'choice'; options: string[] };
+  | { kind: 'choice'; options: string[] }
+  | { kind: 'present' };
 
 export interface Trial {
   itemId: number;

@@ -917,19 +917,24 @@ export const SESSION_COMPLETE_ID = -1;
 // in the table rather than deleted: still meaningful as "how long this
 // feedback would have shown" documentation, and DWELL_MS is a plain lookup
 // table, not something worth special-casing per advance mode.
-// 'chunks-cued-advance' is new in C8a: the chunks stage's cued (attempt 0)
-// success now always just moves to the blind attempt rather than
-// potentially advancing the chunk outright, so it needed its own key
-// distinct from 'chunks-advance' (which now only ever fires on the single
-// blind success that actually completes a chunk). 'chunks-streak-progress'
-// is dead as of C8a for the same reason B2's six keys are dead -- chunks no
-// longer has a "still accumulating, not there yet" state to show it in
-// (chunkStreak only ever holds 0 or 1) -- left in the table for the same
-// documentation reason.
+// 'chunks-cued-advance' was added in C8a (Phase 8) for the cued (attempt 0)
+// success's "moved to blind, not advanced yet" feedback, then went dead one
+// phase later in C8b (Phase 9): attempt 0 became an ungraded presentation
+// (see 'chunks-presented' below), so there's no longer a *graded* cued
+// success to show it for. 'chunks-streak-progress' has been dead since C8a
+// for the same reason B2's six keys are dead -- chunks no longer has a
+// "still accumulating, not there yet" state to show it in (chunkStreak only
+// ever holds 0 or 1). Both left in the table for the same documentation
+// reason as those six.
+// 'chunks-presented' is new in C8b: the dwell for acknowledging a
+// presentation trial (verdict 'presented') before the first blind attempt
+// -- short, since there's no diff or streak-progress to read, just a
+// transition.
 export const DWELL_MS: Record<string, number> = {
   'chunks-advance': 700,
   'chunks-cued-advance': 500,
   'chunks-streak-progress': 500,
+  'chunks-presented': 500,
   'chunks-miss': 2200,
   'combine-ready': 600,
   'combine-advance': 700,
@@ -1197,12 +1202,17 @@ export function selectTrial(state: SessionState): Trial | null {
 
   if (it.stage === 'chunks' && it.chunks) {
     const chunk = it.chunks[it.chunkIndex];
+    // C8b: attempt 0 (chunkStreak 0) is a presentation, not a graded cued
+    // typing attempt -- the chunk's full text is shown (via Trial.target,
+    // same as every other cue), ungraded, and acknowledged with Enter/
+    // Continue. Attempt 1+ is unchanged: fully blind.
+    const chunkCue: Cue = it.chunkStreak === 0 ? { kind: 'present' } : { kind: 'none' };
     return {
       itemId: it.id,
       stage: 'chunks',
       prompt: it.front,
       target: chunk,
-      cue: cueForStreak(it.chunkStreak, chunk),
+      cue: chunkCue,
       label: `Chunk Practice • ${it.chunkIndex + 1}/${it.chunks.length}`,
       detail: `Encoding • Part ${it.chunkIndex + 1} of ${it.chunks.length}`,
     };
@@ -1281,15 +1291,37 @@ export function applyAnswer(
   }
 
   const isOverride = opts.override === true;
+  // C8b: a chunks-stage presentation trial (chunkStreak 0, cue 'present') --
+  // nothing was graded, so it must not count as an attempt. !isOverride
+  // guards the one case where chunkStreak legitimately reads 0 here despite
+  // a real graded answer having just happened: overriding a wrong blind
+  // attempt, whose miss already reset chunkStreak to 0 before the override
+  // call -- that's a real (retroactively-exact) answer, not a presentation.
+  const isPresentation =
+    !isOverride &&
+    state.phase === 'encode' &&
+    currentItem.stage === 'chunks' &&
+    currentItem.chunkStreak === 0;
   const nextStats: SessionStats = {
     ...state.stats,
-    attempts: state.stats.attempts + (isOverride ? 0 : 1),
+    attempts: state.stats.attempts + (isOverride || isPresentation ? 0 : 1),
     overrides: state.stats.overrides + (isOverride ? 1 : 0),
   };
   const newItems = [...state.items];
   const itIdx = newItems.findIndex(i => i.id === currentItem.id);
   const it = { ...newItems[itIdx] };
   const base: SessionState = { ...state, stats: nextStats };
+
+  if (isPresentation) {
+    it.chunkStreak = 1;
+    newItems[itIdx] = it;
+    return {
+      state: { ...base, items: newItems },
+      verdict: 'presented',
+      feedback: { text: 'Now try it from memory', type: 'info', dwellKey: 'chunks-presented' },
+      advance: 'auto',
+    };
+  }
 
   // B2 fix: a revealed trial must not advance the streak and must not count
   // as a miss, regardless of what was typed (including typing the now-visible
@@ -1320,46 +1352,37 @@ export function applyAnswer(
       if (gr.verdict === 'near') nextStats.nearMisses++;
 
       if (isOk) {
-        // C8a: the chunks stage's advance criterion is "one correct answer
-        // at cue level 'none'" -- encodeReps no longer paces it (unlike
-        // combine's final window and the full stage, which still use it).
-        // wasCued (chunkStreak === 0 before this answer, i.e. cue was
-        // 'firstLetter') means this correct answer only moves the chunk
-        // from cued to blind; it does not advance chunkIndex by itself, no
-        // matter what encodeReps is set to.
-        const wasCued = it.chunkStreak === 0;
-        it.chunkStreak++;
-        if (!wasCued) {
-          it.chunkIndex++;
-          it.chunkStreak = 0;
-          let feedback: Feedback;
-          if (it.chunkIndex >= it.chunks.length) {
-            it.stage = 'combine';
-            it.combineSeqIdx = 0;
-            it.combineStreak = 0;
-            feedback = successFeedback(gr, {
-              text: 'All parts learned — now combining them',
-              type: 'success',
-              dwellKey: 'chunks-advance',
-            });
-          } else {
-            feedback = successFeedback(gr, {
-              text: 'Part learned!',
-              type: 'success',
-              dwellKey: 'chunks-advance',
-            });
-          }
-          newItems[itIdx] = it;
-          const advancedState = advanceEncodeState(newItems, nextStats, base);
-          return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+        // C8a/C8b: the chunks stage's advance criterion is "one correct
+        // answer at cue level 'none'" -- encodeReps no longer paces it
+        // (unlike combine's final window and the full stage, which still
+        // use it). By the time grading is reached here, chunkStreak is
+        // always 1: the presentation short-circuit above (C8b) intercepts
+        // every chunkStreak-0 attempt before grading, so any correct answer
+        // that reaches this branch is necessarily the single blind attempt
+        // (or an override retroactively counting one as correct) and
+        // advances the chunk immediately, every time.
+        it.chunkIndex++;
+        it.chunkStreak = 0;
+        let feedback: Feedback;
+        if (it.chunkIndex >= it.chunks.length) {
+          it.stage = 'combine';
+          it.combineSeqIdx = 0;
+          it.combineStreak = 0;
+          feedback = successFeedback(gr, {
+            text: 'All parts learned — now combining them',
+            type: 'success',
+            dwellKey: 'chunks-advance',
+          });
+        } else {
+          feedback = successFeedback(gr, {
+            text: 'Part learned!',
+            type: 'success',
+            dwellKey: 'chunks-advance',
+          });
         }
-        const feedback = successFeedback(gr, {
-          text: 'Got it — now try it from memory',
-          type: 'success',
-          dwellKey: 'chunks-cued-advance',
-        });
         newItems[itIdx] = it;
-        return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
+        const advancedState = advanceEncodeState(newItems, nextStats, base);
+        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;

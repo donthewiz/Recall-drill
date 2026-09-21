@@ -1,8 +1,16 @@
 // C8a (chunk-stage criterion, part 1) tests. Doc acceptance criteria:
 //   for any encodeReps value, a chunk needs exactly one correct cued
-//   ('firstLetter') answer followed by exactly one correct blind ('none')
-//   answer to advance -- never fewer, never more, and never encodeReps-many.
-//   Combine's final window and the full stage are unaffected.
+//   answer followed by exactly one correct blind ('none') answer to
+//   advance -- never fewer, never more, and never encodeReps-many. Combine's
+//   final window and the full stage are unaffected.
+//
+// Updated for C8b (Phase 9, committed after this file was first written):
+// the "cued answer" step is no longer a graded 'firstLetter' typing attempt
+// -- it's now an ungraded presentation (verdict 'presented', see
+// c8b.spec.ts). C8a's own acceptance criterion (exactly 2 stage-units per
+// chunk, independent of encodeReps) is otherwise unchanged, so this file
+// keeps testing it against the shipped (post-C8b) mechanism rather than a
+// transitional state nothing running today actually exhibits.
 import { describe, expect, it } from 'vitest';
 import { applyAnswer, buildItems, initSession, normalizeItem, SESSION_COMPLETE_ID } from '../utils/drillEngine';
 import type { SessionState } from '../types';
@@ -29,9 +37,10 @@ describe.each([1, 2, 3, 5])('C8a: a chunk needs exactly 1 cued + 1 blind at enco
     const itemId = state.currentId;
     const chunk0 = FOUR_CHUNK_CHUNKS[0];
 
-    // Cued attempt (chunkStreak 0): correct, but must NOT advance chunkIndex.
+    // Cued attempt (chunkStreak 0): an ungraded presentation as of C8b --
+    // acknowledging it must NOT advance chunkIndex, whatever was "typed".
     let result = applyAnswer(state, chunk0, { revealed: false });
-    expect(result.verdict).toBe('exact');
+    expect(result.verdict).toBe('presented');
     state = result.state;
     let item = state.items.find(i => i.id === itemId)!;
     expect(item.chunkIndex).toBe(0);

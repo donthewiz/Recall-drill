@@ -6,8 +6,12 @@
 //
 // C8a (Phase 8) changed the chunks-stage figure in that worked example: a
 // chunk now always needs exactly 1 cued + 1 blind correct answer (2 total),
-// never encodeReps-many, so it's 4 chunks x 2 = 8, not 4 x 3 = 12. The
-// combine/cycle math this file also checks is untouched by C8a -- see the
+// never encodeReps-many, so it's 4 chunks x 2 = 8, not 4 x 3 = 12. C8b
+// (Phase 9) then made the cued half of each pair an ungraded presentation
+// that doesn't count toward stats.attempts, so of those 8 chunk trials only
+// the 4 blind ones show up in the attempts total -- see the end-to-end
+// test's final expect() for the updated figure.
+// The combine/cycle math this file also checks is untouched by C8a -- see the
 // updated end-to-end test below for the new total.
 import { describe, expect, it } from 'vitest';
 import {
@@ -65,7 +69,7 @@ function walkChunksToCombine(state: SessionState, chunks: string[]): SessionStat
 }
 
 describe('C1 end-to-end: cumulative ladder matches the doc\'s worked trial count', () => {
-  it('4-chunk answer, encodeReps=3: 8 chunk (C8a) + (1+1+3) combine + 2 cycle = 15 trials, 0 misses', () => {
+  it('4-chunk answer, encodeReps=3: 8 chunk trials (4 presented + 4 blind, C8a/C8b) + (1+1+3) combine + 2 cycle = 15 trials, 11 counted attempts, 0 misses', () => {
     let state: SessionState = initSession({
       items: buildItems([{ front: 'Q', back: FOUR_CHUNK_BACK }], CHUNK_DIFFICULTY, 'cumulative'),
       phase: 'encode',
@@ -110,7 +114,9 @@ describe('C1 end-to-end: cumulative ladder matches the doc\'s worked trial count
     state = applyNext(state);
     state = applyAnswer(state, FOUR_CHUNK_BACK, { revealed: false }).state;
 
-    expect(state.stats).toEqual({ attempts: 15, misses: 0, nearMisses: 0, overrides: 0 });
+    // C8b: 4 of the 8 chunk trials are ungraded presentations and don't
+    // count as attempts, so 4 (blind chunks) + 5 (combine) + 2 (cycle) = 11.
+    expect(state.stats).toEqual({ attempts: 11, misses: 0, nearMisses: 0, overrides: 0 });
     const finalItem = state.items[0];
     expect(finalItem.status).toBe('mastered');
   });

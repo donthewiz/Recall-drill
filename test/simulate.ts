@@ -75,7 +75,12 @@ export function simulate(
     const result = applyAnswer(state, typed, { revealed: false });
     totalTrials++;
     trialsByStage[trial.stage] = (trialsByStage[trial.stage] ?? 0) + 1;
-    keystrokes += trial.target.length;
+    // Phase 9 (C8b): a presentation trial (chunks stage attempt 0) is
+    // ungraded and nothing is typed -- it still counts as a trial (reading
+    // time isn't free, so it's represented in wallClockEstimate via
+    // totalTrials' PER_TRIAL_OVERHEAD_SEC below), but contributes 0
+    // keystrokes rather than trial.target.length.
+    keystrokes += trial.cue.kind === 'present' ? 0 : trial.target.length;
 
     state = result.state;
     // Phase 4 (C5): a wrong verdict in the encode phase also returns

@@ -90,13 +90,19 @@ describe('C2 near-miss: advances the streak like exact, tallies nearMisses not m
 
 describe('C2 manual override: retroactively counts a pending wrong verdict as exact', () => {
   it('override does not double-count the attempt, decrements nothing (miss was never committed), and increments overrides', () => {
-    const state = freshState('the mitochondria makes cell energy', 2, true, 35); // chunks stage on a 5-word back (>3 words)
+    let state = freshState('the mitochondria makes cell energy', 2, true, 35); // chunks stage on a 5-word back (>3 words)
     const trial = state.items[0];
-    // First submit a genuinely wrong answer against the SAME target the shell
-    // would still be showing (chunks stage, chunk 0) -- but per the shell's
-    // deferred-apply design, this "wrong" result is never committed to the
-    // state the override then operates on.
     const target = trial.chunks![trial.chunkIndex];
+
+    // C8b: attempt 0 (chunkStreak 0) is an ungraded presentation, not a
+    // gradable trial -- acknowledge it first (doesn't count as an attempt
+    // either) to reach the actual blind attempt this test is about.
+    state = applyAnswer(state, target, { revealed: false }).state;
+
+    // First submit a genuinely wrong answer against the SAME target the shell
+    // would still be showing (chunks stage, blind attempt) -- but per the
+    // shell's deferred-apply design, this "wrong" result is never committed
+    // to the state the override then operates on.
     const wrongResult = applyAnswer(state, 'nonsense answer', { revealed: false });
     expect(wrongResult.verdict).toBe('wrong');
     expect(wrongResult.state.stats.misses).toBe(1); // this is the DISCARDED result
@@ -107,13 +113,16 @@ describe('C2 manual override: retroactively counts a pending wrong verdict as ex
     const overrideResult = applyAnswer(state, target, { revealed: false, override: true });
     expect(overrideResult.verdict).toBe('exact');
     expect(overrideResult.state.stats).toEqual({
-      attempts: 0, // NOT incremented -- this isn't a new attempt
+      attempts: 0, // NOT incremented -- neither the presentation nor this counts as a new attempt
       misses: 0, // the discarded wrong result's miss was never committed
       nearMisses: 0,
       overrides: 1,
     });
     const it = overrideResult.state.items.find(i => i.id === overrideResult.state.currentId)!;
-    expect(it.chunkStreak).toBe(1); // advanced exactly as a genuine correct answer would
+    // Advanced exactly as a genuine blind success would (C8a/C8b: the blind
+    // attempt is the one that actually completes a chunk).
+    expect(it.chunkIndex).toBe(1);
+    expect(it.chunkStreak).toBe(0);
   });
 
   it('override on the final rep of a stage-unit advances the item exactly like a genuine correct answer', () => {

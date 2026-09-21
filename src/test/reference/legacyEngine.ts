@@ -28,10 +28,12 @@ export interface DriverTrial {
 
 export interface DriverAnswerResult {
   // LegacyEngine (frozen pre-Phase-1 snapshot) only ever produces 'exact' |
-  // 'wrong' -- 'revealed' (Phase 1, B2) and 'near' (Phase 2, C2) are outcomes
-  // only the real engine driver can produce, since LegacyEngine's grading
-  // never reads a revealed flag and never applies lenient grading.
-  verdict: 'exact' | 'near' | 'wrong' | 'revealed';
+  // 'wrong' -- 'revealed' (Phase 1, B2), 'near' (Phase 2, C2), and
+  // 'presented' (Phase 9, C8b) are outcomes only the real engine driver can
+  // produce: LegacyEngine's grading never reads a revealed flag, never
+  // applies lenient grading, and never produces an ungraded chunks-stage
+  // presentation trial (it's frozen to the pre-C8b cued-typing attempt).
+  verdict: 'exact' | 'near' | 'wrong' | 'revealed' | 'presented';
   advance: 'auto' | 'manual';
 }
 
