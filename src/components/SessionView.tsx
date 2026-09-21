@@ -8,6 +8,8 @@ import {
   applyNext,
   advanceToNextBatch,
   computeBatchSummary,
+  computeSessionProgress,
+  partitionIntoBatches,
   initSession,
   SESSION_COMPLETE_ID,
   DWELL_MS,
@@ -310,6 +312,15 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const batchSummary = computeBatchSummary(sessionState);
   const isBatched = batchSummary.totalBatches > 1;
 
+  // C4: honest progress -- unlike progressPercent (mastered/total, which
+  // reads 0% through the entire encode phase), this credits partial ladder
+  // completion, so it starts climbing on the very first correct chunk.
+  const currentBatchItems =
+    partitionIntoBatches(items, sessionState.config.batchSize ?? items.length)[sessionState.batchIndex] ?? items;
+  const sessionProgress = computeSessionProgress(items, sessionState.config.encodeReps, currentBatchItems);
+  const batchEncodedPercent = Math.round(sessionProgress.batchFraction * 100);
+  const deckEncodedPercent = Math.round(sessionProgress.deckFraction * 100);
+
   return (
     <div className="space-y-4">
       {/* Top Session Progress Bar */}
@@ -332,15 +343,34 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </span>
           <span className="font-semibold text-[var(--text-primary)]">
             {masteredCount} / {items.length} Mastered ({progressPercent}%)
+            {isBatched && (
+              <span className="text-[var(--text-muted)] font-normal">
+                {' '}• Batch encoded {batchEncodedPercent}%
+              </span>
+            )}
           </span>
         </div>
 
-        <div className="h-1.5 w-full bg-[var(--surface-1)] border border-[var(--border)] rounded-full overflow-hidden">
+        {/* C4: batch progress -- primary/prominent, credits partial ladder
+            completion (not just mastery) so it moves during the whole
+            encode phase instead of sitting at 0%. */}
+        <div className="h-2 w-full bg-[var(--surface-1)] border border-[var(--border)] rounded-full overflow-hidden">
           <div
-            className="h-full bg-[var(--success)] transition-all duration-300 ease-out"
-            style={{ width: `${progressPercent}%` }}
+            className="h-full bg-[var(--accent)] transition-all duration-300 ease-out"
+            style={{ width: `${batchEncodedPercent}%` }}
           />
         </div>
+
+        {/* C4: deck progress -- secondary/thin, only shown once there's more
+            than one batch (otherwise it would just duplicate the bar above). */}
+        {isBatched && (
+          <div className="h-1 w-full bg-[var(--surface-1)]/70 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[var(--success)]/70 transition-all duration-300 ease-out"
+              style={{ width: `${deckEncodedPercent}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Batch Interstitial: shown between batches instead of the card */}
