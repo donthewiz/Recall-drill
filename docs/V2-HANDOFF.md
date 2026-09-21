@@ -230,7 +230,11 @@ On a `wrong` verdict, replace the timed auto-advance with an **explicit** advanc
 
 ---
 
-### C6 — Anki handoff export
+### ~~C6 — Anki handoff export~~ (DROPPED)
+
+**DROPPED 2026-09-20 — not deferred, cut from v2 scope.** Kept below,
+struck, so the original reasoning stays on record; do not build this
+against this doc.
 
 **Why:** this is the only feature on the list that Anki can't do for itself. Recall Drill knows which items cost the most trials and *where inside the answer* the failures clustered — `combineMissCount` and `remediateStack` already carry that. Exporting it makes the two tools complementary rather than sequential.
 
@@ -254,7 +258,11 @@ On a `wrong` verdict, replace the timed auto-advance with an **explicit** advanc
 
 ---
 
-### C7 (optional, build last, default OFF) — Multiple-choice rung for short backs
+### ~~C7 (optional, build last, default OFF) — Multiple-choice rung for short backs~~ (DROPPED)
+
+**DROPPED 2026-09-20 — not deferred, cut from v2 scope.** Kept below,
+struck, so the original reasoning stays on record; do not build this
+against this doc.
 
 Only eligible when `norm(back).split(' ').length <= 4` **and** the deck has ≥4 items whose backs are distinct and within ±2 words of the target's length. Generate 3 distractors from those backs. Insert as attempt 0, pushing `firstLetter` to attempt 1 and blind to attempt 2.
 
@@ -321,7 +329,7 @@ These three are the trial-count reductions and they compound. Do them in this or
 
 Batching changes the shape of `SessionState`; progress display depends on it.
 
-### Phase 7 — C6 (export), then C7 (MC) if time allows.
+### ~~Phase 7 — C6 (export), then C7 (MC) if time allows.~~ (DROPPED 2026-09-20 — see C6/C7 in Part 2)
 
 **Commit per phase.** Each commit: passing tests, a one-line trial-count delta from the Part 4 harness in the message.
 
