@@ -73,7 +73,11 @@ export interface DeckItem {
 
 export interface SavedSessionState {
   deckName: string;
-  phase: 'encode' | 'cycle';
+  // C3: 'batch-done' is the interstitial between batches -- selectTrial has
+  // nothing to show, and SessionView renders the batch summary screen
+  // instead of the card. A save made at that exact moment ("Save and stop"
+  // on the interstitial) persists this phase so resuming lands back on it.
+  phase: 'encode' | 'cycle' | 'batch-done';
   queue: number[];
   stats: SessionStats;
   items: DrillItem[];
@@ -81,6 +85,16 @@ export interface SavedSessionState {
   chunkDifficulty?: number;
   stemTolerance?: boolean;
   ladderMode?: LadderMode;
+  // C3: undefined on any save from before this phase (or when the user
+  // never left batch 0) -- resolved by resolveBatchConfig's migration
+  // default (batchIndex 0, batchSize items.length -- i.e. one big
+  // "whole deck" batch, matching pre-C3 behavior's absence of a checkpoint).
+  batchIndex?: number;
+  batchSize?: number;
+  // C3: session-cumulative SessionStats as of the moment the current batch
+  // began -- lets the interstitial report "this batch" trials/accuracy by
+  // diffing against `stats` instead of carrying separate running totals.
+  batchStartStats?: SessionStats;
   timestamp?: number;
 }
 
@@ -119,19 +133,27 @@ export interface SessionConfig {
   stemTolerance: boolean;
   // C1: which combine-window sequence buildCombineSequence produced this
   // item's combineSeq with, and which per-window rep rule applyAnswer's
-  // combine branch applies (see requiredRepsForWindow). batchSize is added
-  // by C3; intentionally absent here.
+  // combine branch applies (see requiredRepsForWindow).
   ladderMode: LadderMode;
+  // C3: items per batch (deck order); undefined/0/>=items.length all mean
+  // "whole deck as one batch" (no interstitial checkpoint) -- see
+  // partitionIntoBatches. Left optional rather than required so every
+  // pre-C3 SessionConfig literal (tests, test/simulate.ts's baselines)
+  // keeps compiling and behaving exactly as before without being touched.
+  batchSize?: number;
 }
 
 export interface SessionState {
   items: DrillItem[];
-  phase: 'encode' | 'cycle';
+  phase: 'encode' | 'cycle' | 'batch-done';
   queue: number[];
   stats: SessionStats;
   currentId: number;
-  // Always 0 in Phase 0; never read or branched on until C3 (batching).
+  // C3: which batch (0-indexed, per partitionIntoBatches) is currently
+  // active. Was always 0 and unused before this phase.
   batchIndex: number;
+  // C3: see SavedSessionState.batchStartStats.
+  batchStartStats: SessionStats;
   config: SessionConfig;
 }
 

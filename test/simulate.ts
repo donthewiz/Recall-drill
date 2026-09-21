@@ -49,6 +49,7 @@ export function simulate(
     stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
+    batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     config,
   });
 

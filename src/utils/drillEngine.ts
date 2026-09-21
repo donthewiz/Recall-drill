@@ -354,6 +354,29 @@ export function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+// C3: round-robins over `batch` (in whatever order the array is already in
+// -- see shuffleWithinBatches), returning the next item whose status isn't
+// 'ready' yet. lastItemId is the SESSION_COMPLETE_ID-style sentinel
+// convention already used elsewhere in this file for "no previous item" --
+// there's nothing special-cased for it: batch.findIndex simply never
+// matches, so it falls through to "start from the front" the same as any
+// other id that isn't in this batch (e.g. the previous batch's last item,
+// right after advanceToNextBatch). Returns null once every item in the
+// batch is 'ready' (batch fully encoded -> time for its cycle phase).
+export function selectNextEncodeItem(batch: DrillItem[], lastItemId: number): DrillItem | null {
+  const pending = batch.filter(i => i.status !== 'ready');
+  if (!pending.length) return null;
+
+  const lastIdx = batch.findIndex(i => i.id === lastItemId);
+  if (lastIdx === -1) return pending[0];
+
+  for (let step = 1; step <= batch.length; step++) {
+    const candidate = batch[(lastIdx + step) % batch.length];
+    if (candidate.status !== 'ready') return candidate;
+  }
+  return null; // unreachable: pending.length > 0 guarantees a hit above
+}
+
 export function slugify(name: string): string {
   const s = name
     .trim()
@@ -363,12 +386,46 @@ export function slugify(name: string): string {
   return s || 'deck';
 }
 
+// C3: batch membership is a contiguous deck-order slice (doc: "Partition
+// items into batches in deck order"), but every item's actual array
+// position still comes from this function -- so the ONE place that needs to
+// shuffle "trial order within a batch" (doc's other requirement) is here,
+// once, at construction. partitionIntoBatches and selectNextEncodeItem then
+// just walk whatever order the array already has; nothing re-shuffles a
+// batch mid-session. size <= 0 or >= items.length collapses to a single
+// "whole deck" batch, which still gets this same shuffle -- "whole deck"
+// only means no interstitial checkpoint, not a return to pre-C3 fully-massed
+// (unshuffled, one-item-at-a-time) presentation; that's selectNextEncodeItem's
+// round-robin, which applies regardless of batch size.
+function shuffleWithinBatches<T>(items: T[], batchSize?: number): T[] {
+  const size = batchSize && batchSize > 0 ? batchSize : items.length;
+  const result: T[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    result.push(...shuffle(items.slice(i, i + size)));
+  }
+  return result;
+}
+
+// C3: batch membership only, in the array's current order -- does not
+// itself shuffle (see shuffleWithinBatches). size <= 0 or >= items.length
+// yields a single "whole deck" batch.
+export function partitionIntoBatches<T>(items: T[], batchSize?: number): T[][] {
+  const size = batchSize && batchSize > 0 ? batchSize : items.length;
+  if (!items.length) return [];
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
+}
+
 export function buildItems(
   parsed: DeckItem[],
   chunkPercent: number = 35,
-  ladderMode: LadderMode = 'cumulative'
+  ladderMode: LadderMode = 'cumulative',
+  batchSize?: number
 ): DrillItem[] {
-  return parsed.map((p, i) => {
+  const items: DrillItem[] = parsed.map((p, i) => {
     const chunks = chunkText(p.back, chunkPercent);
     return {
       id: i,
@@ -390,6 +447,7 @@ export function buildItems(
       stage: chunks ? 'chunks' : 'full',
     };
   });
+  return shuffleWithinBatches(items, batchSize);
 }
 
 export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): DrillItem {
@@ -420,6 +478,22 @@ export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): D
   }
 
   return item;
+}
+
+// C3: migration for a SavedSessionState written before this phase (or one
+// that never left batch 0) -- doc: "a saved state with no batchIndex is
+// treated as batchIndex: 0, batchSize: items.length". Lives here rather
+// than inside normalizeItem since batching is session-scoped, not
+// per-item -- callers use this once when reconstructing SessionState from
+// a resumed save (see App.tsx's handleResumeSession).
+export function resolveBatchConfig(
+  saved: Pick<SavedSessionState, 'batchIndex' | 'batchSize'>,
+  items: DrillItem[]
+): { batchIndex: number; batchSize: number } {
+  return {
+    batchIndex: saved.batchIndex ?? 0,
+    batchSize: saved.batchSize ?? items.length,
+  };
 }
 
 // LocalStorage helpers
@@ -854,28 +928,60 @@ export const DWELL_MS: Record<string, number> = {
   'near-miss': 1200,
 };
 
+// C3: this batch's items, in whatever order buildItems' one-time
+// shuffleWithinBatches call left them in (see that function's comment) --
+// partitionIntoBatches only slices, it never reorders.
+function getCurrentBatch(items: DrillItem[], batchIndex: number, batchSize: number): DrillItem[] {
+  return partitionIntoBatches(items, batchSize)[batchIndex] ?? [];
+}
+
+// C3: called after every completed stage-unit (one chunk learned, one
+// combine window learned, one remediation span cleared -- see applyAnswer's
+// call sites) as well as at session/batch start. Rotates within the current
+// batch via selectNextEncodeItem instead of the old "always the first
+// new/encoding item in deck order" (which was fully massed: item 0 to
+// completion before item 1 was ever touched). Once every item in the batch
+// is 'ready', starts that batch's cycle phase, scoped to just its items.
 function advanceEncodeState(
   items: DrillItem[],
   stats: SessionStats,
   base: SessionState
 ): SessionState {
-  const remaining = items.filter(i => i.status === 'new' || i.status === 'encoding');
-  if (!remaining.length) {
-    const newQueue = shuffle(items.filter(i => i.status !== 'mastered').map(i => i.id));
-    return advanceCycleState(items, newQueue, stats, {
+  const batch = getCurrentBatch(items, base.batchIndex, base.config.batchSize ?? items.length);
+  const next = selectNextEncodeItem(batch, base.currentId);
+
+  if (!next) {
+    const batchQueue = shuffle(batch.map(i => i.id));
+    return advanceCycleState(items, batchQueue, stats, {
       ...base,
       items,
       phase: 'cycle',
-      queue: newQueue,
+      queue: batchQueue,
       stats,
     });
   }
 
-  const nextItem = remaining[0];
   const newItems = items.map(i =>
-    i.id === nextItem.id ? { ...i, status: 'encoding' as const } : i
+    i.id === next.id && i.status === 'new' ? { ...i, status: 'encoding' as const } : i
   );
-  return { ...base, items: newItems, phase: 'encode', currentId: nextItem.id, stats };
+  return { ...base, items: newItems, phase: 'encode', currentId: next.id, stats };
+}
+
+// C3: once every item in the CURRENT batch is mastered, either moves to the
+// next batch's interstitial (phase 'batch-done' -- SessionView shows the
+// summary and waits for "Next batch"/"Save and stop"; see advanceToNextBatch)
+// or, if this was the last batch, ends the session the same way a
+// non-batched (whole-deck) session always did.
+function advanceBatchState(items: DrillItem[], stats: SessionStats, base: SessionState): SessionState {
+  const totalBatches = partitionIntoBatches(items, base.config.batchSize ?? items.length).length;
+  if (base.batchIndex + 1 >= totalBatches) {
+    return { ...base, items, phase: 'cycle', queue: [], stats, currentId: SESSION_COMPLETE_ID };
+  }
+  // currentId is deliberately left as-is (not SESSION_COMPLETE_ID): that
+  // sentinel means "the whole session is done" to SessionView's finishing
+  // effect, and more batches remain here. selectTrial short-circuits on
+  // phase 'batch-done' before ever looking currentId up.
+  return { ...base, items, phase: 'batch-done', queue: [], stats };
 }
 
 function advanceCycleState(
@@ -886,9 +992,14 @@ function advanceCycleState(
 ): SessionState {
   let q = [...currentQueue];
   if (!q.length) {
-    const remaining = items.filter(i => i.status !== 'mastered');
+    // C3: scoped to the current batch, not the whole deck -- each batch runs
+    // its own cycle phase to mastery before the next batch's encode phase
+    // starts. A non-batched (whole-deck) session is just the batchSize>=
+    // items.length degenerate case of the same code path.
+    const batch = getCurrentBatch(items, base.batchIndex, base.config.batchSize ?? items.length);
+    const remaining = batch.filter(i => i.status !== 'mastered');
     if (!remaining.length) {
-      return { ...base, items, phase: 'cycle', queue: [], stats, currentId: SESSION_COMPLETE_ID };
+      return advanceBatchState(items, stats, base);
     }
     q = shuffle(remaining.map(i => i.id));
   }
@@ -897,9 +1008,59 @@ function advanceCycleState(
   return { ...base, items, phase: 'cycle', queue: q, stats, currentId: nextId };
 }
 
+// C3: advances batchIndex and starts the new batch's encode phase. Called
+// when the learner clicks "Next batch" on the interstitial (phase
+// 'batch-done'). currentId is reset to SESSION_COMPLETE_ID first purely as
+// "no previous item" input to selectNextEncodeItem's round-robin (the new
+// batch's items never contain that id, so it falls through to "start from
+// the front" the same as any id from a different batch would).
+export function advanceToNextBatch(state: SessionState): SessionState {
+  const resetState: SessionState = {
+    ...state,
+    batchIndex: state.batchIndex + 1,
+    batchStartStats: { ...state.stats },
+    phase: 'encode',
+    currentId: SESSION_COMPLETE_ID,
+  };
+  return advanceEncodeState(state.items, state.stats, resetState);
+}
+
+// C3: batch-level summary for the interstitial (items mastered, trials
+// spent, accuracy) -- diffs `stats` against the snapshot captured when this
+// batch began (batchStartStats) rather than tracking a second running
+// total. batchNumber/totalBatches are 1-indexed for display.
+export function computeBatchSummary(state: SessionState): {
+  batchNumber: number;
+  totalBatches: number;
+  itemsMastered: number;
+  batchSize: number;
+  trialsSpent: number;
+  accuracyPercent: number;
+} {
+  const effectiveBatchSize = state.config.batchSize ?? state.items.length;
+  const batches = partitionIntoBatches(state.items, effectiveBatchSize);
+  const batch = batches[state.batchIndex] ?? [];
+  const trialsSpent = state.stats.attempts - state.batchStartStats.attempts;
+  const missesInBatch = state.stats.misses - state.batchStartStats.misses;
+  const accuracyPercent =
+    trialsSpent > 0 ? Math.round(((trialsSpent - missesInBatch) / trialsSpent) * 100) : 100;
+
+  return {
+    batchNumber: state.batchIndex + 1,
+    totalBatches: batches.length,
+    itemsMastered: batch.filter(i => i.status === 'mastered').length,
+    batchSize: batch.length,
+    trialsSpent,
+    accuracyPercent,
+  };
+}
+
 // Equivalent of SessionView's mount useEffect: picks the first trial of a
 // fresh or resumed session before any answer has been submitted.
 export function initSession(state: SessionState): SessionState {
+  // C3: a save made exactly at the interstitial ("Save and stop" on
+  // 'batch-done') resumes straight back into it -- nothing to select.
+  if (state.phase === 'batch-done') return state;
   if (state.phase === 'cycle') {
     return advanceCycleState(state.items, state.queue, state.stats, state);
   }
@@ -907,6 +1068,9 @@ export function initSession(state: SessionState): SessionState {
 }
 
 export function selectTrial(state: SessionState): Trial | null {
+  // C3: the interstitial has no trial -- SessionView renders the batch
+  // summary instead of the card.
+  if (state.phase === 'batch-done') return null;
   const it = state.items.find(i => i.id === state.currentId);
   if (!it) return null;
 
@@ -1222,8 +1386,12 @@ export function applyAnswer(
                 dwellKey: 'remediate-next-spot',
               });
               newItems[itIdx] = it;
+              // C3: "one remediation span cleared" -- rotates to the next
+              // unfinished item in the batch, same as every other
+              // stage-unit completion below.
+              const advancedState = advanceEncodeState(newItems, nextStats, base);
               return {
-                state: { ...base, items: newItems },
+                state: advancedState,
                 verdict: gr.verdict,
                 feedback,
                 advance: 'auto',
@@ -1250,7 +1418,9 @@ export function applyAnswer(
             dwellKey: 'remediate-expand-parent',
           });
           newItems[itIdx] = it;
-          return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
+          // C3: same rotation as the "next queued spot" branch above.
+          const advancedState = advanceEncodeState(newItems, nextStats, base);
+          return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
         const feedback = successFeedback(gr, {
           text: `${rTop.streak} of ${state.config.encodeReps} streaks`,

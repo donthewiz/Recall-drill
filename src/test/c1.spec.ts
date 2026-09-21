@@ -65,6 +65,7 @@ describe('C1 end-to-end: cumulative ladder matches the doc\'s worked trial count
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 3, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
@@ -116,6 +117,7 @@ describe('C1 remediation still works correctly under the cumulative ladder', () 
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 1, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 

@@ -46,6 +46,7 @@ describe('selectTrial cue: attempt 0 is firstLetter, attempt 1+ is fully blind',
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
@@ -66,6 +67,7 @@ describe('selectTrial cue: attempt 0 is firstLetter, attempt 1+ is fully blind',
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
@@ -101,6 +103,7 @@ describe('selectTrial cue: attempt 0 is firstLetter, attempt 1+ is fully blind',
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 1, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
     state = applyAnswer(state, FULL_STAGE_BACK, { revealed: false }).state;
@@ -118,6 +121,7 @@ describe('C5: a wrong verdict in the encode phase requires manual advance', () =
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
@@ -137,6 +141,7 @@ describe('C5: a wrong verdict in the encode phase requires manual advance', () =
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
@@ -155,6 +160,7 @@ describe('C5 acceptance: no trial ever exposes the complete target before the fi
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 

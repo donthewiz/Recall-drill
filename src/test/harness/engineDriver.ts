@@ -24,6 +24,7 @@ export class RealEngineDriver implements EngineDriver {
     stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
+    batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
     config: { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative' },
   };
 
@@ -45,6 +46,7 @@ export class RealEngineDriver implements EngineDriver {
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       config: {
         encodeReps: config.encodeReps,
         chunkDifficulty: config.chunkDifficulty ?? 35,

@@ -45,7 +45,8 @@ interface SetupViewProps {
     reps: number,
     chunkDifficulty: number,
     stemTolerance: boolean,
-    ladderMode: LadderMode
+    ladderMode: LadderMode,
+    batchSize: number
   ) => void;
   onResumeSession: (state: SavedSessionState) => void;
   onNavigateDecks: () => void;
@@ -56,6 +57,9 @@ interface SetupViewProps {
   initialChunkDifficulty?: number;
   initialStemTolerance?: boolean;
   initialLadderMode?: LadderMode;
+  // C3: 0 means "whole deck as one batch" (no interstitial checkpoint) --
+  // see partitionIntoBatches.
+  initialBatchSize?: number;
   initialIsEditingCards?: boolean;
   initialFolderId?: string | null;
 }
@@ -146,6 +150,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   initialChunkDifficulty,
   initialStemTolerance,
   initialLadderMode,
+  initialBatchSize,
   initialIsEditingCards = false,
   initialFolderId = null,
 }) => {
@@ -247,6 +252,17 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     return 'cumulative';
   });
+  // C3: 0 means "whole deck as one batch" (no interstitial checkpoint).
+  const [batchSize, setBatchSize] = useState<number>(() => {
+    if (initialBatchSize !== undefined) return initialBatchSize;
+    try {
+      const saved = localStorage.getItem('recall_drill_batch_size');
+      if (saved) return parseInt(saved, 10);
+    } catch {
+      // ignore
+    }
+    return 5;
+  });
   const [msg, setMsg] = useState('');
   const [resumePrompt, setResumePrompt] = useState<{
     state: SavedSessionState;
@@ -289,6 +305,16 @@ export const SetupView: React.FC<SetupViewProps> = ({
     setLadderMode(val);
     try {
       localStorage.setItem('recall_drill_ladder_mode', val);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBatchSizeChange = (val: number) => {
+    const clamped = val <= 0 ? 0 : Math.max(3, Math.min(10, val));
+    setBatchSize(clamped);
+    try {
+      localStorage.setItem('recall_drill_batch_size', String(clamped));
     } catch {
       // ignore
     }
@@ -503,7 +529,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       });
       setMsg(`Found a previous session for "${name}" with ${mastered} of ${existingState.items.length} items mastered.`);
     } else {
-      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance, ladderMode);
+      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance, ladderMode, batchSize);
     }
   };
 
@@ -517,7 +543,15 @@ export const SetupView: React.FC<SetupViewProps> = ({
     if (resumePrompt) {
       const slug = slugify(resumePrompt.name);
       clearSessionState(slug);
-      onStartSession(resumePrompt.parsed, resumePrompt.name, encodeReps, chunkDifficulty, stemTolerance, ladderMode);
+      onStartSession(
+        resumePrompt.parsed,
+        resumePrompt.name,
+        encodeReps,
+        chunkDifficulty,
+        stemTolerance,
+        ladderMode,
+        batchSize
+      );
     }
   };
 
@@ -857,6 +891,59 @@ export const SetupView: React.FC<SetupViewProps> = ({
             card's parts, so it needs far fewer repetitions once you've combined them
             once. Exhaustive re-drills every possible combination of parts and is kept
             only for comparison.
+          </p>
+        </div>
+
+        {/* Batch size: how many cards are encoded together before a checkpoint */}
+        <div className="flex flex-col gap-2.5 border-t border-[var(--border)] pt-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label htmlFor="batch-size-slider" className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+              <span>Cards per batch before a checkpoint:</span>
+            </label>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                id="whole-deck-toggle"
+                onClick={() => handleBatchSizeChange(batchSize <= 0 ? 5 : 0)}
+                className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                  batchSize <= 0
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--surface-1)] text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Whole deck
+              </button>
+              <span className="text-xs font-bold text-[var(--text-primary)] bg-[var(--surface-1)] border border-[var(--border)] px-2.5 py-0.5 rounded-lg min-w-[50px] text-center shadow-xs">
+                {batchSize <= 0 ? 'All cards' : `${batchSize} cards`}
+              </span>
+            </div>
+          </div>
+
+          {batchSize > 0 && (
+            <div className="space-y-2 bg-[var(--surface-1)]/50 p-3 rounded-xl border border-[var(--border)]">
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-medium text-[var(--text-muted)] w-20 shrink-0">3 (Small)</span>
+                <input
+                  id="batch-size-slider"
+                  type="range"
+                  min={3}
+                  max={10}
+                  step={1}
+                  value={batchSize}
+                  onChange={e => handleBatchSizeChange(parseInt(e.target.value, 10) || 5)}
+                  className="w-full h-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg appearance-none cursor-pointer accent-[var(--accent)]"
+                />
+                <span className="text-[11px] font-medium text-[var(--text-muted)] w-20 shrink-0 text-right">10 (Large)</span>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Cards are encoded a batch at a time, interleaved with each other, with a
+            summary screen (and a chance to stop) between batches. "Whole deck" removes
+            the checkpoints and interleaves every card in the deck together, like a
+            single big batch.
           </p>
         </div>
 

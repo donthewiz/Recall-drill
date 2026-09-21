@@ -4,6 +4,7 @@ import {
   DrillItem,
   LadderMode,
   SavedSessionState,
+  SessionState,
   SessionStats,
   ViewState,
 } from './types';
@@ -14,6 +15,7 @@ import {
   clearSessionState,
   saveSessionState,
   recordDeckUsed,
+  resolveBatchConfig,
 } from './utils/drillEngine';
 import { Header } from './components/Header';
 import { SetupView } from './components/SetupView';
@@ -33,9 +35,28 @@ export default function App() {
   const [autoOpenEditor, setAutoOpenEditor] = useState<boolean>(false);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [sessionItems, setSessionItems] = useState<DrillItem[]>([]);
-  const [sessionPhase, setSessionPhase] = useState<'encode' | 'cycle'>('encode');
+  const [sessionPhase, setSessionPhase] = useState<'encode' | 'cycle' | 'batch-done'>('encode');
   const [sessionQueue, setSessionQueue] = useState<number[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionStats>({
+    attempts: 0,
+    misses: 0,
+    nearMisses: 0,
+    overrides: 0,
+  });
+  // C3: batchSize 0 means "whole deck as one batch" (see partitionIntoBatches);
+  // sessionBatchIndex/sessionBatchStartStats seed SessionView's initial
+  // SessionState the same way sessionPhase/sessionQueue/sessionStats do.
+  const [batchSize, setBatchSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('recall_drill_batch_size');
+      if (saved) return parseInt(saved, 10);
+    } catch {
+      // ignore
+    }
+    return 5;
+  });
+  const [sessionBatchIndex, setSessionBatchIndex] = useState<number>(0);
+  const [sessionBatchStartStats, setSessionBatchStartStats] = useState<SessionStats>({
     attempts: 0,
     misses: 0,
     nearMisses: 0,
@@ -116,11 +137,13 @@ export default function App() {
     reps: number,
     difficultyPct?: number,
     stemToleranceParam?: boolean,
-    ladderModeParam?: LadderMode
+    ladderModeParam?: LadderMode,
+    batchSizeParam?: number
   ) => {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
     const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
-    const items = buildItems(parsed, diff, mode);
+    const size = batchSizeParam !== undefined ? batchSizeParam : batchSize;
+    const items = buildItems(parsed, diff, mode, size);
     const slug = slugify(name);
     recordDeckUsed(slug, name, parsed.length);
     setDeckName(name);
@@ -128,6 +151,8 @@ export default function App() {
     setSessionPhase('encode');
     setSessionQueue([]);
     setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
+    setSessionBatchIndex(0);
+    setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setEncodeReps(reps);
     try {
       localStorage.setItem('recall_drill_encode_reps', String(reps));
@@ -143,16 +168,29 @@ export default function App() {
     if (ladderModeParam !== undefined) {
       setLadderMode(ladderModeParam);
     }
+    if (batchSizeParam !== undefined) {
+      setBatchSize(batchSizeParam);
+      try {
+        localStorage.setItem('recall_drill_batch_size', String(batchSizeParam));
+      } catch {
+        // ignore
+      }
+    }
     setView('session');
   };
 
   const handleResumeSession = (state: SavedSessionState) => {
     const mode = state.ladderMode ?? ladderMode;
+    const items = state.items.map(it => normalizeItem(it, mode));
+    const { batchIndex, batchSize: resolvedBatchSize } = resolveBatchConfig(state, items);
     setDeckName(state.deckName);
-    setSessionItems(state.items.map(it => normalizeItem(it, mode)));
+    setSessionItems(items);
     setSessionPhase(state.phase);
     setSessionQueue(state.queue || []);
     setSessionStats(state.stats || { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionBatchIndex(batchIndex);
+    setSessionBatchStartStats(state.batchStartStats ?? state.stats ?? { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setBatchSize(resolvedBatchSize);
     setEncodeReps(state.encodeReps || 3);
     if (state.chunkDifficulty !== undefined) {
       setChunkDifficulty(state.chunkDifficulty);
@@ -166,25 +204,41 @@ export default function App() {
     setView('session');
   };
 
-  const handleFinishSession = (items: DrillItem[], stats: SessionStats) => {
-    setSessionItems(items);
-    setSessionStats(stats);
-    const mastered = items.filter(i => i.status === 'mastered').length;
+  // Takes SessionView's full internal SessionState (not just items/stats) so
+  // the save below persists the ACTUAL current phase/queue/batchIndex --
+  // SessionView's own persistState effect already keeps localStorage current
+  // on every change, but App-level sessionPhase/sessionQueue/etc. are only
+  // ever seeded once at session start/resume and go stale the moment the
+  // session moves on, so re-deriving this save from them (instead of from
+  // `state`) would silently regress a fresh save back to session-start
+  // values -- exactly the failure mode C3's "Save and stop restores the
+  // same batch" acceptance criterion would catch.
+  const handleFinishSession = (state: SessionState) => {
+    setSessionItems(state.items);
+    setSessionStats(state.stats);
+    setSessionPhase(state.phase);
+    setSessionQueue(state.queue);
+    setSessionBatchIndex(state.batchIndex);
+    setSessionBatchStartStats(state.batchStartStats);
+    const mastered = state.items.filter(i => i.status === 'mastered').length;
     const slug = slugify(deckName);
 
-    if (mastered >= items.length) {
+    if (mastered >= state.items.length) {
       clearSessionState(slug);
     } else {
       saveSessionState(slug, {
         deckName,
-        phase: sessionPhase,
-        queue: sessionQueue,
-        stats,
-        items,
+        phase: state.phase,
+        queue: state.queue,
+        stats: state.stats,
+        items: state.items,
         encodeReps,
         chunkDifficulty,
         stemTolerance,
         ladderMode,
+        batchIndex: state.batchIndex,
+        batchSize: state.config.batchSize,
+        batchStartStats: state.batchStartStats,
         timestamp: Date.now(),
       });
     }
@@ -241,7 +295,8 @@ export default function App() {
     const freshItems = buildItems(
       sessionItems.map(i => ({ front: i.front, back: i.back })),
       chunkDifficulty,
-      ladderMode
+      ladderMode,
+      batchSize
     );
     const slug = slugify(deckName);
     clearSessionState(slug);
@@ -249,6 +304,8 @@ export default function App() {
     setSessionPhase('encode');
     setSessionQueue([]);
     setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
+    setSessionBatchIndex(0);
+    setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setView('session');
   };
 
@@ -286,6 +343,7 @@ export default function App() {
               initialChunkDifficulty={chunkDifficulty}
               initialStemTolerance={stemTolerance}
               initialLadderMode={ladderMode}
+              initialBatchSize={batchSize}
               initialIsEditingCards={autoOpenEditor}
               initialFolderId={activeFolderId}
             />
@@ -302,6 +360,9 @@ export default function App() {
               chunkDifficulty={chunkDifficulty}
               stemTolerance={stemTolerance}
               ladderMode={ladderMode}
+              batchSize={batchSize}
+              initialBatchIndex={sessionBatchIndex}
+              initialBatchStartStats={sessionBatchStartStats}
               onFinishSession={handleFinishSession}
             />
           )}

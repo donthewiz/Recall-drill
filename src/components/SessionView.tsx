@@ -6,23 +6,33 @@ import {
   selectTrial,
   applyAnswer,
   applyNext,
+  advanceToNextBatch,
+  computeBatchSummary,
   initSession,
   SESSION_COMPLETE_ID,
   DWELL_MS,
 } from '../utils/drillEngine';
-import { Check, CheckCheck, ArrowRight, Eye, LogOut } from 'lucide-react';
+import { Check, CheckCheck, ArrowRight, Eye, LogOut, CheckCircle2, Save } from 'lucide-react';
 
 interface SessionViewProps {
   deckName: string;
   initialItems: DrillItem[];
-  initialPhase: 'encode' | 'cycle';
+  // C3: 'batch-done' resumes a session saved ("Save and stop") exactly on
+  // the interstitial between batches -- straight back onto it.
+  initialPhase: 'encode' | 'cycle' | 'batch-done';
   initialQueue: number[];
   initialStats: SessionStats;
   encodeReps: number;
   chunkDifficulty?: number;
   stemTolerance?: boolean;
   ladderMode?: LadderMode;
-  onFinishSession: (items: DrillItem[], stats: SessionStats) => void;
+  // C3: undefined/0/>=deck size all mean "whole deck as one batch" -- see
+  // partitionIntoBatches. batchIndex/batchStartStats resume mid-batch state;
+  // both default to session-start values for a brand new session.
+  batchSize?: number;
+  initialBatchIndex?: number;
+  initialBatchStartStats?: SessionStats;
+  onFinishSession: (state: SessionState) => void;
 }
 
 // Stage-specific placeholder hint shown while blind (no cue text visible).
@@ -44,6 +54,9 @@ export const SessionView: React.FC<SessionViewProps> = ({
   chunkDifficulty = 35,
   stemTolerance = true,
   ladderMode = 'cumulative',
+  batchSize,
+  initialBatchIndex = 0,
+  initialBatchStartStats,
   onFinishSession,
 }) => {
   const [sessionState, setSessionState] = useState<SessionState>(() =>
@@ -53,8 +66,9 @@ export const SessionView: React.FC<SessionViewProps> = ({
       queue: initialQueue,
       stats: initialStats,
       currentId: SESSION_COMPLETE_ID,
-      batchIndex: 0,
-      config: { encodeReps, chunkDifficulty, stemTolerance, ladderMode },
+      batchIndex: initialBatchIndex,
+      batchStartStats: initialBatchStartStats ?? initialStats,
+      config: { encodeReps, chunkDifficulty, stemTolerance, ladderMode, batchSize },
     })
   );
   const [typedValue, setTypedValue] = useState('');
@@ -84,6 +98,9 @@ export const SessionView: React.FC<SessionViewProps> = ({
       chunkDifficulty: state.config.chunkDifficulty,
       stemTolerance: state.config.stemTolerance,
       ladderMode: state.config.ladderMode,
+      batchIndex: state.batchIndex,
+      batchSize: state.config.batchSize,
+      batchStartStats: state.batchStartStats,
       timestamp: Date.now(),
     });
   };
@@ -98,12 +115,24 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // Session complete: selectTrial has no item left to show (currentId hit the
   // SESSION_COMPLETE_ID sentinel). Mirrors advanceCycle calling
   // onFinishSession directly once everything is mastered.
+  //
+  // C3: phase 'batch-done' is excluded deliberately -- initSession leaves a
+  // resumed 'batch-done' state's currentId exactly as seeded (the
+  // SESSION_COMPLETE_ID placeholder passed into the initial useState above),
+  // since there's no trial to select there. Without this guard, resuming
+  // straight into an interstitial would immediately look indistinguishable
+  // from "whole session finished" and skip straight to DoneView instead of
+  // showing the interstitial at all.
   useEffect(() => {
-    if (sessionState.currentId === SESSION_COMPLETE_ID && sessionState.items.length) {
-      onFinishSession(sessionState.items, sessionState.stats);
+    if (
+      sessionState.phase !== 'batch-done' &&
+      sessionState.currentId === SESSION_COMPLETE_ID &&
+      sessionState.items.length
+    ) {
+      onFinishSession(sessionState);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionState.currentId]);
+  }, [sessionState.currentId, sessionState.phase]);
 
   useEffect(() => {
     return () => {
@@ -234,6 +263,21 @@ export const SessionView: React.FC<SessionViewProps> = ({
     setIsProcessing(false);
   };
 
+  // C3: advances past the interstitial into the next batch's encode phase.
+  // Only meaningful while phase is 'batch-done' -- the "Next batch" button
+  // is the only caller.
+  const handleNextBatch = () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setSessionState(advanceToNextBatch(sessionState));
+    setTypedValue('');
+    setUserRevealedAnswer(false);
+    setFeedback(null);
+    setLastVerdict(null);
+    setShowNextBtn(false);
+    setIsProcessing(false);
+  };
+
   const canOverride = lastVerdict === 'wrong';
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -260,6 +304,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
     ? Math.round((masteredCount / items.length) * 100)
     : 0;
 
+  // C3: cheap pure computation (a partition + a couple of filters over this
+  // batch's items), safe to call on every render regardless of phase --
+  // used both for the interstitial's own numbers and the top bar's label.
+  const batchSummary = computeBatchSummary(sessionState);
+  const isBatched = batchSummary.totalBatches > 1;
+
   return (
     <div className="space-y-4">
       {/* Top Session Progress Bar */}
@@ -271,7 +321,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
                 sessionState.phase === 'encode' ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'
               }`}
             />
-            {phaseDetail}
+            {sessionState.phase === 'batch-done'
+              ? `Batch ${batchSummary.batchNumber} of ${batchSummary.totalBatches} complete`
+              : phaseDetail}
+            {isBatched && sessionState.phase !== 'batch-done' && (
+              <span className="text-[var(--text-muted)]">
+                {' '}• Batch {batchSummary.batchNumber}/{batchSummary.totalBatches}
+              </span>
+            )}
           </span>
           <span className="font-semibold text-[var(--text-primary)]">
             {masteredCount} / {items.length} Mastered ({progressPercent}%)
@@ -286,6 +343,68 @@ export const SessionView: React.FC<SessionViewProps> = ({
         </div>
       </div>
 
+      {/* Batch Interstitial: shown between batches instead of the card */}
+      {sessionState.phase === 'batch-done' ? (
+        <div
+          id="batch-interstitial"
+          className="rounded-2xl p-6 sm:p-8 border border-[var(--border)] bg-[var(--surface-card)] shadow-[var(--shadow-card)] text-center space-y-5"
+        >
+          <div className="flex flex-col items-center space-y-2">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--success)] to-emerald-600 text-white flex items-center justify-center shadow-lg ring-4 ring-[var(--success-bg)]">
+              <CheckCircle2 size={28} strokeWidth={2.5} />
+            </div>
+            <h3 className="text-xl font-bold text-[var(--text-primary)]">
+              Batch {batchSummary.batchNumber} of {batchSummary.totalBatches} complete!
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-left bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-4">
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                Mastered
+              </p>
+              <p className="text-xl font-bold text-[var(--text-primary)]">
+                {batchSummary.itemsMastered}{' '}
+                <span className="text-xs text-[var(--text-muted)] font-normal">
+                  / {batchSummary.batchSize}
+                </span>
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                Trials
+              </p>
+              <p className="text-xl font-bold text-[var(--text-primary)]">{batchSummary.trialsSpent}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                Accuracy
+              </p>
+              <p className="text-xl font-bold text-[var(--text-primary)]">{batchSummary.accuracyPercent}%</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              id="next-batch-btn"
+              onClick={handleNextBatch}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] hover:opacity-95 text-white font-semibold text-sm shadow-md active:scale-[0.98] transition-all cursor-pointer"
+            >
+              Next batch <ArrowRight size={16} strokeWidth={2.5} />
+            </button>
+            <button
+              type="button"
+              id="save-stop-btn"
+              onClick={() => onFinishSession(sessionState)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[var(--surface-card)] hover:bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] font-medium text-sm active:scale-[0.98] transition-all cursor-pointer shadow-xs"
+            >
+              <Save size={15} /> Save and stop
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Main Flash Card Container */}
       <div
         id="card"
@@ -438,12 +557,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
         <button
           type="button"
           id="end-btn"
-          onClick={() => onFinishSession(sessionState.items, sessionState.stats)}
+          onClick={() => onFinishSession(sessionState)}
           className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger-bg)] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[var(--danger)]/30"
         >
           <LogOut size={14} /> End session
         </button>
       </div>
+        </>
+      )}
 
       {/* Item Status Strip and Dot Matrix */}
       <div className="pt-3 border-t border-[var(--border)] space-y-2.5">
