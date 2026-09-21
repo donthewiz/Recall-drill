@@ -239,21 +239,39 @@ export function chunkText(text: string, chunkPercent: number = 35): string[] | n
   return chunks.length > 1 ? chunks : null;
 }
 
-// C5: attempt-0 cue for a stage-unit. Keeps each word's first character (in
-// its original case) and replaces every subsequent letter/digit with '_',
-// preserving word count and leaving punctuation (apostrophes, hyphens,
-// periods, ...) visible in place -- "The heart pumps blood." becomes
-// "T__ h____ p____ b_____.". A one-character word is left as-is (nothing to
-// underscore).
+// C5: attempt-0 cue for a stage-unit. Reveals the first alphanumeric
+// character of each alphanumeric RUN within a word (not just index 0 of the
+// word), masks the rest of that run with '_', and leaves every
+// non-alphanumeric character (spaces via the outer split, apostrophes,
+// hyphens, slashes, periods, ...) untouched in place -- "The heart pumps
+// blood." becomes "T__ h____ p____ b_____.".
+//
+// Do NOT simplify this back to "reveal index 0 of the word" -- that was the
+// original (buggy) rule, and it breaks medical word parts that lead with
+// punctuation, e.g. combining-form suffixes like "-itis"/"-emia": index 0 is
+// the hyphen, so the "revealed" character is punctuation and every suffix
+// card renders an identical, uninformative "-____". Revealing the first
+// alphanumeric of each run instead gives "-itis" -> "-i___" and still
+// handles a mid-word boundary like "cardi/o" -> "c____/o" (the 'o' after the
+// slash starts a new run and gets its own reveal).
 export function renderFirstLetterCue(target: string): string {
   return target
     .split(' ')
-    .map(word =>
-      word
+    .map(word => {
+      let inRun = false;
+      return word
         .split('')
-        .map((ch, idx) => (idx === 0 || !/[a-zA-Z0-9]/.test(ch) ? ch : '_'))
-        .join('')
-    )
+        .map(ch => {
+          if (!/[a-zA-Z0-9]/.test(ch)) {
+            inRun = false;
+            return ch;
+          }
+          const reveal = !inRun;
+          inRun = true;
+          return reveal ? ch : '_';
+        })
+        .join('');
+    })
     .join(' ');
 }
 

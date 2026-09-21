@@ -30,7 +30,6 @@ describe('renderFirstLetterCue', () => {
   });
 
   it('leaves punctuation visible in place, only underscoring letters/digits', () => {
-    expect(renderFirstLetterCue("don't stop")).toBe("d__'_ s___");
     expect(renderFirstLetterCue('blood.')).toBe('b____.');
   });
 
@@ -40,6 +39,35 @@ describe('renderFirstLetterCue', () => {
 
   it('preserves the first character\'s original case', () => {
     expect(renderFirstLetterCue('Recall Drill')).toBe('R_____ D____');
+  });
+
+  // Punctuation resets the run, so the alphanumeric character right after it
+  // gets its own reveal too -- "don't" surfaces both "d" and "t" ("d__'t"),
+  // not just "d". This is the same rule exercised by the medical cases
+  // below, just via an apostrophe instead of a hyphen or slash.
+  it('reveals the first alphanumeric character of each run, even mid-word after punctuation', () => {
+    expect(renderFirstLetterCue("don't stop")).toBe("d__'t s___");
+  });
+
+  // Regression coverage for a real bug: the original implementation revealed
+  // index 0 of the *word*, not the first alphanumeric of each *run*. That's
+  // indistinguishable from correct for an ordinary word (which is one run),
+  // but medical combining-form word parts routinely lead with a hyphen or
+  // slash -- e.g. suffixes like "-itis"/"-emia" and prefixes like "brady-".
+  // Under the old rule, index 0 of "-itis" is the hyphen itself, so the
+  // "revealed" character carries no information and every suffix card
+  // rendered an identical, uninformative "-____". Do not simplify this back
+  // to an index-0 check -- these cases exist specifically to catch that
+  // regression.
+  it('reveals the first alphanumeric of each run for medical word parts led/trailed by punctuation', () => {
+    expect(renderFirstLetterCue('-itis')).toBe('-i___');
+    expect(renderFirstLetterCue('-emia')).toBe('-e___');
+    expect(renderFirstLetterCue('brady-')).toBe('b____-');
+    expect(renderFirstLetterCue('cardi/o')).toBe('c____/o');
+  });
+
+  it('degenerate case: a single alphanumeric character after punctuation is left fully revealed', () => {
+    expect(renderFirstLetterCue('-a')).toBe('-a');
   });
 });
 
