@@ -433,8 +433,8 @@ comparison below was taken before the `MIN_WORDS_TO_CHUNK` change; the
 re-test after it (further down) deliberately does not use `simulateLegacy`
 at all, for exactly this reason.
 
-**Phase 0 baseline vs final, 50 seeded runs each, taken immediately before
-the `MIN_WORDS_TO_CHUNK` change below:**
+**Phase 0 baseline vs final, 50 seeded runs each, `shortDeck`/`proseDeck`
+only:**
 
 | Deck | Learner | Trials: Phase 0 | Trials: Final | Trials | Keystrokes: Phase 0 | Keystrokes: Final | Keystrokes |
 |---|---|---|---|---|---|---|---|
@@ -444,30 +444,54 @@ the `MIN_WORDS_TO_CHUNK` change below:**
 | proseDeck | perfect | 240.0 ± 0.0 | 144.0 ± 0.0 | distinguishable | 17472.0 ± 0.0 | 9764.0 ± 0.0 | distinguishable |
 | proseDeck | realistic | 454.4 ± 33.6 | 257.9 ± 31.0 | distinguishable | 29645.7 ± 1684.9 | 16491.5 ± 1715.4 | distinguishable |
 | proseDeck | struggling | 945.5 ± 66.5 | 762.7 ± 80.7 | distinguishable | 55960.5 ± 3622.1 | 36849.9 ± 2992.4 | distinguishable |
-| mediumDeck | perfect | 231.0 ± 0.0 | 141.0 ± 0.0 | distinguishable | 5665.0 ± 0.0 | 3211.0 ± 0.0 | distinguishable |
-| mediumDeck | realistic | 422.0 ± 35.1 | 259.9 ± 28.7 | distinguishable | 9416.2 ± 604.7 | 5513.0 ± 528.4 | distinguishable |
-| mediumDeck | struggling | 913.0 ± 61.7 | 682.1 ± 73.4 | distinguishable | 18065.5 ± 1091.0 | 11846.5 ± 1185.8 | distinguishable |
 
 "Not distinguishable" means `|mean_final - mean_phase0| <= max(SD_final, SD_phase0)` --
 the more conservative of the two series' own observed noise, checked
 independently for trials and keystrokes.
 
+**`mediumDeck` is deliberately excluded from this table -- an earlier
+version of this section included it (231.0 ± 0.0 / 141.0 ± 0.0, "distinguishable"),
+and that row was wrong.** It was measured at a moment when `chunkText`'s
+threshold was still 3 for both engines, which made it valid *at that
+instant* -- but it is not valid *now*, and it is not reproducible by
+running the command this section tells you to run: `MIN_WORDS_TO_CHUNK` is
+8 in the committed code, `simulateLegacy` reads `chunkText` live (see the
+caveat above), and `mediumDeck`'s 5-7 word backs are exactly the range that
+constant gates. Run `npm run simulate` today and the "Phase 0" column for
+`mediumDeck` reads 60.0 ± 0.0 -- identical to Final, "NOT DISTINGUISHABLE"
+-- because `LegacyEngine` picked up the new threshold too. Neither the old
+231 nor the current 60 says anything about a Phase-0-vs-C1–C8 comparison for
+`mediumDeck`; both are artifacts of whatever `MIN_WORDS_TO_CHUNK` happens to
+be at measurement time, which has nothing to do with C1-C8's ladder or
+grading changes. The section below (`MIN_WORDS_TO_CHUNK` = 8) has the
+comparison that's actually valid for `mediumDeck` -- current engine against
+itself, before and after the constant changed, both sides measured with
+the same (irrelevant, held-fixed) legacy behavior.
+
 **The `shortDeck` finding is the important correction here.** Every prior
-phase section in this file (Phase 3, 4, 5, 8, 9) treated `shortDeck`'s
-`realistic`/`struggling` single-sample increases over the Phase 0 number as
-a real, if unwanted, side effect of C5's copy-typing removal, carefully
-rationalized each time. Measured properly, **none of those `shortDeck`
-rows are statistically distinguishable from Phase 0 at all, for any
-learner** -- the increases were run-to-run noise around an unaffected
-baseline (every `shortDeck` card is a `full`-stage card with no chunking;
-nothing from C1 through C8 touches that code path). This doesn't mean C5's
-own analysis was wrong -- copy-typing removal genuinely can't have helped
-an already-free attempt -- only that the *specific magnitude* claimed in
-each phase's single-sample table was noise dressed up as signal. `proseDeck`
-and `mediumDeck`, by contrast, are unambiguously, robustly distinguishable
-in the expected (reduced) direction on both metrics, for every learner --
-that's the real, load-bearing effect of C1/C2/C5/C8's ladder and grading
-changes.
+phase section in this file (Phase 3, 4, 5, 8, 9) already labeled `shortDeck`'s
+`realistic`/`struggling` single-sample deltas "stochastic noise" in their
+own tables, but the prose in those sections still implied a live mechanism
+was moving the number, phase over phase. Measured properly, **none of those
+`shortDeck` rows are statistically distinguishable from Phase 0 at all, for
+any learner.** Precisely which phases could even mechanistically reach
+`shortDeck` matters here, and the claim needs to be exact: C1 (combine
+ladder) and C8a/C8b (chunk-stage criterion, presentation trial) are
+chunk/combine-specific and genuinely cannot touch a deck with zero chunked
+cards -- that part was always right. But **C2 (lenient grading) and C5 (cue
+fading) are not stage-specific** -- `grade()`'s near-miss tier and
+`selectTrial`'s cue-derivation both run for the `full` stage exactly as they
+do for chunks, so both mechanisms are genuinely live on `shortDeck` too, in
+principle. The finding is not that C2/C5 structurally can't reach
+`shortDeck` (an earlier draft of this section overstated that) -- it's that
+their effect on this specific fixture (1-2 word answers, essentially no
+stopwords to drop and little room for a first-letter cue to matter) is too
+small to clear the noise floor at N=50. `proseDeck`, by contrast, is
+unambiguously, robustly distinguishable in the expected (reduced) direction
+on both metrics, for every learner -- that's the real, load-bearing effect
+of C1/C2/C5/C8's ladder and grading changes, on a deck where those
+mechanisms have enough surface area (chunked, multi-word answers) to move
+the number past sampling noise.
 
 ---
 
@@ -492,7 +516,20 @@ Every learner improves by roughly 6-19x the relevant SD -- nowhere close to
 the 1-SD line. **Decision: keep.** `mediumDeck`'s 12 backs (5-7 words) all
 chunked before this change and all land on the `full` stage after it --
 2-3 fewer stage-units per card (no chunk trials, no combine window) is a
-real, structural reduction, not noise. `shortDeck`/`proseDeck` are
+real, structural reduction, not noise.
+
+**Attribution, stated explicitly since it's easy to conflate with the rest
+of this file:** this win belongs entirely to the `MIN_WORDS_TO_CHUNK`
+constant, not to C1-C8. It's a fixture-shape effect -- a back either clears
+a fixed word-count bar and skips the ladder, or it doesn't -- with no
+dependency on the forward-chaining ladder, lenient grading, the chunk-stage
+criterion, or anything else built in Phases 1-9. Nothing here changes the
+per-chunk or per-window cost for any answer that *does* still chunk (a
+`proseDeck` card, for instance, is exactly as expensive per chunk as it was
+before this constant existed). Treat `MIN_WORDS_TO_CHUNK` as an independent,
+separately-tunable knob, not evidence for or against any of the C1-C8 work.
+
+`shortDeck`/`proseDeck` are
 unaffected by construction either way (confirmed by their `perfect` rows
 being bit-for-bit identical before and after in the main table above).
 `src/test/chunkText.spec.ts` covers the exact boundary

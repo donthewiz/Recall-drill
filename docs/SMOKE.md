@@ -8,24 +8,34 @@ human actually clicks through. Run this before calling a release done;
 `npm test` passing is necessary but not sufficient.
 
 Each item names the concrete UI text/labels as they exist today, not as
-originally spec'd — several changed shape across the phases (C1–C5) that
-shipped since this checklist was written.
+originally spec'd — several changed shape across the phases (C1–C9, plus
+the `MIN_WORDS_TO_CHUNK` tuning pass) that shipped since this checklist was
+first written.
 
 ---
 
 ## 1. Start a fresh session
 
-- [ ] From Setup, build or import a small deck with at least one short
-      (≤3 word back, lands on the `full` stage) and one longer (5+ word
-      back, gets chunked) card.
-- [ ] Click **Start session**. The first trial's attempt 0 shows a
-      first‑letter cue (e.g. `T__ h____ p____ b____`, not the full answer)
-      with a **First-Letter Cue** badge — never the complete target.
-- [ ] Answer that trial correctly once. The badge switches to
-      **Blind Recall** and the input placeholder becomes the generic
-      "Type ... from memory..." hint (no cue text).
-- [ ] The progress bar(s) move off 0% after that first correct chunk —
-      they should not sit at 0% through the whole encode phase.
+- [ ] From Setup, build or import a small deck with at least one **short**
+      card (back ≤8 words — lands on the `full` stage directly, no
+      chunking) and one **long** card (back >8 words — gets chunked; the
+      typing-difficulty slider controls how many chunks).
+- [ ] Click **Start session**. On the long card's first chunk, attempt 0 is
+      a **presentation**: the chunk's full text is shown, the input is
+      read-only with a "Press Enter to continue" placeholder, there's a
+      **Read & Continue** badge, and the button reads **Continue** — not
+      "Check answer". No "Show target" button (nothing to reveal).
+- [ ] Press Enter/click Continue. The badge switches to **Blind Recall**
+      and the input becomes typable with a generic "Type ... from memory..."
+      placeholder. Type the chunk correctly — it should advance to the next
+      chunk (or combining) immediately, regardless of what the "Blind
+      typings required" slider is set to (that slider no longer paces
+      individual chunks, only the final combination and short cards).
+- [ ] On the short card, attempt 0 shows a **first-letter cue** instead (e.g.
+      `T__ h____ p____ b____`) with a **First-Letter Cue** badge — not a
+      presentation, since there's no chunk ladder for a short answer.
+- [ ] The progress bar(s) move off 0% after the first correctly-completed
+      chunk — they should not sit at 0% through the whole encode phase.
 
 ## 2. Mid-session refresh and resume
 
@@ -35,8 +45,8 @@ shipped since this checklist was written.
       "Found a previous session for '\<name\>' with N of M items mastered"
       with the **correct** mastered count.
 - [ ] Click **Resume session**. You should land back on the exact stage/
-      streak state you left (e.g. still mid-chunk with the same chunk
-      index), not a restarted session.
+      streak state you left (e.g. still on the same chunk, same
+      presentation-vs-blind state), not a restarted session.
 
 ## 3. Batch interstitial save-and-stop
 
@@ -55,9 +65,11 @@ shipped since this checklist was written.
 
 ## 4. Override on a wrong answer
 
-- [ ] Deliberately type a wrong answer and check it. Feedback should show
-      and **not** auto-advance — a **Continue** button and a
-      **Count as correct** button both appear.
+- [ ] Deliberately type a wrong answer on a **blind** attempt (not a
+      presentation — those can't be graded, so there's nothing to
+      override) and check it. Feedback should show and **not**
+      auto-advance — a **Continue** button and a **Count as correct**
+      button both appear.
 - [ ] Click **Count as correct** (or press `Ctrl+Enter`). The streak
       advances exactly as a genuine correct answer would, the session's
       `overrides` stat increments (visible in the footer once >0), and the
@@ -65,14 +77,17 @@ shipped since this checklist was written.
 
 ## 5. Reveal-then-type
 
-- [ ] On any attempt (first-letter cue or fully blind), press `Esc` or
-      click **Show target**. The complete target text appears.
+- [ ] On a first-letter-cue or fully-blind attempt, press `Esc` or click
+      **Show target**. The complete target text appears.
 - [ ] Type the now-visible answer correctly and submit. The streak for
       that part resets to 0 (not counted as a miss), and the next attempt
-      for that same part shows the first-letter cue again — it does not
-      stay revealed or skip ahead.
+      for that same part shows the cue again — it does not stay revealed
+      or skip ahead.
 - [ ] Repeat, but type something wrong after revealing. Same result: streak
       resets, no miss counted.
+- [ ] On a **presentation** trial, confirm there is no "Show target" button
+      and `Esc` does nothing — the chunk's text is already fully visible,
+      so there's nothing to reveal.
 
 ## 6. Export TSV — **N/A, dropped from scope**
 
@@ -83,9 +98,12 @@ the doc's original list item-for-item.
 
 ## 7. 100-card deck performance sanity check
 
-- [ ] Import or generate a 100-card deck.
+- [ ] Import or generate a 100-card deck with a mix of short (≤8 word) and
+      long (>8 word) backs, so both the `full` stage and the chunk ladder
+      are exercised.
 - [ ] Start a session and play through several trials of a chunked card
-      (chunks → combine → remediate if you miss one on purpose).
+      (presentation → chunk → chunk → ... → combine → remediate if you miss
+      one on purpose).
 - [ ] Watch for input lag or dropped keystrokes on typing, and stutter on
       **Check answer** / **Continue** clicks — `persistState` serializes
       the entire 100-item array to localStorage on every single state

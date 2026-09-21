@@ -32,10 +32,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h4 className="font-semibold text-[var(--text-primary)] mb-0.5">
-                1. Chunking, Cue Fading &amp; Forward Chaining
+                1. Chunking &amp; the Cue Ladder
               </h4>
               <p>
-                Longer answers are split into chunks (the typing-difficulty slider controls how big) and learned one at a time before being combined. Combining uses forward chaining by default: it only re-checks the growing prefix of the answer — parts 1-2, then 1-3, and so on — instead of every possible combination, so once two parts are solid together you rarely have to re-prove it. Your very first attempt at any new chunk or combination shows a first-letter cue (e.g. &ldquo;T__ h____ p____ b____&rdquo;) instead of the full answer, so you're always retrieving, never copying — later attempts are fully blind.
+                Answers longer than 8 words are split into chunks (the typing-difficulty slider controls how big); answers at or under that length are tested as a whole from the start — a chunk-by-chunk ladder is only worth the overhead once an answer is too long to hold in your head at once. Each chunk opens with a quick read: its text is shown once, nothing to type, just press Enter to continue — then needs exactly one correct answer typed fully from memory to move on, no matter how high the &ldquo;blind typings&rdquo; slider is set. Once every chunk is learned, combining them uses forward chaining by default: it only re-checks the growing prefix of the answer — parts 1-2, then 1-3, and so on — instead of every possible combination, and your first attempt at any new combination shows a first-letter cue (e.g. &ldquo;T__ h____ p____ b____&rdquo;) rather than the answer itself, so you're always retrieving, never copying.
               </p>
             </div>
           </div>

@@ -484,3 +484,52 @@ Also add, at the end: a **manual smoke checklist** in `docs/SMOKE.md` — start 
 ## Part 6 — Update the user-facing explanation
 
 `HelpModal.tsx` currently describes the old method ("broken into small 4-word chunks", "2 correct recall trials"). Rewrite it to match the shipped behavior: batches, the cue ladder, forward chaining, lenient grading with override, and the Anki handoff. Keep it to the same four-section format. Do this in the final phase, from the code as merged — not from this document.
+
+---
+
+## Part 7 — Results
+
+The full measurement trail (every phase's before/after table, the harness
+rework to seeded N=50 runs, and the corrections to two earlier overclaims)
+lives in [`docs/BASELINE.md`](./BASELINE.md). These are the three numbers
+worth remembering from it, stated at the same honesty level as that file:
+
+1. **`proseDeck` (chunked, multi-word answers) is robustly, distinguishably
+   cheaper than Phase 0, for every learner.** Perfect: 240.0 ± 0.0 → 144.0 ±
+   0.0 trials (17472 → 9764 keystrokes). Realistic: 454.4 ± 33.6 → 257.9 ±
+   31.0. Struggling: 945.5 ± 66.5 → 762.7 ± 80.7. This is the real,
+   load-bearing effect of C1 (forward-chaining ladder), C2 (lenient
+   grading), C5 (cue fading), and C8a/C8b (chunk-stage criterion,
+   presentation trial) combined — measured on a deck with enough chunked,
+   multi-word surface area for those mechanisms to matter.
+2. **`shortDeck` (1-2 word answers, never chunks) is not statistically
+   distinguishable from Phase 0 at N=50, for any learner.** C1 and C8a/C8b
+   structurally cannot touch a deck with zero chunked cards. C2 and C5 *can*
+   run on the `full` stage, but their effect on answers this short is too
+   small to clear the sampling noise floor. An earlier draft of this
+   document's baseline overstated this as "nothing from C1–C8 touches that
+   code path," which conflated "too small to measure" with "structurally
+   inapplicable" — corrected in `docs/BASELINE.md`.
+3. **`MIN_WORDS_TO_CHUNK` (raised from 3 to 8) is a real, current-vs-current
+   win on `mediumDeck` (backs 4-8 words) — realistic learner 259.9 ± 28.7 →
+   92.0 ± 6.2 trials — but that win belongs entirely to the threshold
+   constant, not to C1-C8.** It's a fixture-shape effect: a back either
+   clears the word-count bar and skips the ladder, or it doesn't, with no
+   dependency on any of the ladder/grading/chunk-stage work. An earlier
+   draft reported this as a Phase-0-vs-final comparison (231 → 141 → 60),
+   which was invalid — `LegacyEngine` shares `chunkText` live with the
+   current engine, so the "Phase 0" side moves under the same threshold
+   change instead of staying fixed. The valid comparison is current-engine-
+   against-itself, before and after the constant changed.
+
+**Scope cuts.** C6 (Anki handoff export) and C7 (multiple-choice rung) were
+dropped from v2's scope on 2026-09-20 — not deferred — see the struck
+sections in Part 2.
+
+**One knob worth revisiting from real usage, not simulation.**
+`MIN_WORDS_TO_CHUNK = 8` was tuned against a synthetic 12-card fixture
+(`mediumDeck`) built specifically to have backs in the 4-8 word range no
+other fixture covered. It's a plain constant in `drillEngine.ts`, not a
+structural decision — if real decks show people struggling with 6-8 word
+answers presented whole, or sailing through 9-10 word answers that still
+get chunked, move it.
