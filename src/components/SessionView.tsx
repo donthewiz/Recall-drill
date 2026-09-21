@@ -126,19 +126,25 @@ export const SessionView: React.FC<SessionViewProps> = ({
   };
 
   const trial = selectTrial(sessionState);
-  const isBlind = trial?.isBlind ?? false;
+  const cue = trial?.cue ?? { kind: 'none' as const };
   const promptText = trial?.prompt ?? '';
   const phaseDetail = trial?.detail ?? '';
 
+  // C5: cue-driven display replaces the old streak-derived isBlind toggle
+  // between "show nothing" and "show the full target" (copy-typing).
+  // Revealing (Esc / Show Answer) always wins regardless of cue level.
   let subText = '';
   let placeholderText = '';
   if (trial) {
-    if (isBlind) {
-      subText = userRevealedAnswer ? trial.target : '';
-      placeholderText = BLIND_PLACEHOLDER[trial.stage] ?? 'Type from memory...';
-    } else {
+    if (userRevealedAnswer) {
       subText = trial.target;
       placeholderText = trial.target;
+    } else if (cue.kind === 'firstLetter') {
+      subText = cue.pattern;
+      placeholderText = cue.pattern;
+    } else {
+      subText = '';
+      placeholderText = BLIND_PLACEHOLDER[trial.stage] ?? 'Type from memory...';
     }
   }
 
@@ -214,7 +220,13 @@ export const SessionView: React.FC<SessionViewProps> = ({
     if (isProcessing) return;
     setIsProcessing(true);
     setShowNextBtn(false);
-    setSessionState(applyNext(sessionState));
+    // C5: a wrong verdict in the encode phase now also needs an explicit
+    // advance, but sessionState already points at the right trial (same
+    // item/stage, streak reset by applyAnswer) -- there's no queue to pop.
+    // Only the cycle phase's manual advance needs applyNext.
+    if (sessionState.phase === 'cycle') {
+      setSessionState(applyNext(sessionState));
+    }
     setTypedValue('');
     setUserRevealedAnswer(false);
     setFeedback(null);
@@ -234,7 +246,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       } else {
         handleCheck();
       }
-    } else if (e.key === 'Escape' && isBlind) {
+    } else if (e.key === 'Escape' && !userRevealedAnswer) {
       handleShowAnswer();
     }
   };
@@ -290,7 +302,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-bg)] px-2.5 py-0.5 rounded-full border border-[var(--accent)]/15">
             {trial?.label ?? ''}
           </span>
-          {isBlind && (
+          {!userRevealedAnswer && cue.kind === 'firstLetter' && (
+            <span className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
+              <Eye size={12} /> First-Letter Cue
+            </span>
+          )}
+          {!userRevealedAnswer && cue.kind === 'none' && (
             <span className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
               <Eye size={12} /> Blind Recall
             </span>
@@ -313,7 +330,9 @@ export const SessionView: React.FC<SessionViewProps> = ({
             </p>
           ) : (
             <p className="text-xs text-[var(--text-muted)] italic flex items-center gap-1.5">
-              {isBlind ? 'Type from pure active recall • press Esc or click Show Answer if stuck' : ''}
+              {!userRevealedAnswer && cue.kind === 'none'
+                ? 'Type from pure active recall • press Esc or click Show Answer if stuck'
+                : ''}
             </p>
           )}
         </div>
@@ -392,7 +411,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </button>
         )}
 
-        {isBlind && !userRevealedAnswer && !showNextBtn && (
+        {!userRevealedAnswer && !showNextBtn && (
           <button
             type="button"
             id="show-answer-btn"

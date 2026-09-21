@@ -135,14 +135,25 @@ export interface SessionState {
   config: SessionConfig;
 }
 
+// C5: replaces the old streak-derived isBlind boolean with an explicit cue
+// level. 'firstLetter' is attempt 0 of a stage-unit (first char of each word,
+// rest underscored -- see renderFirstLetterCue); 'none' is attempt 1+ (fully
+// blind). 'full' and 'choice' are never produced by selectTrial itself --
+// 'full' is what SessionView renders locally when the learner reveals the
+// answer (Esc / Show Answer), and 'choice' is C7 (multiple-choice rung),
+// off by default and not yet built.
+export type Cue =
+  | { kind: 'none' }
+  | { kind: 'firstLetter'; pattern: string }
+  | { kind: 'full'; text: string }
+  | { kind: 'choice'; options: string[] };
+
 export interface Trial {
   itemId: number;
   stage: EncodeStage | 'cycle';
   prompt: string;
   target: string;
-  // Stands in for C5's not-yet-built Cue type; today's only signal is
-  // streak-derived blind/not-blind.
-  isBlind: boolean;
+  cue: Cue;
   label: string;
   detail: string;
 }

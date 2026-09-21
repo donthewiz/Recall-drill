@@ -19,6 +19,18 @@
 // value in continuing to prove it still exhibits the old bug (already proven
 // and committed in Phase 0's history).
 //
+// Phase 4 (C5) made every wrong verdict in the encode phase return
+// `advance: 'manual'` instead of 'auto' (replacing the timed auto-retry with
+// an explicit Enter/Next, so the diff is actually read and the C2 override
+// stays reachable) -- LegacyEngine can never produce this, since it's a
+// frozen pre-C5 snapshot and always returns 'auto' there. So this suite no
+// longer hard-codes `advance` on encode-phase wrong-verdict results; see
+// expectWrong() below, which checks only `verdict` and calls driver.next()
+// when (and only when) the result says to -- the same pattern this suite
+// already used for cycle-phase manual results. RealEngineDriver.next() is a
+// no-op outside the cycle phase (see engineDriver.ts), so calling it
+// unconditionally is safe for both drivers.
+//
 // Out of scope for this suite:
 //   - B5 (unguarded double-Enter race) -- a timing/re-entrancy issue that needs
 //     a DOM-level harness to observe meaningfully; not characterized here.
@@ -33,7 +45,12 @@ import {
   FOUR_CHUNK_CHUNKS,
   CHUNK_DIFFICULTY,
 } from './fixtures/deck';
-import type { EngineDriver } from './reference/legacyEngine';
+import type { DriverAnswerResult, EngineDriver } from './reference/legacyEngine';
+
+function expectWrong(driver: EngineDriver, res: DriverAnswerResult): void {
+  expect(res.verdict).toBe('wrong');
+  if (res.advance === 'manual') driver.next();
+}
 
 export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
   describe('full-stage card: encode -> cycle -> mastered', () => {
@@ -57,7 +74,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
 
       // A miss first: streak stays at 0, misses tallied, same trial.
       let res = driver.answer('totally wrong');
-      expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
+      expectWrong(driver, res);
       expect(driver.stats()).toEqual({ attempts: 1, misses: 1, nearMisses: 0, overrides: 0 });
       expect(driver.snapshotItem(itemId)).toMatchObject({ encodeStreak: 0, status: 'encoding' });
 
@@ -140,7 +157,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       // Post-B1-fix: findAllCulpritChunks uses the LCS alignment, so it
       // correctly flags only chunk 0, not both.
       const res = driver.answer('makes cell energy');
-      expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
+      expectWrong(driver, res);
       expect(driver.snapshotItem(itemId)).toMatchObject({
         stage: 'remediate',
         combineMissCount: 0,
@@ -220,11 +237,11 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       // takes two identical misses to trigger remediation.
       const dropped = 'large trees grow slowly the quiet river';
       let res = driver.answer(dropped);
-      expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
+      expectWrong(driver, res);
       expect(driver.snapshotItem(itemId)).toMatchObject({ stage: 'combine', combineMissCount: 1 });
 
       res = driver.answer(dropped);
-      expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
+      expectWrong(driver, res);
       // Post-B1-fix: the LCS alignment correctly flags only chunks 0 and 2
       // (the ones with an actually-missing word) -- chunks 1 and 3, which
       // were typed correctly, are NOT flagged.
@@ -242,9 +259,9 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
 
       // Miss the first remediate spot twice with unrelated text -> deeper
       // split via splitInHalf/culpritHalf (rWordCount=2 > 1).
-      driver.answer('zzz');
+      expectWrong(driver, driver.answer('zzz'));
       res = driver.answer('zzz');
-      expect(res).toEqual({ verdict: 'wrong', advance: 'auto' });
+      expectWrong(driver, res);
       expect(driver.snapshotItem(itemId)).toMatchObject({ remediateStackLen: 2 });
       expect(driver.currentTrial()).toEqual({
         itemId,

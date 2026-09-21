@@ -3,7 +3,7 @@
 // human, so the trial-count claims in the handoff doc are measured, not
 // assumed. Later phases (C1/C2/C5) diff their own numbers against the
 // baseline this produces -- see docs/BASELINE.md.
-import { DeckItem, SessionConfig, SessionState } from '../src/types';
+import { Cue, DeckItem, SessionConfig, SessionState } from '../src/types';
 import {
   applyAnswer,
   applyNext,
@@ -13,11 +13,10 @@ import {
   SESSION_COMPLETE_ID,
 } from '../src/utils/drillEngine';
 
-// isBlind stands in for the not-yet-built Cue model (C5); replace with
-// `cue: Cue` when C5 lands. Phase 0's only "how much help did the learner
-// have" signal is streak-derived blind/not-blind, same as Trial.isBlind.
+// Phase 4 (C5): the learner model is handed the real Cue instead of a
+// blind/not-blind boolean, per Part 4 of docs/V2-HANDOFF.md.
 export type LearnerModel = {
-  pCorrect(attemptIdx: number, isBlind: boolean, priorExposures: number): number;
+  pCorrect(attemptIdx: number, cue: Cue, priorExposures: number): number;
 };
 
 export interface SimulationResult {
@@ -68,7 +67,7 @@ export function simulate(
     const priorExposures = exposureCounts.get(key) ?? 0;
     exposureCounts.set(key, priorExposures + 1);
 
-    const p = learner.pCorrect(priorExposures, trial.isBlind, priorExposures);
+    const p = learner.pCorrect(priorExposures, trial.cue, priorExposures);
     const correct = Math.random() < p;
     const typed = correct ? trial.target : '';
 
@@ -78,7 +77,13 @@ export function simulate(
     keystrokes += trial.target.length;
 
     state = result.state;
-    if (result.advance === 'manual') {
+    // Phase 4 (C5): a wrong verdict in the encode phase also returns
+    // advance: 'manual' now, but the engine state already points at the
+    // right trial (same item/stage, streak reset) -- no queue to pop.
+    // applyNext is advanceCycleState, so it must only run for the cycle
+    // phase's manual advance (see SessionView.tsx's handleNext for the
+    // same guard).
+    if (result.advance === 'manual' && state.phase === 'cycle') {
       state = applyNext(state);
     }
   }
@@ -94,23 +99,28 @@ export function simulate(
   return { totalTrials, trialsByStage, keystrokes, wallClockEstimate };
 }
 
-// Copy-typing (attempt 0, target visible) is treated as effectively always
-// correct -- per the handoff doc, it's transcription, not retrieval, and
-// generates near-zero learning, so it's not worth modeling as error-prone.
+// Phase 4 (C5) removed copy-typing: attempt 0 now shows a firstLetter cue
+// (first character of each word) rather than the full target, so it's no
+// longer modeled as free. These per-cue base rates and increments are
+// tunables (not pinned by the handoff doc, same status as TYPING_CPS/
+// PER_TRIAL_OVERHEAD_SEC above): firstLetter is modeled as reliably easier
+// than a fully blind attempt (a real retrieval cue, not transcription) but
+// not free, since the learner still has to produce the rest of the word from
+// memory.
 export const perfectLearner: LearnerModel = {
   pCorrect: () => 1,
 };
 
 export const realisticLearner: LearnerModel = {
-  pCorrect: (_attemptIdx, isBlind, priorExposures) => {
-    if (!isBlind) return 1;
+  pCorrect: (_attemptIdx, cue, priorExposures) => {
+    if (cue.kind === 'firstLetter') return Math.min(0.97, 0.75 + 0.1 * priorExposures);
     return Math.min(0.95, 0.55 + 0.12 * priorExposures);
   },
 };
 
 export const strugglingLearner: LearnerModel = {
-  pCorrect: (_attemptIdx, isBlind, priorExposures) => {
-    if (!isBlind) return 1;
+  pCorrect: (_attemptIdx, cue, priorExposures) => {
+    if (cue.kind === 'firstLetter') return Math.min(0.95, 0.5 + 0.08 * priorExposures);
     return Math.min(0.95, 0.3 + 0.08 * priorExposures);
   },
 };

@@ -1,5 +1,6 @@
 import {
   CombineSequenceItem,
+  Cue,
   DeckItem,
   DrillItem,
   SavedDeckEntry,
@@ -230,6 +231,24 @@ export function chunkText(text: string, chunkPercent: number = 35): string[] | n
   }
 
   return chunks.length > 1 ? chunks : null;
+}
+
+// C5: attempt-0 cue for a stage-unit. Keeps each word's first character (in
+// its original case) and replaces every subsequent letter/digit with '_',
+// preserving word count and leaving punctuation (apostrophes, hyphens,
+// periods, ...) visible in place -- "The heart pumps blood." becomes
+// "T__ h____ p____ b_____.". A one-character word is left as-is (nothing to
+// underscore).
+export function renderFirstLetterCue(target: string): string {
+  return target
+    .split(' ')
+    .map(word =>
+      word
+        .split('')
+        .map((ch, idx) => (idx === 0 || !/[a-zA-Z0-9]/.test(ch) ? ch : '_'))
+        .join('')
+    )
+    .join(' ');
 }
 
 // C1: 'exhaustive' is the original ladder (kept verbatim, deliberately -- see
@@ -805,8 +824,14 @@ export const SESSION_COMPLETE_ID = -1;
 // 'near-miss' is new in Phase 2 (C2): the doc pins this at ~1200ms.
 // The six wrong-verdict dwells (*-miss, *-miss-retry, *-miss-split,
 // combine-miss-remediate) were extended from their Phase 0 values (1600-1800)
-// to 2200ms per C2's "must be reachable before auto-advance fires" -- the
-// "Count as correct" override needs a window to be clickable in.
+// to 2200ms in Phase 2 (C2) so the "Count as correct" override had a window
+// to be clickable in. Phase 4 (C5) made every wrong-verdict return
+// `advance: 'manual'` instead, so these six keys are no longer consulted by
+// any setTimeout -- the shell just waits for Enter/Next now, and the override
+// stays reachable indefinitely rather than only within a dwell window. Left
+// in the table rather than deleted: still meaningful as "how long this
+// feedback would have shown" documentation, and DWELL_MS is a plain lookup
+// table, not something worth special-casing per advance mode.
 export const DWELL_MS: Record<string, number> = {
   'chunks-advance': 700,
   'chunks-streak-progress': 500,
@@ -885,13 +910,19 @@ export function selectTrial(state: SessionState): Trial | null {
   const it = state.items.find(i => i.id === state.currentId);
   if (!it) return null;
 
+  // C5: attempt 0 of a stage-unit (streak 0) gets a firstLetter cue; attempt
+  // 1+ (streak >= 1) is fully blind. The cycle phase never had a copy-typing
+  // attempt to remove, so it stays fully blind unconditionally, as before.
+  const cueForStreak = (streak: number, target: string): Cue =>
+    streak >= 1 ? { kind: 'none' } : { kind: 'firstLetter', pattern: renderFirstLetterCue(target) };
+
   if (state.phase === 'cycle') {
     return {
       itemId: it.id,
       stage: 'cycle',
       prompt: it.front,
       target: it.back,
-      isBlind: true,
+      cue: { kind: 'none' },
       label: 'Spaced Retrieval Cycle',
       detail: 'Spaced Retrieval • Cycling review',
     };
@@ -904,7 +935,7 @@ export function selectTrial(state: SessionState): Trial | null {
       stage: 'chunks',
       prompt: it.front,
       target: chunk,
-      isBlind: it.chunkStreak >= 1,
+      cue: cueForStreak(it.chunkStreak, chunk),
       label: `Chunk Practice • ${it.chunkIndex + 1}/${it.chunks.length}`,
       detail: `Encoding • Part ${it.chunkIndex + 1} of ${it.chunks.length}`,
     };
@@ -918,7 +949,7 @@ export function selectTrial(state: SessionState): Trial | null {
       stage: 'combine',
       prompt: it.front,
       target: combined,
-      isBlind: it.combineStreak >= 1,
+      cue: cueForStreak(it.combineStreak, combined),
       label: 'Combination Practice',
       detail: `Encoding • Combining parts ${seqItem.start}-${seqItem.end} (${it.combineSeqIdx + 1}/${it.combineSeq.length})`,
     };
@@ -942,7 +973,7 @@ export function selectTrial(state: SessionState): Trial | null {
       stage: 'remediate',
       prompt: it.front,
       target: rTop.text,
-      isBlind: rTop.streak >= 1,
+      cue: cueForStreak(rTop.streak, rTop.text),
       label: 'Precision Repair',
       detail,
     };
@@ -954,7 +985,7 @@ export function selectTrial(state: SessionState): Trial | null {
     stage: 'full',
     prompt: it.front,
     target: it.back,
-    isBlind: it.encodeStreak >= 1,
+    cue: cueForStreak(it.encodeStreak, it.back),
     label: 'Full Recall',
     detail: 'Encoding • Full item',
   };
@@ -1065,11 +1096,15 @@ export function applyAnswer(
         dwellKey: 'chunks-miss',
       };
       newItems[itIdx] = it;
+      // C5: a wrong verdict now waits for an explicit advance (Enter/Next)
+      // instead of an auto-advance timer, so the diff is actually read and
+      // C2's "Count as correct" override stays reachable indefinitely rather
+      // than only within a dwell window.
       return {
         state: { ...base, items: newItems, stats: nextStats },
         verdict: 'wrong',
         feedback,
-        advance: 'auto',
+        advance: 'manual',
       };
     }
 
@@ -1151,11 +1186,12 @@ export function applyAnswer(
         };
       }
       newItems[itIdx] = it;
+      // C5: manual advance on a wrong verdict (see the chunks-miss branch above).
       return {
         state: { ...base, items: newItems, stats: nextStats },
         verdict: 'wrong',
         feedback,
-        advance: 'auto',
+        advance: 'manual',
       };
     }
 
@@ -1249,11 +1285,12 @@ export function applyAnswer(
         };
       }
       newItems[itIdx] = it;
+      // C5: manual advance on a wrong verdict (see the chunks-miss branch above).
       return {
         state: { ...base, items: newItems, stats: nextStats },
         verdict: 'wrong',
         feedback,
-        advance: 'auto',
+        advance: 'manual',
       };
     }
 
@@ -1289,11 +1326,12 @@ export function applyAnswer(
       dwellKey: 'full-miss',
     };
     newItems[itIdx] = it;
+    // C5: manual advance on a wrong verdict (see the chunks-miss branch above).
     return {
       state: { ...base, items: newItems, stats: nextStats },
       verdict: 'wrong',
       feedback,
-      advance: 'auto',
+      advance: 'manual',
     };
   }
 

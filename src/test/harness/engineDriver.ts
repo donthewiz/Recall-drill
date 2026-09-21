@@ -61,7 +61,13 @@ export class RealEngineDriver implements EngineDriver {
       itemId: trial.itemId,
       stage: trial.stage,
       target: trial.target,
-      isBlind: trial.isBlind,
+      // C5 replaced Trial.isBlind with Trial.cue, but the shared
+      // characterization suite's isBlind assertions still hold: 'none' is
+      // exactly the old streak>=1 definition of blind (cycle is always
+      // 'none' too, matching its old hardcoded isBlind: true), so deriving
+      // it here keeps DriverTrial's shape -- and every existing assertion --
+      // unchanged for both drivers.
+      isBlind: trial.cue.kind === 'none',
     };
   }
 
@@ -76,8 +82,16 @@ export class RealEngineDriver implements EngineDriver {
     this.revealed = true;
   }
 
+  // C5: a wrong verdict in the encode phase now also returns
+  // advance: 'manual', but unlike the cycle phase, the engine state already
+  // points at the right trial (same item/stage, streak reset) -- nothing
+  // needs popping off a queue. applyNext is advanceCycleState, so calling it
+  // during the encode phase would incorrectly try to advance as if `queue`
+  // were a cycle queue. Only the cycle phase's manual advance needs it.
   next(): void {
-    this.state = applyNext(this.state);
+    if (this.state.phase === 'cycle') {
+      this.state = applyNext(this.state);
+    }
   }
 
   snapshotItem(itemId: number): ItemSnapshot {
