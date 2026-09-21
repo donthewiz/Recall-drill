@@ -34,6 +34,17 @@ they're unchanged from what's already in this file's git history — see
   `test/simulate.stats.ts`) -- re-running `npm run simulate` reproduces the
   exact same 50 seeds, and therefore the exact same numbers, every time.
 
+**"Total trials" below is `SimulationResult.totalTrials`**, which counts
+every trial the harness drives through, including ungraded chunks-stage
+presentation trials (C8b's attempt 0 of a chunk, cue `'present'`).
+`SimulationResult.attempts` is a separate, smaller figure that excludes
+those -- it's what `state.stats.attempts` (the production session's own
+trial counter) and `computeMinimumTrials`/the cold-start estimator in
+`src/utils/drillEngine.ts` both track instead. Don't compare an estimator
+figure against a number in the tables below without accounting for this
+gap (see `test/coldStartEstimate.consistency.spec.ts`, which cross-checks
+`computeMinimumTrials` against `attempts`, not against `totalTrials`).
+
 | Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last of the 50 runs) |
 |---|---|---|---|---|---|
 | shortDeck | perfect | 60.0 ± 0.0 | 385.0 ± 0.0 | 175.6 ± 0.0 | full:36 cycle:24 |

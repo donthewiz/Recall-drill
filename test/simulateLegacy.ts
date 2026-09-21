@@ -99,7 +99,7 @@ export function simulateLegacy(
 
   const wallClockEstimate = keystrokes / TYPING_CPS + totalTrials * PER_TRIAL_OVERHEAD_SEC;
 
-  return { totalTrials, trialsByStage, keystrokes, wallClockEstimate };
+  return { totalTrials, trialsByStage, keystrokes, wallClockEstimate, attempts: driver.stats().attempts };
 }
 
 // Verbatim from the original test/simulate.ts (git show ccc4514) -- see that

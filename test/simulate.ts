@@ -11,6 +11,7 @@ import {
   initSession,
   selectTrial,
   SESSION_COMPLETE_ID,
+  MIN_WORDS_TO_CHUNK,
 } from '../src/utils/drillEngine';
 
 // Phase 4 (C5): the learner model is handed the real Cue instead of a
@@ -24,6 +25,12 @@ export interface SimulationResult {
   trialsByStage: Record<string, number>;
   keystrokes: number;
   wallClockEstimate: number;
+  // The final SessionState.stats.attempts -- distinct from totalTrials
+  // above (which also counts ungraded chunks-stage presentation trials;
+  // applyAnswer's isPresentation branch skips incrementing `attempts` for
+  // those). This is what computeMinimumTrials in src/utils/drillEngine.ts
+  // is meant to predict -- see test/coldStartEstimate.consistency.spec.ts.
+  attempts: number;
 }
 
 // Tunables -- not pinned by the handoff doc, chosen as reasonable estimates
@@ -39,9 +46,10 @@ const MAX_TRIALS = 20000;
 export function simulate(
   deck: DeckItem[],
   config: SessionConfig,
-  learner: LearnerModel
+  learner: LearnerModel,
+  minWordsToChunk: number = MIN_WORDS_TO_CHUNK
 ): SimulationResult {
-  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode);
+  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode, undefined, minWordsToChunk);
   let state: SessionState = initSession({
     items,
     phase: 'encode',
@@ -102,7 +110,7 @@ export function simulate(
 
   const wallClockEstimate = keystrokes / TYPING_CPS + totalTrials * PER_TRIAL_OVERHEAD_SEC;
 
-  return { totalTrials, trialsByStage, keystrokes, wallClockEstimate };
+  return { totalTrials, trialsByStage, keystrokes, wallClockEstimate, attempts: state.stats.attempts };
 }
 
 // Phase 4 (C5) removed copy-typing: attempt 0 now shows a firstLetter cue

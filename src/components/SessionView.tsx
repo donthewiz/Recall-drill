@@ -13,6 +13,11 @@ import {
   initSession,
   SESSION_COMPLETE_ID,
   DWELL_MS,
+  computeCumulativeColdStartMultiplier,
+  computeRemainingColdStartRange,
+  formatColdStartRange,
+  pickColdStartDeckShape,
+  saveColdStartHistory,
 } from '../utils/drillEngine';
 import { Check, CheckCheck, ArrowRight, Eye, LogOut, CheckCircle2, Save } from 'lucide-react';
 
@@ -114,6 +119,29 @@ export const SessionView: React.FC<SessionViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionState]);
 
+  // Cold-start recalibration: persists the cumulative (all batches
+  // completed so far, however many that is) actual/minimum multiplier as
+  // this deck's personal history right before handing off to
+  // onFinishSession -- covers a naturally finished session (every batch
+  // done), "Save and stop" on an interstitial (some batches done), and "End
+  // session" mid-trial (possibly zero batches done, in which case
+  // computeCumulativeColdStartMultiplier returns null and nothing is
+  // written, leaving any existing history untouched). See
+  // computeCumulativeColdStartMultiplier's own doc comment in
+  // drillEngine.ts for why this is safe to compute from `state` alone at
+  // any of those three call sites.
+  const finishSession = (state: SessionState) => {
+    const multiplier = computeCumulativeColdStartMultiplier(state);
+    if (multiplier !== null && deckName) {
+      saveColdStartHistory(slugify(deckName), {
+        multiplier,
+        deckShape: pickColdStartDeckShape(state.items),
+        measuredAt: new Date().toISOString(),
+      });
+    }
+    onFinishSession(state);
+  };
+
   // Session complete: selectTrial has no item left to show (currentId hit the
   // SESSION_COMPLETE_ID sentinel). Mirrors advanceCycle calling
   // onFinishSession directly once everything is mastered.
@@ -131,7 +159,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       sessionState.currentId === SESSION_COMPLETE_ID &&
       sessionState.items.length
     ) {
-      onFinishSession(sessionState);
+      finishSession(sessionState);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionState.currentId, sessionState.phase]);
@@ -322,6 +350,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const batchSummary = computeBatchSummary(sessionState);
   const isBatched = batchSummary.totalBatches > 1;
 
+  // Cold-start recalibration: null until at least one batch has been fully
+  // completed this session (see computeCumulativeColdStartMultiplier) --
+  // used below for the interstitial's remaining-range display. Same cost
+  // class as batchSummary above, safe to recompute every render.
+  const cumulativeMultiplier = computeCumulativeColdStartMultiplier(sessionState);
+
   // C4: honest progress -- unlike progressPercent (mastered/total, which
   // reads 0% through the entire encode phase), this credits partial ladder
   // completion, so it starts climbing on the very first correct chunk.
@@ -424,6 +458,18 @@ export const SessionView: React.FC<SessionViewProps> = ({
             </div>
           </div>
 
+          {cumulativeMultiplier !== null &&
+            (() => {
+              const range = computeRemainingColdStartRange(sessionState, cumulativeMultiplier);
+              if (range.floorTrials <= 0) return null;
+              return (
+                <p id="cold-start-recalibrated" className="text-xs text-[var(--text-muted)]">
+                  Remaining time, recalibrated from this session:{' '}
+                  {formatColdStartRange(range.floorSeconds, range.ceilingSeconds)}
+                </p>
+              );
+            })()}
+
           <div className="flex items-center justify-center gap-3">
             <button
               type="button"
@@ -436,7 +482,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
             <button
               type="button"
               id="save-stop-btn"
-              onClick={() => onFinishSession(sessionState)}
+              onClick={() => finishSession(sessionState)}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[var(--surface-card)] hover:bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] font-medium text-sm active:scale-[0.98] transition-all cursor-pointer shadow-xs"
             >
               <Save size={15} /> Save and stop
@@ -614,7 +660,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
         <button
           type="button"
           id="end-btn"
-          onClick={() => onFinishSession(sessionState)}
+          onClick={() => finishSession(sessionState)}
           className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger-bg)] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[var(--danger)]/30"
         >
           <LogOut size={14} /> End session

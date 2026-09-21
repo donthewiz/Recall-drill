@@ -20,6 +20,10 @@ import {
   isPremadeDeck,
   loadFolderIndex,
   createFolder,
+  computeColdStartEstimate,
+  getColdStartHistory,
+  formatColdStartRange,
+  ExposureLevel,
 } from '../utils/drillEngine';
 import { CardEditor, CardRowItem } from './CardEditor';
 import {
@@ -142,6 +146,12 @@ function getDifficultyDescription(pct: number, avgWords: number): string {
   const chunkWords = Math.max(2, Math.round(sampleWords * (pct / 100)));
   return `~${chunkWords} of ${sampleWords} words at once per chunk (${pct}%)`;
 }
+
+const EXPOSURE_LEVELS: { level: ExposureLevel; label: string }[] = [
+  { level: 'fresh', label: 'First time seeing this material' },
+  { level: 'once', label: 'Studied it once or twice' },
+  { level: 'familiar', label: 'Reviewed it several times' },
+];
 
 export const SetupView: React.FC<SetupViewProps> = ({
   onStartSession,
@@ -267,6 +277,10 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     return 5;
   });
+  // Cold-start estimate: no user-facing persistence of its own -- the picker
+  // only matters when there's no personal history for this deck yet (see
+  // personalHistory below), and defaults to the most conservative reading.
+  const [exposureLevel, setExposureLevel] = useState<ExposureLevel>('fresh');
   const [msg, setMsg] = useState('');
   const [resumePrompt, setResumePrompt] = useState<{
     state: SavedSessionState;
@@ -324,16 +338,36 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
   };
 
+  const currentDeckItems = useMemo(
+    () => (editMode === 'cards' ? cardRowsToDeckItems(cards) : parseDeck(rawText)),
+    [cards, rawText, editMode]
+  );
+
   const avgWordsPerCard = useMemo(() => {
-    const currentItems =
-      editMode === 'cards' ? cardRowsToDeckItems(cards) : parseDeck(rawText);
-    if (!currentItems.length) return 12;
-    const totalWords = currentItems.reduce(
+    if (!currentDeckItems.length) return 12;
+    const totalWords = currentDeckItems.reduce(
       (acc, it) => acc + it.back.trim().split(/\s+/).filter(Boolean).length,
       0
     );
-    return Math.max(4, Math.round(totalWords / currentItems.length));
-  }, [cards, rawText, editMode]);
+    return Math.max(4, Math.round(totalWords / currentDeckItems.length));
+  }, [currentDeckItems]);
+
+  // Personal history takes precedence over the exposure-picker seed (see
+  // drillEngine.ts's cold-start precedence note) -- looked up by the slug
+  // this deck would be saved/started under, whether or not it's saved yet.
+  const historySlug = selectedSlug || slugify(deckName || 'untitled-deck');
+  const personalHistory = useMemo(() => getColdStartHistory(historySlug), [historySlug]);
+
+  const coldStartEstimate = useMemo(() => {
+    if (!currentDeckItems.length) return null;
+    return computeColdStartEstimate(
+      currentDeckItems,
+      encodeReps,
+      chunkDifficulty,
+      ladderMode,
+      personalHistory ? personalHistory.multiplier : exposureLevel
+    );
+  }, [currentDeckItems, encodeReps, chunkDifficulty, ladderMode, personalHistory, exposureLevel]);
 
   // Sync if parent passes updated initialItems, initialDeckName, or initialIsEditingCards
   useEffect(() => {
@@ -559,8 +593,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
   };
 
-  const validCardsCount =
-    editMode === 'cards' ? cardRowsToDeckItems(cards).length : parseDeck(rawText).length;
+  const validCardsCount = currentDeckItems.length;
 
   return (
     <div className="space-y-6">
@@ -949,6 +982,53 @@ export const SetupView: React.FC<SetupViewProps> = ({
             the checkpoints and interleaves every card in the deck together, like a
             single big batch.
           </p>
+        </div>
+
+        {/* Cold-start time estimate */}
+        <div className="flex flex-col gap-2.5 border-t border-[var(--border)] pt-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+              <Clock size={13} className="text-[var(--accent)]" />
+              <span>Estimated time for this deck:</span>
+            </label>
+            {coldStartEstimate && (
+              <span
+                id="cold-start-estimate"
+                className="text-xs font-bold text-[var(--text-primary)] bg-[var(--surface-1)] border border-[var(--border)] px-2.5 py-0.5 rounded-lg shadow-xs"
+              >
+                {formatColdStartRange(coldStartEstimate.floorSeconds, coldStartEstimate.ceilingSeconds)}
+              </span>
+            )}
+          </div>
+
+          {personalHistory ? (
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Rough estimate, based on your last session with this deck.
+            </p>
+          ) : (
+            <div className="space-y-2 bg-[var(--surface-1)]/50 p-3 rounded-xl border border-[var(--border)]">
+              <p className="text-[11px] font-medium text-[var(--text-secondary)]">
+                How familiar are you with this material? (rough estimate)
+              </p>
+              <div className="flex flex-wrap items-center gap-1 bg-[var(--surface-1)] border border-[var(--border)] rounded-lg p-0.5 w-fit">
+                {EXPOSURE_LEVELS.map(({ level, label }) => (
+                  <button
+                    key={level}
+                    type="button"
+                    id={`exposure-${level}`}
+                    onClick={() => setExposureLevel(level)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                      exposureLevel === level
+                        ? 'bg-[var(--accent)] text-white shadow-xs'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Primary Action Buttons (Top Placement) */}
