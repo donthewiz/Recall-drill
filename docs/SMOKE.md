@@ -1,0 +1,97 @@
+# Manual Smoke Checklist
+
+Called for at the end of Part 4 of [`docs/V2-HANDOFF.md`](./V2-HANDOFF.md):
+a hand-run pass over the things the automated suite (`npm test`) and the
+trial-count harness (`npm run simulate`) don't cover — real browser timing,
+localStorage round-trips across a page reload, and interaction sequences a
+human actually clicks through. Run this before calling a release done;
+`npm test` passing is necessary but not sufficient.
+
+Each item names the concrete UI text/labels as they exist today, not as
+originally spec'd — several changed shape across the phases (C1–C5) that
+shipped since this checklist was written.
+
+---
+
+## 1. Start a fresh session
+
+- [ ] From Setup, build or import a small deck with at least one short
+      (≤3 word back, lands on the `full` stage) and one longer (5+ word
+      back, gets chunked) card.
+- [ ] Click **Start session**. The first trial's attempt 0 shows a
+      first‑letter cue (e.g. `T__ h____ p____ b____`, not the full answer)
+      with a **First-Letter Cue** badge — never the complete target.
+- [ ] Answer that trial correctly once. The badge switches to
+      **Blind Recall** and the input placeholder becomes the generic
+      "Type ... from memory..." hint (no cue text).
+- [ ] The progress bar(s) move off 0% after that first correct chunk —
+      they should not sit at 0% through the whole encode phase.
+
+## 2. Mid-session refresh and resume
+
+- [ ] Partway through encoding (some items `new`, some `encoding`, none
+      `mastered` yet), reload the browser tab.
+- [ ] Back on Setup, starting the same deck name should surface
+      "Found a previous session for '\<name\>' with N of M items mastered"
+      with the **correct** mastered count.
+- [ ] Click **Resume session**. You should land back on the exact stage/
+      streak state you left (e.g. still mid-chunk with the same chunk
+      index), not a restarted session.
+
+## 3. Batch interstitial save-and-stop
+
+- [ ] Use a deck with more cards than the configured batch size (e.g. 6
+      cards at batch size 3, so there are 2 batches).
+- [ ] Fully encode and cycle-master every card in batch 1. The
+      **"Batch 1 of 2 complete!"** interstitial should appear with correct
+      Mastered / Trials / Accuracy numbers for just that batch.
+- [ ] Click **Save and stop**. DoneView should read "Session Saved" (not
+      "Deck Mastered!", since batch 2 hasn't run).
+- [ ] From Setup, resume that session. It should land directly back on the
+      **same interstitial** — not re-run batch 1, and not skip ahead to
+      DoneView.
+- [ ] Click **Next batch**. Batch 2 should start its own encode phase,
+      interleaving only its own cards.
+
+## 4. Override on a wrong answer
+
+- [ ] Deliberately type a wrong answer and check it. Feedback should show
+      and **not** auto-advance — a **Continue** button and a
+      **Count as correct** button both appear.
+- [ ] Click **Count as correct** (or press `Ctrl+Enter`). The streak
+      advances exactly as a genuine correct answer would, the session's
+      `overrides` stat increments (visible in the footer once >0), and the
+      trial moves on normally.
+
+## 5. Reveal-then-type
+
+- [ ] On any attempt (first-letter cue or fully blind), press `Esc` or
+      click **Show target**. The complete target text appears.
+- [ ] Type the now-visible answer correctly and submit. The streak for
+      that part resets to 0 (not counted as a miss), and the next attempt
+      for that same part shows the first-letter cue again — it does not
+      stay revealed or skip ahead.
+- [ ] Repeat, but type something wrong after revealing. Same result: streak
+      resets, no miss counted.
+
+## 6. Export TSV — **N/A, dropped from scope**
+
+C6 (Anki handoff export) was cut from v2's scope on 2026-09-20 — see the
+struck section in `docs/V2-HANDOFF.md`. There is no export feature in the
+app to smoke-test. Left here, marked N/A, so this checklist still mirrors
+the doc's original list item-for-item.
+
+## 7. 100-card deck performance sanity check
+
+- [ ] Import or generate a 100-card deck.
+- [ ] Start a session and play through several trials of a chunked card
+      (chunks → combine → remediate if you miss one on purpose).
+- [ ] Watch for input lag or dropped keystrokes on typing, and stutter on
+      **Check answer** / **Continue** clicks — `persistState` serializes
+      the entire 100-item array to localStorage on every single state
+      change, which is the likely culprit if something feels slow.
+- [ ] If it stutters: debounce `SessionView.tsx`'s `persistState` write
+      (e.g. coalesce with a short `setTimeout`/`requestIdleCallback` instead
+      of writing synchronously on every `sessionState` change) rather than
+      reducing how often state updates — the state itself needs to stay
+      real-time for the UI.
