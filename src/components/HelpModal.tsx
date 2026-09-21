@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Keyboard, Split, Layers, RotateCw, CheckCircle2 } from 'lucide-react';
+import { X, Keyboard, Split, RotateCw, CheckCircle2 } from 'lucide-react';
 
 interface HelpModalProps {
   isOpen: boolean;
@@ -32,24 +32,24 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h4 className="font-semibold text-[var(--text-primary)] mb-0.5">
-                1. Automatic Chunking &amp; Progressive Chaining
+                1. Chunking, Cue Fading &amp; Forward Chaining
               </h4>
               <p>
-                Answers longer than 5 words are broken into small 4-word chunks. You first encode each piece individually until you type it from memory without prompts.
+                Longer answers are split into chunks (the typing-difficulty slider controls how big) and learned one at a time before being combined. Combining uses forward chaining by default: it only re-checks the growing prefix of the answer — parts 1-2, then 1-3, and so on — instead of every possible combination, so once two parts are solid together you rarely have to re-prove it. Your very first attempt at any new chunk or combination shows a first-letter cue (e.g. &ldquo;T__ h____ p____ b____&rdquo;) instead of the full answer, so you're always retrieving, never copying — later attempts are fully blind.
               </p>
             </div>
           </div>
 
           <div className="flex gap-3">
             <div className="w-7 h-7 rounded-lg bg-[var(--warning-bg)] text-[var(--warning)] flex items-center justify-center shrink-0 mt-0.5">
-              <Layers size={15} />
+              <CheckCircle2 size={15} />
             </div>
             <div>
               <h4 className="font-semibold text-[var(--text-primary)] mb-0.5">
-                2. Hierarchical Remediation
+                2. Lenient Grading &amp; Precision Remediation
               </h4>
               <p>
-                When you combine chunks and make a mistake, Recall Drill uses sequence alignment to find the exact sub-phrase you missed, isolates it, and drills down to single words if needed before returning to the full sentence.
+                Small slips are forgiven: dropping a filler word like &ldquo;the&rdquo;, or a minor plural/verb-ending difference, counts as a close match and still advances your streak (tracked separately from real misses; the ending-forgiveness can be turned off per deck). If you get a combination wrong, Recall Drill aligns your answer against the target word by word to find exactly which chunk you missed, isolates it, and — if you keep missing — splits it into smaller and smaller sub-phrases, down to a single word if needed, before returning you to the full combination. A wrong answer pauses so you can compare against the target before continuing; if you're sure your answer was right, &ldquo;Count as correct&rdquo; overrides it.
               </p>
             </div>
           </div>
@@ -60,10 +60,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h4 className="font-semibold text-[var(--text-primary)] mb-0.5">
-                3. Interleaved Cycling (Spaced Retrieval)
+                3. Batched Encoding &amp; Spaced Cycling
               </h4>
               <p>
-                Once encoded, items are shuffled into a review queue. An item is only marked <strong>Mastered</strong> after 2 correct recall trials separated by other items.
+                Cards are encoded a batch at a time (5 by default, adjustable from 3-10, or the whole deck at once) instead of one card being drilled to completion before the next begins — within a batch you rotate to the next unfinished card after every chunk, combination, or fixed weak spot. Once a batch is fully encoded you get a summary and a choice to continue or stop before the next batch. From there, encoded cards enter a shuffled, interleaved review cycle — a card is only marked <strong>Mastered</strong> once you recall it correctly twice with other cards in between.
               </p>
             </div>
           </div>
@@ -77,9 +77,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 Keyboard Shortcuts
               </h4>
               <ul className="list-disc list-inside space-y-1">
-                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Enter</kbd>: Check answer or advance to next item</li>
-                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd>: Show answer when blind prompt is active</li>
-                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Tab</kbd>: Inserts a real tab character inside the deck editor</li>
+                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Enter</kbd>: Check your answer, or continue once it's graded</li>
+                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd>: Show the answer — resets your streak on this part to zero, but never counts as a miss</li>
+                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Ctrl+Enter</kbd>: &ldquo;Count as correct&rdquo; override, right after a wrong answer</li>
+                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Tab</kbd>: Inserts a real tab character inside the bulk deck editor</li>
               </ul>
             </div>
           </div>
