@@ -5,6 +5,7 @@ import {
   FULL_STAGE_BACK,
   TWO_CHUNK_BACK,
   TWO_CHUNK_CHUNKS,
+  TWO_CHUNK_DIFFICULTY,
   FOUR_CHUNK_BACK,
   FOUR_CHUNK_CHUNKS,
   CHUNK_DIFFICULTY,
@@ -165,14 +166,14 @@ describe('four-chunk card (C8a): post-B1-fix culprit attribution + full remediat
 describe('applyAnswer purity: never mutates its input state', () => {
   it('a remediate-stage answer leaves the original state.items entry untouched', () => {
     let state: SessionState = initSession({
-      items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
+      items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], TWO_CHUNK_DIFFICULTY),
       phase: 'encode',
       queue: [],
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
       batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
-      config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
+      config: { encodeReps: 2, chunkDifficulty: TWO_CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
     // Walk to a combine miss that enters remediate.
@@ -180,7 +181,7 @@ describe('applyAnswer purity: never mutates its input state', () => {
     state = applyAnswer(state, TWO_CHUNK_CHUNKS[0], { revealed: false }).state;
     state = applyAnswer(state, TWO_CHUNK_CHUNKS[1], { revealed: false }).state;
     state = applyAnswer(state, TWO_CHUNK_CHUNKS[1], { revealed: false }).state;
-    state = applyAnswer(state, 'makes cell energy', { revealed: false }).state;
+    state = applyAnswer(state, TWO_CHUNK_CHUNKS[1], { revealed: false }).state;
 
     const it = state.items.find(i => i.id === state.currentId)!;
     expect(it.stage).toBe('remediate');
@@ -249,7 +250,7 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const driver = new RealEngineDriver();
     driver.init([{ front: 'Q', back: TWO_CHUNK_BACK }], {
       encodeReps: 2,
-      chunkDifficulty: CHUNK_DIFFICULTY,
+      chunkDifficulty: TWO_CHUNK_DIFFICULTY,
     });
     const itemId = driver.currentTrial()!.itemId;
     driver.answer(TWO_CHUNK_CHUNKS[0]);

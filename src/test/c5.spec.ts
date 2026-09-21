@@ -16,7 +16,13 @@ import {
   SESSION_COMPLETE_ID,
 } from '../utils/drillEngine';
 import type { SessionState } from '../types';
-import { FULL_STAGE_BACK, TWO_CHUNK_BACK, TWO_CHUNK_CHUNKS, CHUNK_DIFFICULTY } from './fixtures/deck';
+import {
+  FULL_STAGE_BACK,
+  TWO_CHUNK_BACK,
+  TWO_CHUNK_CHUNKS,
+  TWO_CHUNK_DIFFICULTY,
+  CHUNK_DIFFICULTY,
+} from './fixtures/deck';
 
 describe('renderFirstLetterCue', () => {
   it('keeps the first character of each word and underscores the rest, preserving word count', () => {
@@ -67,14 +73,14 @@ describe('selectTrial cue: attempt 0 is firstLetter, attempt 1+ is fully blind',
   // and a chunk-to-chunk transition.
   it("chunks stage: each chunk starts with a presentation, not firstLetter (C8b)", () => {
     let state: SessionState = initSession({
-      items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
+      items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], TWO_CHUNK_DIFFICULTY),
       phase: 'encode',
       queue: [],
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
       batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
-      config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
+      config: { encodeReps: 2, chunkDifficulty: TWO_CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
     expect(selectTrial(state)!.cue).toEqual({ kind: 'present' });
@@ -163,14 +169,14 @@ describe('C5: a wrong verdict in the encode phase requires manual advance', () =
 describe('C5 acceptance: no graded trial ever exposes the complete target before typing', () => {
   it('walking a full session (chunks -> combine -> cycle) never yields a graded cue that reveals the full text pre-attempt', () => {
     let state: SessionState = initSession({
-      items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
+      items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], TWO_CHUNK_DIFFICULTY),
       phase: 'encode',
       queue: [],
       stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
       currentId: SESSION_COMPLETE_ID,
       batchIndex: 0,
       batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
-      config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
+      config: { encodeReps: 2, chunkDifficulty: TWO_CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
     });
 
     for (let i = 0; i < 200 && state.currentId !== SESSION_COMPLETE_ID; i++) {

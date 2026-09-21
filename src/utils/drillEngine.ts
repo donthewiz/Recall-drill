@@ -205,9 +205,15 @@ export function parseDeck(text: string): DeckItem[] {
   return out;
 }
 
+// Answers at or under this many words skip the chunk/combine ladder
+// entirely and use stage 'full' directly -- not worth the ladder's own
+// overhead (a chunk now costs a presentation + a blind attempt each, per
+// C8, plus a combine window) when a single full-answer recall handles it.
+export const MIN_WORDS_TO_CHUNK = 8;
+
 export function chunkText(text: string, chunkPercent: number = 35): string[] | null {
   const words = text.split(/\s+/).filter(w => w.length > 0);
-  if (words.length <= 3) return null;
+  if (words.length <= MIN_WORDS_TO_CHUNK) return null;
 
   const pct = Math.max(15, Math.min(100, chunkPercent));
   // 100% means full card at once (no chunking)

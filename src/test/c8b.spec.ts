@@ -15,20 +15,20 @@ import {
 } from '../utils/drillEngine';
 import { simulate, perfectLearner } from '../../test/simulate';
 import type { SessionState } from '../types';
-import { TWO_CHUNK_BACK, TWO_CHUNK_CHUNKS, CHUNK_DIFFICULTY } from './fixtures/deck';
+import { TWO_CHUNK_BACK, TWO_CHUNK_CHUNKS, TWO_CHUNK_DIFFICULTY } from './fixtures/deck';
 
 const zeroStats = { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 };
 
 function freshState(): SessionState {
   return initSession({
-    items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], CHUNK_DIFFICULTY),
+    items: buildItems([{ front: 'Q', back: TWO_CHUNK_BACK }], TWO_CHUNK_DIFFICULTY),
     phase: 'encode',
     queue: [],
     stats: { ...zeroStats },
     currentId: SESSION_COMPLETE_ID,
     batchIndex: 0,
     batchStartStats: { ...zeroStats },
-    config: { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
+    config: { encodeReps: 2, chunkDifficulty: TWO_CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' },
   });
 }
 
@@ -72,7 +72,7 @@ describe('C8b: a presentation trial is acknowledged, not graded', () => {
 
 describe('C8b: test/simulate.ts counts a presentation trial toward wall clock but not keystrokes', () => {
   const deck = [{ front: 'Q', back: TWO_CHUNK_BACK }];
-  const config = { encodeReps: 2, chunkDifficulty: CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' as const };
+  const config = { encodeReps: 2, chunkDifficulty: TWO_CHUNK_DIFFICULTY, stemTolerance: true, ladderMode: 'cumulative' as const };
 
   it('trialsByStage.chunks counts both the presentation and the blind attempt for each chunk', () => {
     const result = simulate(deck, config, perfectLearner);

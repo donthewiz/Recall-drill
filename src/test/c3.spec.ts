@@ -21,15 +21,19 @@ import { CHUNK_DIFFICULTY } from './fixtures/deck';
 
 const zeroStats = { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 };
 
-// Every back is 5 words -> chunkText at CHUNK_DIFFICULTY (20%) yields exactly
-// 2 chunks (a 2-word chunk + a 3-word chunk), same mechanics as
-// fixtures/deck.ts's TWO_CHUNK_BACK -- so each card needs multiple
-// stage-units (2 chunks + 1 combine window) before it's 'ready', which is
-// what makes interleaving observable within a single item's encoding.
+// Every back is 9 words (deliberately > MIN_WORDS_TO_CHUNK, 8, so it still
+// chunks at all) -> chunkText at CHUNK_DIFFICULTY (20%) yields 4 chunks,
+// same mechanics as fixtures/deck.ts's FOUR_CHUNK_BACK -- so each card
+// needs multiple stage-units (4 chunks + 3 combine windows under the
+// cumulative ladder) before it's 'ready', which is what makes interleaving
+// observable within a single item's encoding. The exact chunk count isn't
+// asserted anywhere in this file -- only that there's more than one
+// stage-unit per item -- so it doesn't matter that this no longer matches
+// TWO_CHUNK_BACK's 2-chunk shape.
 function makeChunkedDeck(count: number): DeckItem[] {
   return Array.from({ length: count }, (_, i) => ({
     front: `Q${i}`,
-    back: `alpha${i} beta${i} gamma${i} delta${i} epsilon${i}`,
+    back: `alpha${i} beta${i} gamma${i} delta${i} epsilon${i} zeta${i} eta${i} theta${i} iota${i}`,
   }));
 }
 

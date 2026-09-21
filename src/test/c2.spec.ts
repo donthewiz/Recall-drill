@@ -90,7 +90,7 @@ describe('C2 near-miss: advances the streak like exact, tallies nearMisses not m
 
 describe('C2 manual override: retroactively counts a pending wrong verdict as exact', () => {
   it('override does not double-count the attempt, decrements nothing (miss was never committed), and increments overrides', () => {
-    let state = freshState('the mitochondria makes cell energy', 2, true, 35); // chunks stage on a 5-word back (>3 words)
+    let state = freshState('the mitochondria produces most of the cells energy supply', 2, true, 35); // chunks stage on a 9-word back (>MIN_WORDS_TO_CHUNK)
     const trial = state.items[0];
     const target = trial.chunks![trial.chunkIndex];
 

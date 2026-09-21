@@ -53,7 +53,13 @@
 //   - App.tsx's handleFinishSession stale-persist quirk -- lives outside the
 //     extraction target (SessionView/drillEngine), not covered here.
 import { describe, it, expect } from 'vitest';
-import { FULL_STAGE_BACK, TWO_CHUNK_BACK, TWO_CHUNK_CHUNKS, CHUNK_DIFFICULTY } from './fixtures/deck';
+import {
+  FULL_STAGE_BACK,
+  TWO_CHUNK_BACK,
+  TWO_CHUNK_CHUNKS,
+  TWO_CHUNK_DIFFICULTY,
+  CHUNK_DIFFICULTY,
+} from './fixtures/deck';
 import type { DriverAnswerResult, EngineDriver } from './reference/legacyEngine';
 
 function expectWrong(driver: EngineDriver, res: DriverAnswerResult): void {
@@ -137,7 +143,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       // redesigning this one.
       driver.init([{ front: 'Q2', back: TWO_CHUNK_BACK }], {
         encodeReps: 2,
-        chunkDifficulty: CHUNK_DIFFICULTY,
+        chunkDifficulty: TWO_CHUNK_DIFFICULTY,
         ladderMode: 'exhaustive',
       });
 
@@ -161,11 +167,11 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
 
       // Miss the combine window by typing only the second chunk's content --
       // everything the user typed matches chunk 1 in order, so chunk 1 is
-      // genuinely NOT at fault; only chunk 0 ("the mitochondria") is missing.
-      // windowChunkCount=2 -> missThreshold=1 -> remediates immediately.
-      // Post-B1-fix: findAllCulpritChunks uses the LCS alignment, so it
-      // correctly flags only chunk 0, not both.
-      const res = driver.answer('makes cell energy');
+      // genuinely NOT at fault; only chunk 0 ("the mitochondria produces
+      // most of") is missing. windowChunkCount=2 -> missThreshold=1 ->
+      // remediates immediately. Post-B1-fix: findAllCulpritChunks uses the
+      // LCS alignment, so it correctly flags only chunk 0, not both.
+      const res = driver.answer(TWO_CHUNK_CHUNKS[1]);
       expectWrong(driver, res);
       expect(driver.snapshotItem(itemId)).toMatchObject({
         stage: 'remediate',
