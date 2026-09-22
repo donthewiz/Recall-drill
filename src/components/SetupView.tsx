@@ -55,7 +55,9 @@ interface SetupViewProps {
     cycleOrder: CycleOrder,
     strictPunctuation: boolean
   ) => void;
-  onResumeSession: (state: SavedSessionState) => void;
+  // editorItems: the editor's current cards, so App can re-seed the editor
+  // from them after the session instead of from stale library data.
+  onResumeSession: (state: SavedSessionState, editorItems?: DeckItem[]) => void;
   onNavigateDecks: () => void;
   initialDeckName?: string;
   initialItems?: DeckItem[];
@@ -617,7 +619,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
   const handleResume = () => {
     if (resumePrompt) {
-      onResumeSession(resumePrompt.state);
+      onResumeSession(resumePrompt.state, resumePrompt.parsed);
     }
   };
 

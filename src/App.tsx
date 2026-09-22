@@ -168,7 +168,10 @@ export default function App() {
     ladderModeParam?: LadderMode,
     batchSizeParam?: number,
     cycleOrderParam?: CycleOrder,
-    strictPunctuationParam?: boolean
+    strictPunctuationParam?: boolean,
+    // Folder practice pools cards from several decks: session-only, and
+    // never seeded into the deck editor.
+    fromFolder: boolean = false
   ) => {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
     const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
@@ -178,6 +181,11 @@ export default function App() {
     const slug = slugify(name);
     recordDeckUsed(slug, name, parsed.length);
     setDeckName(name);
+    // Back to Setup remounts SetupView showing deckName with its cards seeded
+    // from editorDeckItems, so that must be the deck this session actually
+    // ran -- not whatever was last opened from the library, which a Save in
+    // the editor would then write back over the saved deck.
+    if (!fromFolder) setEditorDeckItems(parsed);
     setSessionItems(items);
     setSessionPhase('encode');
     setSessionQueue([]);
@@ -224,15 +232,18 @@ export default function App() {
         ? strictPunctuationParam
         : loadDeckIndex().find(d => d.slug === slug)?.strictPunctuation ?? false;
     setStrictPunctuation(strict);
-    setSourceDeckEditable(true);
+    setSourceDeckEditable(!fromFolder);
     setView('session');
   };
 
-  const handleResumeSession = (state: SavedSessionState) => {
+  // editorItems: the deck editor's cards at the moment Resume was clicked,
+  // re-seeded for the same stale-reseed reason as in handleStartSession.
+  const handleResumeSession = (state: SavedSessionState, editorItems?: DeckItem[]) => {
     const mode = state.ladderMode ?? ladderMode;
     const items = state.items.map(it => normalizeItem(it, mode));
     const { batchIndex, batchSize: resolvedBatchSize } = resolveBatchConfig(state, items);
     setDeckName(state.deckName);
+    if (editorItems?.length) setEditorDeckItems(editorItems);
     setSessionItems(items);
     setSessionPhase(state.phase);
     setSessionQueue(state.queue || []);
@@ -338,9 +349,18 @@ export default function App() {
   };
 
   const handlePracticeFolder = (folderName: string, items: DeckItem[]) => {
-    handleStartSession(items, folderName, encodeReps, chunkDifficulty);
-    // After handleStartSession, which sets it true for every other entry point.
-    setSourceDeckEditable(false);
+    handleStartSession(
+      items,
+      folderName,
+      encodeReps,
+      chunkDifficulty,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
   };
 
   // A mid-session edit was written back to the session's deck. After Back
