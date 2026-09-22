@@ -450,8 +450,13 @@ export function shuffle<T>(arr: T[]): T[] {
 // other id that isn't in this batch (e.g. the previous batch's last item,
 // right after advanceToNextBatch). Returns null once every item in the
 // batch is 'ready' (batch fully encoded -> time for its cycle phase).
+// 'mastered' items are skipped too: on the normal path no batch item can be
+// mastered during encode, but editCurrentItem can send one card of a batch
+// that's mid-cycle back to encoding, and its mastered batch-mates must not
+// be re-encoded along with it.
 export function selectNextEncodeItem(batch: DrillItem[], lastItemId: number): DrillItem | null {
-  const pending = batch.filter(i => i.status !== 'ready');
+  const needsEncoding = (i: DrillItem) => i.status !== 'ready' && i.status !== 'mastered';
+  const pending = batch.filter(needsEncoding);
   if (!pending.length) return null;
 
   const lastIdx = batch.findIndex(i => i.id === lastItemId);
@@ -459,7 +464,7 @@ export function selectNextEncodeItem(batch: DrillItem[], lastItemId: number): Dr
 
   for (let step = 1; step <= batch.length; step++) {
     const candidate = batch[(lastIdx + step) % batch.length];
-    if (candidate.status !== 'ready') return candidate;
+    if (needsEncoding(candidate)) return candidate;
   }
   return null; // unreachable: pending.length > 0 guarantees a hit above
 }
@@ -522,29 +527,40 @@ export function buildItems(
   // behavior (and PRNG draw sequence) its measurements were taken under.
   shuffleWithinBatch: boolean = true
 ): DrillItem[] {
-  const items: DrillItem[] = parsed.map((p, i) => {
-    const chunks = chunkText(p.back, chunkPercent, minWordsToChunk);
-    return {
-      id: i,
-      front: p.front,
-      back: p.back,
-      status: 'new',
-      encodeStreak: 0,
-      cycleStreak: 0,
-      chunks,
-      chunkIndex: 0,
-      chunkStreak: 0,
-      combineSeq: chunks ? buildCombineSequence(chunks.length, ladderMode) : null,
-      combineSeqIdx: 0,
-      combineStreak: 0,
-      combineMissCount: 0,
-      remediateStack: [],
-      remediateQueue: [],
-      remediateReturnSeqIdx: 0,
-      stage: chunks ? 'chunks' : 'full',
-    };
-  });
+  const items: DrillItem[] = parsed.map((p, i) => buildItem(p, i, chunkPercent, ladderMode, minWordsToChunk));
   return shuffleWithinBatch ? shuffleWithinBatches(items, batchSize) : items;
+}
+
+// One fresh item (status 'new', no progress) for a card. Shared by
+// buildItems and editCurrentItem's restart path, so a restarted card is
+// exactly what a new session would have built for it.
+function buildItem(
+  p: DeckItem,
+  id: number,
+  chunkPercent: number,
+  ladderMode: LadderMode,
+  minWordsToChunk: number
+): DrillItem {
+  const chunks = chunkText(p.back, chunkPercent, minWordsToChunk);
+  return {
+    id,
+    front: p.front,
+    back: p.back,
+    status: 'new',
+    encodeStreak: 0,
+    cycleStreak: 0,
+    chunks,
+    chunkIndex: 0,
+    chunkStreak: 0,
+    combineSeq: chunks ? buildCombineSequence(chunks.length, ladderMode) : null,
+    combineSeqIdx: 0,
+    combineStreak: 0,
+    combineMissCount: 0,
+    remediateStack: [],
+    remediateQueue: [],
+    remediateReturnSeqIdx: 0,
+    stage: chunks ? 'chunks' : 'full',
+  };
 }
 
 export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): DrillItem {
@@ -1102,7 +1118,13 @@ function advanceEncodeState(
   const next = selectNextEncodeItem(batch, base.currentId);
 
   if (!next) {
-    const batchQueue = orderCycleQueue(batch.map(i => i.id), base.config.cycleOrder);
+    // Non-mastered only: after an editCurrentItem restart mid-cycle, the
+    // batch's already-mastered cards must not be served again. On the normal
+    // path nothing in the batch is mastered yet, so this is every item.
+    const batchQueue = orderCycleQueue(
+      batch.filter(i => i.status !== 'mastered').map(i => i.id),
+      base.config.cycleOrder
+    );
     return advanceCycleState(items, batchQueue, stats, {
       ...base,
       items,
@@ -2131,4 +2153,57 @@ function applyRevealedAnswer(
 // not part of SessionState, so it belongs in SessionView, not here.
 export function applyNext(state: SessionState): SessionState {
   return advanceCycleState(state.items, state.queue, state.stats, state);
+}
+
+// Mid-session edit of the card currently being drilled (state.currentId).
+// Only valid in 'encode' or 'cycle'; anything else, or an empty field after
+// trimming, returns the state unchanged. Stats are never touched.
+//
+// If the answer didn't really change -- exactMatch under the deck's own
+// punctuation mode, so 'pre op' -> 'pre-op' keeps progress on a normal deck
+// but not a strict one -- progress is kept and only the text (and chunk
+// texts) are swapped. That needs the chunk count to stay the same and the
+// item not to be in 'remediate' (whose stack holds old chunk text);
+// presentation beats and cues show chunk text, so chunks can't go stale.
+// Otherwise the card restarts from scratch, rebuilt exactly as buildItems
+// would, at its existing id, and is served again right away -- which from
+// 'cycle' means dropping back to 'encode' with an empty queue. Other items
+// keep their status and cycleStreak; once the restarted card is encoded,
+// advanceEncodeState rebuilds the cycle queue from the batch's non-mastered
+// cards.
+export function editCurrentItem(
+  state: SessionState,
+  edit: { front: string; back: string }
+): { state: SessionState; restarted: boolean } {
+  const unchanged = { state, restarted: false };
+  if (state.phase !== 'encode' && state.phase !== 'cycle') return unchanged;
+  const old = state.items.find(i => i.id === state.currentId);
+  if (!old) return unchanged;
+  const front = edit.front.trim();
+  const back = edit.back.trim();
+  if (!front || !back) return unchanged;
+
+  const replaceItem = (item: DrillItem) => state.items.map(i => (i.id === item.id ? item : i));
+
+  const answerChanged = !exactMatch(old.back, back, state.config.strictPunctuation ?? false);
+  if (!answerChanged) {
+    const chunks = chunkText(back, state.config.chunkDifficulty, MIN_WORDS_TO_CHUNK);
+    const sameChunkCount = (chunks?.length ?? null) === (old.chunks?.length ?? null);
+    if (sameChunkCount && old.stage !== 'remediate') {
+      return { state: { ...state, items: replaceItem({ ...old, front, back, chunks }) }, restarted: false };
+    }
+  }
+
+  const rebuilt: DrillItem = {
+    ...buildItem({ front, back }, old.id, state.config.chunkDifficulty, state.config.ladderMode, MIN_WORDS_TO_CHUNK),
+    status: 'encoding',
+  };
+  return {
+    state: {
+      ...state,
+      items: replaceItem(rebuilt),
+      ...(state.phase === 'cycle' ? { phase: 'encode' as const, queue: [] } : {}),
+    },
+    restarted: true,
+  };
 }
