@@ -767,38 +767,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
           </div>
         </div>
 
-        {/* View Mode Switcher: Cards View vs Bulk Import */}
-        <div className="flex items-center justify-between border-t border-[var(--border)] pt-3 text-xs">
-          <div className="flex items-center gap-1.5 bg-[var(--surface-1)] p-1 rounded-xl border border-[var(--border)]">
-            <button
-              type="button"
-              onClick={handleSwitchToCards}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                editMode === 'cards'
-                  ? 'bg-[var(--surface-2)] text-[var(--accent)] shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <Layers size={14} /> Individual Cards
-            </button>
-            <button
-              type="button"
-              onClick={handleSwitchToBulk}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                editMode === 'bulk'
-                  ? 'bg-[var(--surface-2)] text-[var(--accent)] shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <FileText size={14} /> Bulk Text / Import
-            </button>
-          </div>
-
-          <span className="font-semibold text-[var(--accent)] bg-[var(--accent-bg)] px-3 py-1 rounded-full border border-[var(--accent)]/20">
-            {validCardsCount} valid {validCardsCount === 1 ? 'card' : 'cards'}
-          </span>
-        </div>
-
         {/* Reps Setting - Sliding Scale */}
         <div className="flex flex-col gap-2.5 border-t border-[var(--border)] pt-3.5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1163,6 +1131,38 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* View Mode Switcher: Cards View vs Bulk Import */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-3.5 text-xs">
+          <div className="flex items-center gap-1.5 bg-[var(--surface-1)] p-1 rounded-xl border border-[var(--border)]">
+            <button
+              type="button"
+              onClick={handleSwitchToCards}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                editMode === 'cards'
+                  ? 'bg-[var(--surface-2)] text-[var(--accent)] shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Layers size={14} /> Individual Cards
+            </button>
+            <button
+              type="button"
+              onClick={handleSwitchToBulk}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                editMode === 'bulk'
+                  ? 'bg-[var(--surface-2)] text-[var(--accent)] shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <FileText size={14} /> Bulk Text / Import
+            </button>
+          </div>
+
+          <span className="font-semibold text-[var(--accent)] bg-[var(--accent-bg)] px-3 py-1 rounded-full border border-[var(--accent)]/20">
+            {validCardsCount} valid {validCardsCount === 1 ? 'card' : 'cards'}
+          </span>
         </div>
 
         {/* Primary Action Buttons (Top Placement) */}
