@@ -17,6 +17,7 @@ import {
   saveSessionState,
   recordDeckUsed,
   resolveBatchConfig,
+  resolveSourceDeckEditable,
   loadDeckIndex,
 } from './utils/drillEngine';
 import { requestPersistentStorage, PersistenceStatus } from './utils/backup';
@@ -263,7 +264,7 @@ export default function App() {
     }
     setCycleOrder(state.cycleOrder ?? 'shuffled');
     setStrictPunctuation(state.strictPunctuation ?? false);
-    setSourceDeckEditable(true);
+    setSourceDeckEditable(resolveSourceDeckEditable(state));
     setView('session');
   };
 
@@ -304,6 +305,7 @@ export default function App() {
         batchIndex: state.batchIndex,
         batchSize: state.config.batchSize,
         batchStartStats: state.batchStartStats,
+        sourceDeckEditable,
         timestamp: Date.now(),
       });
     }

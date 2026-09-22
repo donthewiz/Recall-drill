@@ -102,6 +102,12 @@ export interface SavedSessionState {
   // began -- lets the interstitial report "this batch" trials/accuracy by
   // diffing against `stats` instead of carrying separate running totals.
   batchStartStats?: SessionStats;
+  // Whether this session maps onto one saved deck (named deckName) that a
+  // mid-session card edit may be written back to -- false for folder
+  // practice. Undefined on any save from before this field existed ->
+  // false (see resolveSourceDeckEditable): with no recorded source, edits
+  // stay session-only.
+  sourceDeckEditable?: boolean;
   timestamp?: number;
 }
 

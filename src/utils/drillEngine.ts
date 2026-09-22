@@ -620,6 +620,33 @@ export function resolveBatchConfig(
   };
 }
 
+// Resumed session's write-back permission. A save with no recorded source
+// (written before sourceDeckEditable existed) can't be told apart from a
+// folder-practice save, so it's treated as session-only.
+export function resolveSourceDeckEditable(saved: Pick<SavedSessionState, 'sourceDeckEditable'>): boolean {
+  return saved.sourceDeckEditable ?? false;
+}
+
+// Writes a mid-session card edit back to the saved deck named deckName, but
+// only if the session has a single source deck, that deck exists, and the
+// card at the item's index still reads exactly as it did before the edit
+// (DrillItem.id is the card's index in the deck as parsed). folderId and
+// strictPunctuation are left undefined so the deck keeps its own. Returns
+// the updated deck, or null if nothing was written.
+export function writeBackCardEdit(
+  deckName: string,
+  sourceDeckEditable: boolean,
+  before: Pick<DrillItem, 'id' | 'front' | 'back'>,
+  after: Pick<DrillItem, 'front' | 'back'>
+): DeckItem[] | null {
+  if (!sourceDeckEditable || !deckName) return null;
+  const deck = getDeckFromStorage(slugify(deckName));
+  const card = deck?.[before.id];
+  if (!deck || !card || card.front !== before.front || card.back !== before.back) return null;
+  const updated = deck.map((c, idx) => (idx === before.id ? { front: after.front, back: after.back } : c));
+  return saveDeckToStorage(deckName, updated) ? updated : null;
+}
+
 // LocalStorage helpers
 export function lsGet<T>(key: string): T | null {
   try {

@@ -3,8 +3,7 @@ import { CycleOrder, DeckItem, DrillItem, Feedback, LadderMode, SessionState, Se
 import {
   slugify,
   saveSessionState,
-  getDeckFromStorage,
-  saveDeckToStorage,
+  writeBackCardEdit,
   editCurrentItem,
   selectTrial,
   applyAnswer,
@@ -134,6 +133,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       batchIndex: state.batchIndex,
       batchSize: state.config.batchSize,
       batchStartStats: state.batchStartStats,
+      sourceDeckEditable,
       timestamp: Date.now(),
     });
   };
@@ -376,18 +376,11 @@ export const SessionView: React.FC<SessionViewProps> = ({
     setIsEditing(false);
   };
 
-  // Writes the edit back to the saved deck, but only if this session has a
-  // single source deck, it still exists, and the card at the item's index
-  // still reads exactly as it did before the edit (DrillItem.id is the
-  // card's index in the deck as parsed). Returns whether it wrote.
+  // Returns whether the edit was written back to the saved deck (see
+  // writeBackCardEdit for when it is).
   const writeBackEdit = (before: DrillItem, after: DrillItem): boolean => {
-    if (!sourceDeckEditable || !deckName) return false;
-    const deck = getDeckFromStorage(slugify(deckName));
-    const card = deck?.[before.id];
-    if (!deck || !card || card.front !== before.front || card.back !== before.back) return false;
-    const updated = deck.map((c, idx) => (idx === before.id ? { front: after.front, back: after.back } : c));
-    // folderId/strictPunctuation left undefined so the deck keeps its own.
-    if (!saveDeckToStorage(deckName, updated)) return false;
+    const updated = writeBackCardEdit(deckName, sourceDeckEditable, before, after);
+    if (!updated) return false;
     onDeckCardEdited(updated);
     return true;
   };
