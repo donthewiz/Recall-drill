@@ -555,3 +555,20 @@ get chunked, move it.
   as a check that the change didn't regress trial/keystroke counts on
   ordinary text (it doesn't). `src/test/grade.spec.ts`'s punctuation table
   is the actual evidence for this change's grading behavior.
+
+---
+
+## Per-deck strict punctuation mode
+
+A deck's "Punctuation must match" setting (`strictPunctuation` on its
+`SavedDeckEntry`/`SessionConfig`) swaps `grade()`'s comparator from `norm()`
+to `normStrict()` and disables the near-miss tier entirely: every word is
+required (no stopword or stem forgiveness, regardless of the deck's own
+stem-tolerance setting, which the UI disables while strict is on) and every
+non-exact answer grades `wrong`. Within that stricter word-for-word
+requirement, hyphens, slashes, `+ % < > =`, and a digit-internal decimal
+point (`7.35`) still count and must match literally — a strict deck won't
+silently accept `74` for `7.4` or `and or` for `and/or`. Brackets, quotes,
+apostrophes, commas, colons, semicolons, accents, and a sentence-ending
+`. ! ?` are still ignored, same spirit as lenient mode, just without the
+word-level leniency layered on top.

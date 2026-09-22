@@ -42,8 +42,37 @@ export function norm(s: string): string {
 // spacing-insensitive on top of norm() (see grade() and culpritHalf() below)
 // so a card's own spacing habits never separately decide correctness on top
 // of what norm() already forgives.
-function exactMatch(a: string, b: string): boolean {
-  return norm(a).replace(/ /g, '') === norm(b).replace(/ /g, '');
+function exactMatch(a: string, b: string, strict: boolean = false): boolean {
+  const n = strict ? normStrict : norm;
+  return n(a).replace(/ /g, '') === n(b).replace(/ /g, '');
+}
+
+// Phase 2 (per-deck strict punctuation): unlike norm(), this only ignores
+// accents, decorative/structural punctuation (brackets, quotes, apostrophes,
+// commas, colons, semicolons) and sentence-ending . ! ? -- every other
+// symbol (hyphens, slashes, +, %, <, >, =, a digit-internal period like
+// 7.35) must match literally, and grade() disables the near-miss tier
+// entirely under strict, so every word is required too. Used for both the
+// whole-string exact check (exactMatch) and, per-word, by alignWords/
+// wordNorm below (for diff highlighting), so a strict deck's diff view never
+// shows a symbol as mismatched that its exact check already forgave.
+function normStrict(s: string): string {
+  return s
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '') // accents ignored: é -> e
+    .toLowerCase()
+    .replace(/[‘’“”]/g, "'") // curly quotes -> '
+    .replace(/[−–—]/g, '-') // minus/en/em dash -> -
+    .replace(/[()\[\]{}"',:;]/g, '') // brackets, quotes, apostrophes, commas, colons, semicolons ignored
+    .replace(/[.!?]+(?=\s|$)/g, '') // sentence-ending . ! ? ignored; 7.35 kept
+    .replace(/\s+/g, ' ').trim();
+}
+
+// Per-word normalizer alignWords/grade() use for the near-miss word
+// alignment -- norm() in lenient mode, normStrict() in strict mode, so the
+// word-level comparison a "near" verdict depends on never disagrees with
+// what the deck's exact check would forgive.
+function wordNorm(w: string, strict: boolean): string {
+  return strict ? normStrict(w) : norm(w);
 }
 
 export interface WordDiffResult {
@@ -62,9 +91,9 @@ interface WordAlignment {
 // red/green diff UI) and grade() (both-side match flags + similarity, for C2
 // lenient grading) -- extracted once so both stay in sync rather than
 // duplicating the DP.
-function alignWords(typedWords: string[], targetWords: string[]): WordAlignment {
-  const tN = typedWords.map(w => norm(w));
-  const gN = targetWords.map(w => norm(w));
+function alignWords(typedWords: string[], targetWords: string[], strict: boolean = false): WordAlignment {
+  const tN = typedWords.map(w => wordNorm(w, strict));
+  const gN = targetWords.map(w => wordNorm(w, strict));
   const n = tN.length;
   const m = gN.length;
 
@@ -103,10 +132,10 @@ function alignWords(typedWords: string[], targetWords: string[]): WordAlignment 
   return { matchedTypedIdx: matchedTyped, matchedTargetIdx: matchedTarget, lcsLength: dp[n][m] };
 }
 
-export function computeWordDiff(typedStr: string, targetStr: string): WordDiffResult[] {
+export function computeWordDiff(typedStr: string, targetStr: string, strict: boolean = false): WordDiffResult[] {
   const typedWords = typedStr.trim().length ? typedStr.trim().split(/\s+/) : [];
   const targetWords = targetStr.trim().split(/\s+/);
-  const { matchedTargetIdx } = alignWords(typedWords, targetWords);
+  const { matchedTargetIdx } = alignWords(typedWords, targetWords, strict);
 
   return targetWords.map((word, idx) => ({
     word,
@@ -147,27 +176,32 @@ export interface GradeResult {
 export function grade(
   typed: string,
   target: string,
-  opts?: { lenient?: boolean; stemTolerance?: boolean }
+  opts?: { lenient?: boolean; stemTolerance?: boolean; strictPunctuation?: boolean }
 ): GradeResult {
   const lenient = opts?.lenient ?? true;
   const stemTolerance = opts?.stemTolerance ?? true;
+  const strict = opts?.strictPunctuation ?? false;
 
-  const diff = computeWordDiff(typed, target);
+  const diff = computeWordDiff(typed, target, strict);
 
-  if (exactMatch(typed, target)) {
+  if (exactMatch(typed, target, strict)) {
     return { verdict: 'exact', diff, missingWords: [], extraWords: [], similarity: 1 };
   }
 
   const typedWords = typed.trim().length ? typed.trim().split(/\s+/) : [];
   const targetWords = target.trim().split(/\s+/);
-  const { matchedTypedIdx, matchedTargetIdx, lcsLength } = alignWords(typedWords, targetWords);
+  const { matchedTypedIdx, matchedTargetIdx, lcsLength } = alignWords(typedWords, targetWords, strict);
 
   const missingWords = targetWords.filter((_, idx) => !matchedTargetIdx[idx]);
   const extraWords = typedWords.filter((_, idx) => !matchedTypedIdx[idx]);
   const totalLen = typedWords.length + targetWords.length;
   const similarity = totalLen > 0 ? (2 * lcsLength) / totalLen : 0;
 
-  if (!lenient) {
+  // Phase 2: a strict deck has no near-miss tier at all -- every word is
+  // required and no stopword/stem forgiveness applies, same as lenient:
+  // false, just for a different reason (punctuation strictness, not a
+  // caller opting out of leniency).
+  if (!lenient || strict) {
     return { verdict: 'wrong', diff, missingWords, extraWords, similarity };
   }
 
@@ -353,11 +387,11 @@ export function splitInHalf(text: string): [string, string] {
   return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
 }
 
-export function culpritHalf(typed: string, left: string, right: string): string {
+export function culpritHalf(typed: string, left: string, right: string, strict: boolean = false): string {
   const typedWords = typed.trim().length ? typed.trim().split(/\s+/) : [];
   const leftWordCount = left.split(' ').length;
   const leftTyped = typedWords.slice(0, leftWordCount).join(' ');
-  if (!exactMatch(leftTyped, left)) return left;
+  if (!exactMatch(leftTyped, left, strict)) return left;
   return right;
 }
 
@@ -372,10 +406,11 @@ export function findAllCulpritChunks(
   typed: string,
   chunks: string[],
   startIdx: number,
-  endIdx: number
+  endIdx: number,
+  strict: boolean = false
 ): number[] {
   const combinedTarget = chunks.slice(startIdx, endIdx + 1).join(' ');
-  const diff = computeWordDiff(typed, combinedTarget);
+  const diff = computeWordDiff(typed, combinedTarget, strict);
 
   const culprits: number[] = [];
   let wordCursor = 0;
@@ -855,7 +890,8 @@ export function loadDeckIndex(): SavedDeckEntry[] {
 export function saveDeckToStorage(
   name: string,
   items: DeckItem[],
-  folderId?: string | null
+  folderId?: string | null,
+  strictPunctuation?: boolean
 ): boolean {
   const slug = slugify(name);
   const ok = lsSet(`deck:${slug}`, items);
@@ -873,6 +909,15 @@ export function saveDeckToStorage(
       ? index[existingIdx].folderId || null
       : null;
 
+  // Phase 2: same preserve-if-unspecified pattern as folderId above --
+  // undefined keeps the existing deck's setting (or false for a new deck).
+  const finalStrictPunctuation =
+    strictPunctuation !== undefined
+      ? strictPunctuation
+      : existingIdx >= 0
+      ? index[existingIdx].strictPunctuation ?? false
+      : false;
+
   const entry: SavedDeckEntry = {
     slug,
     name,
@@ -880,6 +925,7 @@ export function saveDeckToStorage(
     folderId: finalFolderId,
     updatedAt: now,
     lastUsedAt: now,
+    strictPunctuation: finalStrictPunctuation,
   };
 
   if (existingIdx >= 0) {
@@ -1661,7 +1707,11 @@ export function applyAnswer(
     return applyRevealedAnswer(state, it, newItems, itIdx, base);
   }
 
-  const gradeOpts = { lenient: true, stemTolerance: state.config.stemTolerance };
+  const gradeOpts = {
+    lenient: true,
+    stemTolerance: state.config.stemTolerance,
+    strictPunctuation: state.config.strictPunctuation ?? false,
+  };
 
   // C2: a near-miss verdict always shows the diff with a neutral note and the
   // 1200ms dwell, overriding whatever stage-specific success feedback/dwell
@@ -1791,7 +1841,13 @@ export function applyAnswer(
 
       let feedback: Feedback;
       if (it.combineMissCount >= missThreshold) {
-        const culprits = findAllCulpritChunks(typed, it.chunks, seqItem.start - 1, seqItem.end - 1);
+        const culprits = findAllCulpritChunks(
+          typed,
+          it.chunks,
+          seqItem.start - 1,
+          seqItem.end - 1,
+          gradeOpts.strictPunctuation
+        );
         it.remediateStack = [{ text: it.chunks[culprits[0]], streak: 0, missCount: 0 }];
         it.remediateQueue = culprits.slice(1).map(idx => it.chunks![idx]);
         it.remediateReturnSeqIdx = it.combineSeqIdx;
@@ -1903,7 +1959,7 @@ export function applyAnswer(
       let feedback: Feedback;
       if (rTop.missCount >= 2 && rWordCount > 1) {
         const halves = splitInHalf(rTop.text);
-        const culpritPiece = culpritHalf(typed, halves[0], halves[1]);
+        const culpritPiece = culpritHalf(typed, halves[0], halves[1], gradeOpts.strictPunctuation);
         it.remediateStack.push({ text: culpritPiece, streak: 0, missCount: 0 });
         feedback = {
           text: 'Still struggling — zooming into smaller sub-phrase',

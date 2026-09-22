@@ -59,6 +59,9 @@ export interface SavedDeckEntry {
   folderId?: string | null;
   updatedAt?: string;
   lastUsedAt?: string;
+  // Phase 2 (per-deck strict punctuation): undefined on any deck saved
+  // before this setting existed -> false (punctuation still forgiven).
+  strictPunctuation?: boolean;
 }
 
 export interface WordDiffResult {
@@ -87,6 +90,8 @@ export interface SavedSessionState {
   ladderMode?: LadderMode;
   // undefined on any save from before this setting existed -> 'shuffled'.
   cycleOrder?: CycleOrder;
+  // Phase 2: undefined on any save from before this setting existed -> false.
+  strictPunctuation?: boolean;
   // C3: undefined on any save from before this phase (or when the user
   // never left batch 0) -- resolved by resolveBatchConfig's migration
   // default (batchIndex 0, batchSize items.length -- i.e. one big
@@ -159,6 +164,10 @@ export interface SessionConfig {
   // See CycleOrder. Optional for the same reason as batchSize: undefined
   // means 'shuffled', so every existing config literal keeps its behavior.
   cycleOrder?: CycleOrder;
+  // Phase 2: per-deck "Punctuation must match" setting. Optional for the
+  // same reason as batchSize/cycleOrder: undefined means false (punctuation
+  // forgiven), so every existing config literal keeps its behavior.
+  strictPunctuation?: boolean;
 }
 
 export interface SessionState {

@@ -17,6 +17,7 @@ import {
   saveSessionState,
   recordDeckUsed,
   resolveBatchConfig,
+  loadDeckIndex,
 } from './utils/drillEngine';
 import { requestPersistentStorage, PersistenceStatus } from './utils/backup';
 import { Header } from './components/Header';
@@ -110,6 +111,11 @@ export default function App() {
     }
     return 'shuffled';
   });
+  // Phase 2: per-deck setting, not a global "last used" default like the
+  // settings above -- SetupView reads/writes it on the selected deck's
+  // SavedDeckEntry instead of localStorage. This just holds whatever the
+  // active session/editor was started or resumed with.
+  const [strictPunctuation, setStrictPunctuation] = useState<boolean>(false);
 
   // Request persistent storage once on app load so the browser is less
   // likely to evict decks under storage pressure.
@@ -157,7 +163,8 @@ export default function App() {
     stemToleranceParam?: boolean,
     ladderModeParam?: LadderMode,
     batchSizeParam?: number,
-    cycleOrderParam?: CycleOrder
+    cycleOrderParam?: CycleOrder,
+    strictPunctuationParam?: boolean
   ) => {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
     const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
@@ -204,6 +211,15 @@ export default function App() {
         // ignore
       }
     }
+    // Phase 2: an explicit param (SetupView's toggle) always wins; otherwise
+    // fall back to the target deck's own saved setting (quick-start /
+    // practice-folder entry points don't know it) rather than defaulting to
+    // false outright.
+    const strict =
+      strictPunctuationParam !== undefined
+        ? strictPunctuationParam
+        : loadDeckIndex().find(d => d.slug === slug)?.strictPunctuation ?? false;
+    setStrictPunctuation(strict);
     setView('session');
   };
 
@@ -230,6 +246,7 @@ export default function App() {
       setLadderMode(state.ladderMode);
     }
     setCycleOrder(state.cycleOrder ?? 'shuffled');
+    setStrictPunctuation(state.strictPunctuation ?? false);
     setView('session');
   };
 
@@ -265,6 +282,7 @@ export default function App() {
         chunkDifficulty,
         stemTolerance,
         ladderMode,
+        strictPunctuation: state.config.strictPunctuation,
         cycleOrder: state.config.cycleOrder,
         batchIndex: state.batchIndex,
         batchSize: state.config.batchSize,
@@ -376,6 +394,7 @@ export default function App() {
               initialChunkDifficulty={chunkDifficulty}
               initialStemTolerance={stemTolerance}
               initialLadderMode={ladderMode}
+              initialStrictPunctuation={strictPunctuation}
               initialCycleOrder={cycleOrder}
               initialBatchSize={batchSize}
               initialIsEditingCards={autoOpenEditor}
@@ -394,6 +413,7 @@ export default function App() {
               chunkDifficulty={chunkDifficulty}
               stemTolerance={stemTolerance}
               ladderMode={ladderMode}
+              strictPunctuation={strictPunctuation}
               cycleOrder={cycleOrder}
               batchSize={batchSize}
               initialBatchIndex={sessionBatchIndex}

@@ -52,7 +52,8 @@ interface SetupViewProps {
     stemTolerance: boolean,
     ladderMode: LadderMode,
     batchSize: number,
-    cycleOrder: CycleOrder
+    cycleOrder: CycleOrder,
+    strictPunctuation: boolean
   ) => void;
   onResumeSession: (state: SavedSessionState) => void;
   onNavigateDecks: () => void;
@@ -63,6 +64,7 @@ interface SetupViewProps {
   initialChunkDifficulty?: number;
   initialStemTolerance?: boolean;
   initialLadderMode?: LadderMode;
+  initialStrictPunctuation?: boolean;
   initialCycleOrder?: CycleOrder;
   // C3: 0 means "whole deck as one batch" (no interstitial checkpoint) --
   // see partitionIntoBatches.
@@ -167,6 +169,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   initialChunkDifficulty,
   initialStemTolerance,
   initialLadderMode,
+  initialStrictPunctuation,
   initialCycleOrder,
   initialBatchSize,
   initialIsEditingCards = false,
@@ -270,6 +273,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     return 'cumulative';
   });
+  // Phase 2: per-deck setting, not a global "last used" default like the
+  // other settings above -- loaded from the selected deck's SavedDeckEntry
+  // (see handleSelectDeck/handleSelectRecentDeck below), not localStorage.
+  const [strictPunctuation, setStrictPunctuation] = useState<boolean>(
+    () => initialStrictPunctuation ?? false
+  );
   const [cycleOrder, setCycleOrder] = useState<CycleOrder>(() => {
     if (initialCycleOrder !== undefined) return initialCycleOrder;
     try {
@@ -495,6 +504,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     const entry = savedDecks.find(d => d.slug === slug);
     if (entry) {
       setSelectedFolderId(entry.folderId || null);
+      setStrictPunctuation(entry.strictPunctuation ?? false);
     }
     const parsed = getDeckFromStorage(slug);
     if (parsed && parsed.length > 0) {
@@ -522,6 +532,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     if (parsed && entry) {
       setDeckName(entry.name);
       setSelectedFolderId(entry.folderId || null);
+      setStrictPunctuation(entry.strictPunctuation ?? false);
       setCards(itemsToCardRows(parsed));
       setRawText(parsed.map(p => `${p.front}\t${p.back}`).join('\n'));
       setMsg(`Loaded "${entry.name}" with ${parsed.length} cards.`);
@@ -544,7 +555,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       setMsg('No valid cards to save. Make sure each card has both term and definition.');
       return;
     }
-    const ok = saveDeckToStorage(name, currentItems, selectedFolderId);
+    const ok = saveDeckToStorage(name, currentItems, selectedFolderId, strictPunctuation);
     if (ok) {
       refreshDecks();
       setSelectedSlug(slugify(name));
@@ -590,7 +601,17 @@ export const SetupView: React.FC<SetupViewProps> = ({
       });
       setMsg(`Found a previous session for "${name}" with ${mastered} of ${existingState.items.length} items mastered.`);
     } else {
-      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance, ladderMode, batchSize, cycleOrder);
+      onStartSession(
+        currentItems,
+        name,
+        reps,
+        chunkDifficulty,
+        stemTolerance,
+        ladderMode,
+        batchSize,
+        cycleOrder,
+        strictPunctuation
+      );
     }
   };
 
@@ -612,7 +633,8 @@ export const SetupView: React.FC<SetupViewProps> = ({
         stemTolerance,
         ladderMode,
         batchSize,
-        cycleOrder
+        cycleOrder,
+        strictPunctuation
       );
     }
   };
@@ -881,10 +903,18 @@ export const SetupView: React.FC<SetupViewProps> = ({
           </div>
         </div>
 
-        {/* Lenient Grading: stem tolerance toggle */}
+        {/* Lenient Grading: stem tolerance toggle -- disabled (but not
+            overwritten) while the deck's strict punctuation mode is on,
+            since strict mode's near-miss tier -- the only thing this
+            setting affects -- is unconditionally off. */}
         <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3.5">
           <div className="flex items-center justify-between gap-2">
-            <label htmlFor="stem-tolerance-toggle" className="text-xs text-[var(--text-secondary)] flex items-center gap-2 cursor-pointer">
+            <label
+              htmlFor="stem-tolerance-toggle"
+              className={`text-xs text-[var(--text-secondary)] flex items-center gap-2 ${
+                strictPunctuation ? 'opacity-50' : 'cursor-pointer'
+              }`}
+            >
               <span className="w-2 h-2 rounded-full bg-[var(--success)]" />
               <span>Forgive minor word endings (e.g. plurals):</span>
             </label>
@@ -893,8 +923,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
               id="stem-tolerance-toggle"
               role="switch"
               aria-checked={stemTolerance}
+              aria-disabled={strictPunctuation}
+              disabled={strictPunctuation}
               onClick={() => handleStemToleranceChange(!stemTolerance)}
-              className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 cursor-pointer ${
+              className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${
+                strictPunctuation ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              } ${
                 stemTolerance ? 'bg-[var(--success)]' : 'bg-[var(--surface-2)] border border-[var(--border)]'
               }`}
             >
@@ -906,10 +940,42 @@ export const SetupView: React.FC<SetupViewProps> = ({
             </button>
           </div>
           <p className="text-[11px] text-[var(--text-muted)]">
-            When on, a typo-free answer that only differs by a plural or verb ending
-            (e.g. "cat" vs "cats") counts as a close match instead of a miss. Turn this
-            off for terminology decks where exact word endings matter (e.g. medical or
-            legal vocabulary).
+            {strictPunctuation
+              ? 'Not used — strict mode requires exact words.'
+              : 'When on, a typo-free answer that only differs by a plural or verb ending ' +
+                '(e.g. "cat" vs "cats") counts as a close match instead of a miss. Turn this ' +
+                'off for terminology decks where exact word endings matter (e.g. medical or ' +
+                'legal vocabulary).'}
+          </p>
+        </div>
+
+        {/* Punctuation must match toggle (per-deck) */}
+        <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="strict-punctuation-toggle" className="text-xs text-[var(--text-secondary)] flex items-center gap-2 cursor-pointer">
+              <span className="w-2 h-2 rounded-full bg-[var(--warning)]" />
+              <span>Punctuation must match:</span>
+            </label>
+            <button
+              type="button"
+              id="strict-punctuation-toggle"
+              role="switch"
+              aria-checked={strictPunctuation}
+              onClick={() => setStrictPunctuation(!strictPunctuation)}
+              className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 cursor-pointer ${
+                strictPunctuation ? 'bg-[var(--warning)]' : 'bg-[var(--surface-2)] border border-[var(--border)]'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                  strictPunctuation ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Every word must be exact. Hyphens, slashes and symbols count; brackets,
+            quotes, commas, accents and end punctuation don't.
           </p>
         </div>
 

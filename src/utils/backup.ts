@@ -38,6 +38,7 @@ export interface DeckBackupEntry {
   folderId: string | null;
   updatedAt?: string;
   lastUsedAt?: string;
+  strictPunctuation?: boolean;
   items: DeckItem[];
   session?: SavedSessionState | null;
 }
@@ -62,6 +63,7 @@ export function buildBackupPayload(): BackupPayload {
       folderId: d.folderId ?? null,
       updatedAt: d.updatedAt,
       lastUsedAt: d.lastUsedAt,
+      strictPunctuation: d.strictPunctuation,
       items: getDeckFromStorage(d.slug) || [],
       session: getSessionState(d.slug),
     })),
@@ -214,6 +216,7 @@ export function importBackupPayload(
       folderId: deck.folderId ?? null,
       updatedAt: deck.updatedAt,
       lastUsedAt: deck.lastUsedAt,
+      strictPunctuation: deck.strictPunctuation ?? false,
     };
     const idx = nextIndex.findIndex(e => e.slug === deck.slug);
     if (idx >= 0) {
