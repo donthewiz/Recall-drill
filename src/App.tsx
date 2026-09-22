@@ -318,8 +318,27 @@ export default function App() {
     setView('done');
   };
 
+  // Regression B fix: a folder-practice session never seeds editorDeckItems
+  // (fromFolder in handleStartSession), but deckName always gets set to the
+  // folder's name -- unconditionally, since SessionView/DoneView need it for
+  // display and session-storage keying regardless of session type. Left
+  // alone, that pairing goes stale the moment SetupView remounts here:
+  // its cards/rawText fall back to "most recently used real deck" (since
+  // initialItems is empty), while its deck-name field is pre-filled with
+  // the FOLDER's name via initialDeckName -- a real, unrelated deck's
+  // cards, shown and save-able under the folder's name. Clicking Save deck
+  // from there creates a genuine phantom deck with a REAL payload (unlike
+  // 723ec28's payload-less phantom, deckHasPayload can't filter this one).
+  // Resetting both together when the ending session had no single source
+  // deck (sourceDeckEditable) keeps them in sync -- both fall back to the
+  // same "most recently used real deck" default, so title and cards always
+  // describe the same thing.
   const handleBackToSetup = () => {
     setAutoOpenEditor(false);
+    if (!sourceDeckEditable) {
+      setDeckName('');
+      setEditorDeckItems(undefined);
+    }
     setView('setup');
   };
 

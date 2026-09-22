@@ -12,6 +12,9 @@ import {
   loadDeckIndex,
   getRecentlyUsedDecks,
   deckHasPayload,
+  buildItems,
+  writeBackCardEdit,
+  getDeckFromStorage,
 } from '../utils/drillEngine';
 
 describe('folder practice does not create a deck-index entry', () => {
@@ -67,5 +70,37 @@ describe('deckHasPayload filters phantom entries out of every deck list', () => 
       JSON.stringify([{ slug: 'anatomy-101', name: 'Anatomy 101', count: 12, updatedAt: now, lastUsedAt: now }])
     );
     expect(getRecentlyUsedDecks()).toEqual([]);
+  });
+});
+
+// Regression B: a real deck that happens to share its slug with a practiced
+// folder's name must never receive a folder session's mid-session edit.
+// The storage layer's part of that guard -- sourceDeckEditable being false
+// for every folder session, regardless of what the folder is named -- is
+// covered here, deliberately against a deck that DOES exist under that
+// exact slug (so the guard being checked is sourceDeckEditable, not just
+// "no such deck"). The other half of this regression (App.tsx resetting
+// deckName/editorDeckItems together on Back to Setup, so the editor never
+// pairs a folder's name with an unrelated real deck's cards and lets a
+// later Save create a phantom deck) is React component state with no test
+// harness in this repo; see the session report for the manual repro
+// verified for that half.
+describe('folder practice never writes a mid-session edit under the folder name/slug', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('sourceDeckEditable false blocks the write even when a deck already exists at that slug', () => {
+    const original = [{ front: 'RealDeckCard1', back: 'real-back-1' }];
+    saveDeckToStorage('My Test Folder', original); // slug collision, deliberately
+    const items = buildItems(original, 35, 'cumulative', undefined, undefined, false);
+
+    const written = writeBackCardEdit('My Test Folder', false, items[0], {
+      front: 'RealDeckCard1',
+      back: 'edited during folder practice',
+    });
+
+    expect(written).toBeNull();
+    expect(getDeckFromStorage('my-test-folder')).toEqual(original);
   });
 });
