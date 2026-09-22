@@ -111,3 +111,36 @@ describe('shuffled cycle phase is unchanged', () => {
     });
   }
 });
+
+describe('encode order (buildItems shuffleWithinBatch=false, as the app uses)', () => {
+  it('keeps deck order and the first encode trial is the first card', () => {
+    const items = buildItems(makeShortDeck(12), 35, 'cumulative', 5, undefined, false);
+    expect(items.map(i => i.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    let s = initSession({
+      items,
+      phase: 'encode',
+      queue: [],
+      stats: zeroStats,
+      currentId: -1,
+      batchIndex: 0,
+      batchStartStats: zeroStats,
+      config: { encodeReps: 1, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative', batchSize: 5 },
+    });
+    // encodeReps 1 on short (full-stage) cards: one correct each, so the
+    // encode phase visits the batch exactly once, in order.
+    const seen: number[] = [];
+    for (let n = 0; n < 5; n++) {
+      const it = s.items.find(i => i.id === s.currentId)!;
+      seen.push(it.id);
+      s = applyAnswer(s, it.back, { revealed: false }).state;
+    }
+    expect(seen).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('default (no flag) still shuffles within batches, for the harness', () => {
+    // Batch membership stays in deck order either way.
+    const items = buildItems(makeShortDeck(10), 35, 'cumulative', 5);
+    expect(items.slice(0, 5).map(i => i.id).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(items.slice(5).map(i => i.id).sort()).toEqual([5, 6, 7, 8, 9]);
+  });
+});

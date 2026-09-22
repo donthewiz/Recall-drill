@@ -162,7 +162,8 @@ export default function App() {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
     const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
     const size = batchSizeParam !== undefined ? batchSizeParam : batchSize;
-    const items = buildItems(parsed, diff, mode, size);
+    // Deck order within each batch (no shuffle): encoding starts at card 1.
+    const items = buildItems(parsed, diff, mode, size, undefined, false);
     const slug = slugify(name);
     recordDeckUsed(slug, name, parsed.length);
     setDeckName(name);
@@ -325,7 +326,9 @@ export default function App() {
       sessionItems.map(i => ({ front: i.front, back: i.back })),
       chunkDifficulty,
       ladderMode,
-      batchSize
+      batchSize,
+      undefined,
+      false
     );
     const slug = slugify(deckName);
     clearSessionState(slug);

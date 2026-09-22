@@ -426,6 +426,9 @@ export function slugify(name: string): string {
 // only means no interstitial checkpoint, not a return to pre-C3 fully-massed
 // (unshuffled, one-item-at-a-time) presentation; that's selectNextEncodeItem's
 // round-robin, which applies regardless of batch size.
+// NOTE: the app itself now opts out (buildItems' shuffleWithinBatch=false),
+// so a live session encodes each batch in deck order starting at its first
+// card. The shuffle remains the default for the harness/LegacyEngine/tests.
 function shuffleWithinBatches<T>(items: T[], batchSize?: number): T[] {
   const size = batchSize && batchSize > 0 ? batchSize : items.length;
   const result: T[] = [];
@@ -453,7 +456,13 @@ export function buildItems(
   chunkPercent: number = 35,
   ladderMode: LadderMode = 'cumulative',
   batchSize?: number,
-  minWordsToChunk: number = MIN_WORDS_TO_CHUNK
+  minWordsToChunk: number = MIN_WORDS_TO_CHUNK,
+  // false = keep deck order within each batch, so encoding starts at the
+  // first card as written and round-robins 1, 2, 3... (what the app uses).
+  // Defaults to true so every existing caller -- the frozen LegacyEngine,
+  // the seeded simulate() harness, and the tests -- keeps the exact
+  // behavior (and PRNG draw sequence) its measurements were taken under.
+  shuffleWithinBatch: boolean = true
 ): DrillItem[] {
   const items: DrillItem[] = parsed.map((p, i) => {
     const chunks = chunkText(p.back, chunkPercent, minWordsToChunk);
@@ -477,7 +486,7 @@ export function buildItems(
       stage: chunks ? 'chunks' : 'full',
     };
   });
-  return shuffleWithinBatches(items, batchSize);
+  return shuffleWithinBatch ? shuffleWithinBatches(items, batchSize) : items;
 }
 
 export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): DrillItem {
