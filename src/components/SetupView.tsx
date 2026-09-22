@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   DeckItem,
   LadderMode,
+  CycleOrder,
   SavedDeckEntry,
   SavedSessionState,
   DeckFolder,
@@ -50,7 +51,8 @@ interface SetupViewProps {
     chunkDifficulty: number,
     stemTolerance: boolean,
     ladderMode: LadderMode,
-    batchSize: number
+    batchSize: number,
+    cycleOrder: CycleOrder
   ) => void;
   onResumeSession: (state: SavedSessionState) => void;
   onNavigateDecks: () => void;
@@ -61,6 +63,7 @@ interface SetupViewProps {
   initialChunkDifficulty?: number;
   initialStemTolerance?: boolean;
   initialLadderMode?: LadderMode;
+  initialCycleOrder?: CycleOrder;
   // C3: 0 means "whole deck as one batch" (no interstitial checkpoint) --
   // see partitionIntoBatches.
   initialBatchSize?: number;
@@ -164,6 +167,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   initialChunkDifficulty,
   initialStemTolerance,
   initialLadderMode,
+  initialCycleOrder,
   initialBatchSize,
   initialIsEditingCards = false,
   initialFolderId = null,
@@ -266,6 +270,16 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     return 'cumulative';
   });
+  const [cycleOrder, setCycleOrder] = useState<CycleOrder>(() => {
+    if (initialCycleOrder !== undefined) return initialCycleOrder;
+    try {
+      const saved = localStorage.getItem('recall_drill_cycle_order');
+      if (saved === 'shuffled' || saved === 'inOrder') return saved;
+    } catch {
+      // ignore
+    }
+    return 'shuffled';
+  });
   // C3: 0 means "whole deck as one batch" (no interstitial checkpoint).
   const [batchSize, setBatchSize] = useState<number>(() => {
     if (initialBatchSize !== undefined) return initialBatchSize;
@@ -323,6 +337,15 @@ export const SetupView: React.FC<SetupViewProps> = ({
     setLadderMode(val);
     try {
       localStorage.setItem('recall_drill_ladder_mode', val);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCycleOrderChange = (val: CycleOrder) => {
+    setCycleOrder(val);
+    try {
+      localStorage.setItem('recall_drill_cycle_order', val);
     } catch {
       // ignore
     }
@@ -567,7 +590,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       });
       setMsg(`Found a previous session for "${name}" with ${mastered} of ${existingState.items.length} items mastered.`);
     } else {
-      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance, ladderMode, batchSize);
+      onStartSession(currentItems, name, reps, chunkDifficulty, stemTolerance, ladderMode, batchSize, cycleOrder);
     }
   };
 
@@ -588,7 +611,8 @@ export const SetupView: React.FC<SetupViewProps> = ({
         chunkDifficulty,
         stemTolerance,
         ladderMode,
-        batchSize
+        batchSize,
+        cycleOrder
       );
     }
   };
@@ -981,6 +1005,50 @@ export const SetupView: React.FC<SetupViewProps> = ({
             summary screen (and a chance to stop) between batches. "Whole deck" removes
             the checkpoints and interleaves every card in the deck together, like a
             single big batch.
+          </p>
+        </div>
+
+        {/* Cycle review order */}
+        <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--success)]" />
+              <span>Cycle review order:</span>
+            </span>
+            <div className="flex items-center gap-1 bg-[var(--surface-1)] border border-[var(--border)] rounded-lg p-0.5">
+              <button
+                type="button"
+                id="cycle-order-shuffled"
+                aria-pressed={cycleOrder === 'shuffled'}
+                onClick={() => handleCycleOrderChange('shuffled')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  cycleOrder === 'shuffled'
+                    ? 'bg-[var(--accent)] text-white shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Shuffled
+              </button>
+              <button
+                type="button"
+                id="cycle-order-in-order"
+                aria-pressed={cycleOrder === 'inOrder'}
+                onClick={() => handleCycleOrderChange('inOrder')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  cycleOrder === 'inOrder'
+                    ? 'bg-[var(--accent)] text-white shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                In order
+              </button>
+            </div>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Shuffled mixes each batch's cards and brings misses back a few cards later.
+            In order goes through the batch from its first card to its last, then starts
+            another pass with whatever isn't mastered yet (misses included), still in
+            order. Only affects the review cycle, not encoding.
           </p>
         </div>
 

@@ -3,6 +3,7 @@ import {
   DeckItem,
   DrillItem,
   LadderMode,
+  CycleOrder,
   SavedSessionState,
   SessionState,
   SessionStats,
@@ -100,6 +101,15 @@ export default function App() {
     }
     return 'cumulative';
   });
+  const [cycleOrder, setCycleOrder] = useState<CycleOrder>(() => {
+    try {
+      const saved = localStorage.getItem('recall_drill_cycle_order');
+      if (saved === 'shuffled' || saved === 'inOrder') return saved;
+    } catch {
+      // ignore
+    }
+    return 'shuffled';
+  });
 
   // Request persistent storage once on app load so the browser is less
   // likely to evict decks under storage pressure.
@@ -146,7 +156,8 @@ export default function App() {
     difficultyPct?: number,
     stemToleranceParam?: boolean,
     ladderModeParam?: LadderMode,
-    batchSizeParam?: number
+    batchSizeParam?: number,
+    cycleOrderParam?: CycleOrder
   ) => {
     const diff = difficultyPct !== undefined ? difficultyPct : chunkDifficulty;
     const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
@@ -184,6 +195,14 @@ export default function App() {
         // ignore
       }
     }
+    if (cycleOrderParam !== undefined) {
+      setCycleOrder(cycleOrderParam);
+      try {
+        localStorage.setItem('recall_drill_cycle_order', cycleOrderParam);
+      } catch {
+        // ignore
+      }
+    }
     setView('session');
   };
 
@@ -209,6 +228,7 @@ export default function App() {
     if (state.ladderMode !== undefined) {
       setLadderMode(state.ladderMode);
     }
+    setCycleOrder(state.cycleOrder ?? 'shuffled');
     setView('session');
   };
 
@@ -244,6 +264,7 @@ export default function App() {
         chunkDifficulty,
         stemTolerance,
         ladderMode,
+        cycleOrder: state.config.cycleOrder,
         batchIndex: state.batchIndex,
         batchSize: state.config.batchSize,
         batchStartStats: state.batchStartStats,
@@ -352,6 +373,7 @@ export default function App() {
               initialChunkDifficulty={chunkDifficulty}
               initialStemTolerance={stemTolerance}
               initialLadderMode={ladderMode}
+              initialCycleOrder={cycleOrder}
               initialBatchSize={batchSize}
               initialIsEditingCards={autoOpenEditor}
               initialFolderId={activeFolderId}
@@ -369,6 +391,7 @@ export default function App() {
               chunkDifficulty={chunkDifficulty}
               stemTolerance={stemTolerance}
               ladderMode={ladderMode}
+              cycleOrder={cycleOrder}
               batchSize={batchSize}
               initialBatchIndex={sessionBatchIndex}
               initialBatchStartStats={sessionBatchStartStats}

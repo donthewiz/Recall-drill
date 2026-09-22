@@ -85,6 +85,8 @@ export interface SavedSessionState {
   chunkDifficulty?: number;
   stemTolerance?: boolean;
   ladderMode?: LadderMode;
+  // undefined on any save from before this setting existed -> 'shuffled'.
+  cycleOrder?: CycleOrder;
   // C3: undefined on any save from before this phase (or when the user
   // never left batch 0) -- resolved by resolveBatchConfig's migration
   // default (batchIndex 0, batchSize items.length -- i.e. one big
@@ -102,6 +104,16 @@ export interface SavedSessionState {
 // kept available so the trial-count claim below can be measured against it
 // rather than trusted. 'cumulative' (forward chaining) is the new default.
 export type LadderMode = 'cumulative' | 'exhaustive';
+
+// Cycle-phase card order. 'shuffled' (default) is the original behavior: a
+// random order per pass, with a missed/revealed card reinserted 2-3 cards
+// later and a correct-but-not-yet-mastered card reinserted 3 later.
+// 'inOrder' walks the current batch's not-yet-mastered cards in deck order
+// (DrillItem.id, i.e. the order they were written), one full pass at a
+// time; nothing is reinserted mid-pass -- a missed card, or one that still
+// needs its second correct, simply comes back on the next pass, still in
+// order. Encode-phase order is unaffected either way.
+export type CycleOrder = 'shuffled' | 'inOrder';
 
 export type ViewState = 'setup' | 'decks' | 'session' | 'done';
 
@@ -144,6 +156,9 @@ export interface SessionConfig {
   // pre-C3 SessionConfig literal (tests, test/simulate.ts's baselines)
   // keeps compiling and behaving exactly as before without being touched.
   batchSize?: number;
+  // See CycleOrder. Optional for the same reason as batchSize: undefined
+  // means 'shuffled', so every existing config literal keeps its behavior.
+  cycleOrder?: CycleOrder;
 }
 
 export interface SessionState {

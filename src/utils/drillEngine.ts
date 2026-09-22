@@ -12,6 +12,7 @@ import {
   Feedback,
   Verdict,
   LadderMode,
+  CycleOrder,
 } from '../types';
 
 export function norm(s: string): string {
@@ -983,6 +984,23 @@ export const DWELL_MS: Record<string, number> = {
   'near-miss': 1200,
 };
 
+// Builds one cycle-phase pass over `ids`. 'shuffled' (default) is the
+// original random order; 'inOrder' is deck order -- DrillItem.id is the
+// card's index in the deck as written (see buildItems), so sorting by id
+// undoes buildItems' within-batch shuffle for the cycle phase only.
+export function orderCycleQueue(ids: number[], cycleOrder: CycleOrder = 'shuffled'): number[] {
+  return cycleOrder === 'inOrder' ? [...ids].sort((a, b) => a - b) : shuffle(ids);
+}
+
+// Reinserts a not-yet-mastered card into the current cycle pass `gap` cards
+// ahead ('shuffled' mode). In 'inOrder' mode it does nothing: the card is
+// still not mastered, so advanceCycleState picks it up again when it builds
+// the next pass, and the current pass keeps its deck order intact.
+function requeueCycleItem(queue: number[], id: number, gap: number, cycleOrder: CycleOrder = 'shuffled'): void {
+  if (cycleOrder === 'inOrder') return;
+  queue.splice(Math.min(gap, queue.length), 0, id);
+}
+
 // C3: this batch's items, in whatever order buildItems' one-time
 // shuffleWithinBatches call left them in (see that function's comment) --
 // partitionIntoBatches only slices, it never reorders.
@@ -1006,7 +1024,7 @@ function advanceEncodeState(
   const next = selectNextEncodeItem(batch, base.currentId);
 
   if (!next) {
-    const batchQueue = shuffle(batch.map(i => i.id));
+    const batchQueue = orderCycleQueue(batch.map(i => i.id), base.config.cycleOrder);
     return advanceCycleState(items, batchQueue, stats, {
       ...base,
       items,
@@ -1056,7 +1074,7 @@ function advanceCycleState(
     if (!remaining.length) {
       return advanceBatchState(items, stats, base);
     }
-    q = shuffle(remaining.map(i => i.id));
+    q = orderCycleQueue(remaining.map(i => i.id), base.config.cycleOrder);
   }
 
   const nextId = q.shift()!;
@@ -1943,7 +1961,7 @@ export function applyAnswer(
         type: 'success',
         dwellKey: 'cycle-correct',
       });
-      updatedQueue.splice(Math.min(3, updatedQueue.length), 0, it.id);
+      requeueCycleItem(updatedQueue, it.id, 3, state.config.cycleOrder);
     }
   } else {
     nextStats.misses++;
@@ -1955,7 +1973,7 @@ export function applyAnswer(
       dwellKey: 'cycle-miss',
     };
     const gap = 2 + Math.floor(Math.random() * 2);
-    updatedQueue.splice(Math.min(gap, updatedQueue.length), 0, it.id);
+    requeueCycleItem(updatedQueue, it.id, gap, state.config.cycleOrder);
   }
 
   newItems[itIdx] = it;
@@ -1989,7 +2007,7 @@ function applyRevealedAnswer(
     it.cycleStreak = 0;
     const updatedQueue = [...state.queue];
     const gap = 2 + Math.floor(Math.random() * 2);
-    updatedQueue.splice(Math.min(gap, updatedQueue.length), 0, it.id);
+    requeueCycleItem(updatedQueue, it.id, gap, state.config.cycleOrder);
     newItems[itIdx] = it;
     return {
       state: { ...base, items: newItems, queue: updatedQueue },

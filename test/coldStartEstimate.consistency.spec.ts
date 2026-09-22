@@ -72,3 +72,23 @@ describe('computeMinimumTrials matches a real perfect-learner session exactly', 
     }
   }
 });
+
+// Cycle review order must not change the floor: in-order mode still needs
+// exactly 2 cycle trials per card for a perfect learner (two passes).
+// Whole-deck batch only: simulate() doesn't drive batch interstitials.
+describe('computeMinimumTrials also holds with cycleOrder: inOrder', () => {
+  for (const { name: deckName, deck } of decks) {
+    it(`${deckName}, encodeReps=3, minWordsToChunk=8`, () => {
+      const config: SessionConfig = {
+        encodeReps: 3,
+        chunkDifficulty: 35,
+        stemTolerance: true,
+        ladderMode: 'cumulative',
+        cycleOrder: 'inOrder',
+      };
+      const result = simulate(deck, config, perfectLearner, 8);
+      const items = buildItems(deck, config.chunkDifficulty, config.ladderMode, undefined, 8);
+      expect(result.attempts).toBe(computeMinimumTrials(items, 3, config.ladderMode));
+    });
+  }
+});

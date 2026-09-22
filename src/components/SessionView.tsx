@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DrillItem, Feedback, LadderMode, SessionState, SessionStats, Verdict } from '../types';
+import { CycleOrder, DrillItem, Feedback, LadderMode, SessionState, SessionStats, Verdict } from '../types';
 import {
   slugify,
   saveSessionState,
@@ -33,6 +33,7 @@ interface SessionViewProps {
   chunkDifficulty?: number;
   stemTolerance?: boolean;
   ladderMode?: LadderMode;
+  cycleOrder?: CycleOrder;
   // C3: undefined/0/>=deck size all mean "whole deck as one batch" -- see
   // partitionIntoBatches. batchIndex/batchStartStats resume mid-batch state;
   // both default to session-start values for a brand new session.
@@ -61,6 +62,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   chunkDifficulty = 35,
   stemTolerance = true,
   ladderMode = 'cumulative',
+  cycleOrder = 'shuffled',
   batchSize,
   initialBatchIndex = 0,
   initialBatchStartStats,
@@ -75,7 +77,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       currentId: SESSION_COMPLETE_ID,
       batchIndex: initialBatchIndex,
       batchStartStats: initialBatchStartStats ?? initialStats,
-      config: { encodeReps, chunkDifficulty, stemTolerance, ladderMode, batchSize },
+      config: { encodeReps, chunkDifficulty, stemTolerance, ladderMode, batchSize, cycleOrder },
     })
   );
   const [typedValue, setTypedValue] = useState('');
@@ -105,6 +107,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       chunkDifficulty: state.config.chunkDifficulty,
       stemTolerance: state.config.stemTolerance,
       ladderMode: state.config.ladderMode,
+      cycleOrder: state.config.cycleOrder,
       batchIndex: state.batchIndex,
       batchSize: state.config.batchSize,
       batchStartStats: state.batchStartStats,
