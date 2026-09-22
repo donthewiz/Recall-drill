@@ -1001,10 +1001,22 @@ export function recordDeckUsed(slug: string, name?: string, count?: number): voi
   }
 }
 
+// True if this deck-index entry has an actual deck:<slug> payload behind
+// it. A stale index entry can lack one -- recordDeckUsed's "no existing
+// entry" branch created one for a folder-practice session before App.tsx
+// guarded against it, since a folder has no single deck to save. Filter any
+// deck list the UI lets someone open or practice through this so an
+// already-existing phantom entry (from before that guard) doesn't render
+// as a dead 0-card deck; re-checked on every read rather than deleted once,
+// so it self-heals even across an export/import round-trip.
+export function deckHasPayload(entry: SavedDeckEntry): boolean {
+  return getDeckFromStorage(entry.slug) !== null;
+}
+
 export function getRecentlyUsedDecks(): SavedDeckEntry[] {
   const index = loadDeckIndex();
   return index
-    .filter(d => !isPremadeDeck(d.slug, d.name))
+    .filter(d => !isPremadeDeck(d.slug, d.name) && deckHasPayload(d))
     .sort((a, b) => {
       const timeA = new Date(a.lastUsedAt || a.updatedAt || 0).getTime();
       const timeB = new Date(b.lastUsedAt || b.updatedAt || 0).getTime();

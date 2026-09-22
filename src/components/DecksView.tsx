@@ -6,6 +6,7 @@ import {
 } from '../types';
 import {
   loadDeckIndex,
+  deckHasPayload,
   getDeckFromStorage,
   deleteDeckFromStorage,
   getSessionState,
@@ -117,7 +118,10 @@ export const DecksView: React.FC<DecksViewProps> = ({
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshData = () => {
-    const idx = loadDeckIndex();
+    // deckHasPayload: drop any phantom deck-index entry left behind by a
+    // pre-fix folder-practice session (a folder is not a deck) so it
+    // doesn't render as a dead 0-card deck -- see drillEngine.ts.
+    const idx = loadDeckIndex().filter(deckHasPayload);
     const flds = loadFolderIndex();
     setSavedDecks(idx);
     setFolders(flds);

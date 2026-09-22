@@ -180,7 +180,12 @@ export default function App() {
     // Deck order within each batch (no shuffle): encoding starts at card 1.
     const items = buildItems(parsed, diff, mode, size, undefined, false);
     const slug = slugify(name);
-    recordDeckUsed(slug, name, parsed.length);
+    // A folder is not a deck: recordDeckUsed's "no existing entry" branch
+    // would otherwise create a payload-less deck-index entry named after
+    // the folder (see drillEngine.ts's deckHasPayload for the read-side of
+    // this same bug, for entries that already exist from before this
+    // guard).
+    if (!fromFolder) recordDeckUsed(slug, name, parsed.length);
     setDeckName(name);
     // Back to Setup remounts SetupView showing deckName with its cards seeded
     // from editorDeckItems, so that must be the deck this session actually

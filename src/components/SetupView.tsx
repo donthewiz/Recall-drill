@@ -11,6 +11,7 @@ import {
   parseDeck,
   slugify,
   saveDeckToStorage,
+  deckHasPayload,
   deleteDeckFromStorage,
   loadDeckIndex,
   getDeckFromStorage,
@@ -227,7 +228,10 @@ export const SetupView: React.FC<SetupViewProps> = ({
     return '';
   });
   const [savedDecks, setSavedDecks] = useState<SavedDeckEntry[]>(() => {
-    return loadDeckIndex().filter(d => !isPremadeDeck(d.slug, d.name));
+    // deckHasPayload: see DecksView.refreshData's comment -- same phantom
+    // entries, same filter, so a folder-practice ghost never shows up in
+    // the "Quick switch..." picker either.
+    return loadDeckIndex().filter(d => !isPremadeDeck(d.slug, d.name) && deckHasPayload(d));
   });
   const [selectedSlug, setSelectedSlug] = useState(() => {
     if (initialDeckName) return slugify(initialDeckName);
@@ -434,7 +438,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const refreshDecks = () => {
     const recents = getRecentlyUsedDecks();
     setRecentDecks(recents);
-    const idx = loadDeckIndex().filter(d => !isPremadeDeck(d.slug, d.name));
+    const idx = loadDeckIndex().filter(d => !isPremadeDeck(d.slug, d.name) && deckHasPayload(d));
     setSavedDecks(idx);
     setFolders(loadFolderIndex());
   };
