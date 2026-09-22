@@ -572,3 +572,39 @@ silently accept `74` for `7.4` or `and or` for `and/or`. Brackets, quotes,
 apostrophes, commas, colons, semicolons, accents, and a sentence-ending
 `. ! ?` are still ignored, same spirit as lenient mode, just without the
 word-level leniency layered on top.
+
+---
+
+## Mid-session card edits
+
+**Edit card** (SessionView action row) edits the card currently being
+drilled — only that card, and never from the batch interstitial. It's
+available whenever a trial is showing and no auto-advance dwell is pending.
+The engine side is `editCurrentItem(state, { front, back })` in
+`drillEngine.ts`; it never touches stats.
+
+- **Progress rule.** The answer counts as changed unless
+  `exactMatch(old, new)` holds under the deck's own punctuation mode, so
+  `pre op` → `pre-op` keeps progress on a normal deck and restarts on a
+  strict one. An unchanged back (string-identical) keeps its stored chunks
+  untouched, so a prompt-only edit never restarts, even on a session saved
+  under an older `MIN_WORDS_TO_CHUNK`. An equivalent back is re-chunked; if
+  the chunk count holds and the card isn't in `remediate`, the new chunk
+  text is swapped in and all progress is kept. Otherwise the card restarts.
+- **Restart.** The card is rebuilt by `buildItem` (shared with `buildItems`)
+  at its existing id, status `encoding`, and is served again immediately.
+  From `cycle`, the session drops back to `encode` with an empty queue;
+  other cards keep their status and `cycleStreak`. `selectNextEncodeItem`
+  and the encode→cycle queue build both skip `mastered` cards, so none are
+  re-served (a no-op on the normal path, where nothing in a batch is
+  mastered during encode).
+- **Reveal rule.** The editor shows the full answer. If it was opened while
+  an answer was pending (no presentation, no verdict, not revealed), closing
+  it without a restart marks the attempt revealed (B2 semantics).
+- **Deck write-back.** The edit is also saved to the deck only when the
+  session has a single source deck (`sourceDeckEditable`; false for folder
+  practice), `deck:<slug>` exists, and the card at index `item.id` still
+  matches the item's pre-edit text exactly. Otherwise SessionView shows
+  "Saved for this session only." After a write-back, App refreshes
+  `editorDeckItems` (`onDeckCardEdited`) so SetupView doesn't reseed stale
+  cards and revert the fix on its next Save.

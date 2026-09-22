@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CycleOrder, DrillItem, Feedback, LadderMode, SessionState, SessionStats, Verdict } from '../types';
+import { CycleOrder, DeckItem, DrillItem, Feedback, LadderMode, SessionState, SessionStats, Verdict } from '../types';
 import {
   slugify,
   saveSessionState,
+  getDeckFromStorage,
+  saveDeckToStorage,
+  editCurrentItem,
   selectTrial,
   applyAnswer,
   applyNext,
@@ -19,7 +22,7 @@ import {
   pickColdStartDeckShape,
   saveColdStartHistory,
 } from '../utils/drillEngine';
-import { Check, CheckCheck, ArrowRight, Eye, LogOut, CheckCircle2, Save } from 'lucide-react';
+import { Check, CheckCheck, ArrowRight, Eye, LogOut, CheckCircle2, Save, Pencil } from 'lucide-react';
 
 interface SessionViewProps {
   deckName: string;
@@ -42,6 +45,13 @@ interface SessionViewProps {
   initialBatchIndex?: number;
   initialBatchStartStats?: SessionStats;
   onFinishSession: (state: SessionState) => void;
+  // Whether a mid-session card edit may also be written back to the saved
+  // deck named deckName. False for folder practice, which has no single
+  // source deck.
+  sourceDeckEditable: boolean;
+  // Called with the whole updated deck after an edit was written back, so
+  // App can refresh what the deck editor reseeds from.
+  onDeckCardEdited: (items: DeckItem[]) => void;
 }
 
 // Stage-specific placeholder hint shown while blind (no cue text visible).
@@ -69,6 +79,8 @@ export const SessionView: React.FC<SessionViewProps> = ({
   initialBatchIndex = 0,
   initialBatchStartStats,
   onFinishSession,
+  sourceDeckEditable,
+  onDeckCardEdited,
 }) => {
   const [sessionState, setSessionState] = useState<SessionState>(() =>
     initSession({
@@ -92,6 +104,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const [lastVerdict, setLastVerdict] = useState<Verdict | null>(null);
   const [flash, setFlash] = useState<'idle' | 'success' | 'danger'>('idle');
   const [isProcessing, setIsProcessing] = useState(false);
+  // Mid-session card editor. editRevealsOnClose: the editor was opened while
+  // an answer was still pending, so it showed the learner the full answer --
+  // closing it without a restart marks the attempt revealed.
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFront, setEditFront] = useState('');
+  const [editBack, setEditBack] = useState('');
+  const [editRevealsOnClose, setEditRevealsOnClose] = useState(false);
+  const [editNotice, setEditNotice] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -176,12 +196,17 @@ export const SessionView: React.FC<SessionViewProps> = ({
     };
   }, []);
 
-  // Autofocus input on item transition.
+  // Autofocus input on item transition (and when the card editor closes).
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
-  }, [sessionState.currentId, feedback, showNextBtn]);
+  }, [sessionState.currentId, feedback, showNextBtn, isEditing]);
+
+  // "Saved for this session only" stays up until the card changes.
+  useEffect(() => {
+    setEditNotice(null);
+  }, [sessionState.currentId]);
 
   const triggerFlash = (ok: boolean) => {
     setFlash(ok ? 'success' : 'danger');
@@ -325,6 +350,85 @@ export const SessionView: React.FC<SessionViewProps> = ({
   };
 
   const canOverride = lastVerdict === 'wrong';
+
+  // Available whenever a trial is showing and no auto-advance dwell is
+  // pending -- including presentation beats and the Continue state after a
+  // manual-advance verdict (sessionState still points at the shown card).
+  const canEdit = !!trial && !isProcessing && !isEditing;
+
+  const handleOpenEditor = () => {
+    if (!canEdit) return;
+    const item = sessionState.items.find(i => i.id === sessionState.currentId);
+    if (!item) return;
+    // The full front/back, not trial.target (only a chunk while encoding).
+    setEditFront(item.front);
+    setEditBack(item.back);
+    setEditRevealsOnClose(!isPresentation && !showNextBtn && lastVerdict === null && !userRevealedAnswer);
+    setEditNotice(null);
+    setIsEditing(true);
+  };
+
+  const closeEditor = (restarted: boolean) => {
+    // Seeing the full answer and then typing it is copy-typing (see C5), so
+    // an attempt that was pending when the editor opened now counts as
+    // revealed. A restart starts a fresh attempt instead.
+    if (editRevealsOnClose && !restarted) setUserRevealedAnswer(true);
+    setIsEditing(false);
+  };
+
+  // Writes the edit back to the saved deck, but only if this session has a
+  // single source deck, it still exists, and the card at the item's index
+  // still reads exactly as it did before the edit (DrillItem.id is the
+  // card's index in the deck as parsed). Returns whether it wrote.
+  const writeBackEdit = (before: DrillItem, after: DrillItem): boolean => {
+    if (!sourceDeckEditable || !deckName) return false;
+    const deck = getDeckFromStorage(slugify(deckName));
+    const card = deck?.[before.id];
+    if (!deck || !card || card.front !== before.front || card.back !== before.back) return false;
+    const updated = deck.map((c, idx) => (idx === before.id ? { front: after.front, back: after.back } : c));
+    // folderId/strictPunctuation left undefined so the deck keeps its own.
+    if (!saveDeckToStorage(deckName, updated)) return false;
+    onDeckCardEdited(updated);
+    return true;
+  };
+
+  const canSaveEdit = editFront.trim().length > 0 && editBack.trim().length > 0;
+
+  const handleSaveEdit = () => {
+    if (!canSaveEdit) return;
+    const before = sessionState.items.find(i => i.id === sessionState.currentId);
+    if (!before) return;
+    const { state, restarted } = editCurrentItem(sessionState, { front: editFront, back: editBack });
+    const after = state.items.find(i => i.id === before.id)!;
+    const textChanged = after.front !== before.front || after.back !== before.back;
+
+    if (restarted) {
+      setTypedValue('');
+      setFeedback(null);
+      setLastVerdict(null);
+      setShowNextBtn(false);
+      setUserRevealedAnswer(false);
+    }
+    // Kept progress: feedback/Continue state is left exactly as it was.
+    if (state !== sessionState) setSessionState(state);
+    if (textChanged && !writeBackEdit(before, after)) {
+      setEditNotice('Saved for this session only.');
+    }
+    closeEditor(restarted);
+  };
+
+  const handleEditorKeyDown = (e: React.KeyboardEvent) => {
+    // Kept inside the editor: the answer input's own Enter/Esc handling
+    // (Check answer, Show target) must never see these.
+    e.stopPropagation();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSaveEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeEditor(false);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && canOverride) {
@@ -538,6 +642,55 @@ export const SessionView: React.FC<SessionViewProps> = ({
           {promptText}
         </p>
 
+        {isEditing ? (
+          <div id="card-editor" className="space-y-3" onKeyDown={handleEditorKeyDown}>
+            <label className="block space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Front</span>
+              <input
+                id="edit-front"
+                autoFocus
+                value={editFront}
+                onChange={e => setEditFront(e.target.value)}
+                autoComplete="off"
+                className="w-full text-sm bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-4 py-2.5 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none shadow-xs transition-all"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Back</span>
+              <textarea
+                id="edit-back"
+                value={editBack}
+                // Decks are one card per line in the bulk editor, so an
+                // answer can't hold a line break.
+                onChange={e => setEditBack(e.target.value.replace(/\r?\n/g, ' '))}
+                rows={3}
+                spellCheck={false}
+                className="w-full mono text-sm bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-4 py-2.5 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none shadow-xs transition-all resize-y"
+              />
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                id="edit-save-btn"
+                onClick={handleSaveEdit}
+                disabled={!canSaveEdit}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--accent)] hover:opacity-95 text-white font-semibold text-sm shadow-md active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Check size={15} strokeWidth={2.5} /> Save
+              </button>
+              <button
+                type="button"
+                id="edit-cancel-btn"
+                onClick={() => closeEditor(false)}
+                className="px-4 py-2 rounded-xl bg-[var(--surface-card)] hover:bg-[var(--surface-1)] text-[var(--text-secondary)] border border-[var(--border)] text-sm font-medium transition-all cursor-pointer shadow-xs"
+              >
+                Cancel
+              </button>
+              <span className="text-[11px] text-[var(--text-muted)] ml-1">Ctrl+Enter to save • Esc to cancel</span>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Subtext Prompt / Revealed Answer */}
         <div className="min-h-[28px] mb-4 flex items-center">
           {subText ? (
@@ -569,9 +722,16 @@ export const SessionView: React.FC<SessionViewProps> = ({
           spellCheck={false}
           className="w-full mono text-sm sm:text-base bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-4 py-3 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none shadow-xs transition-all"
         />
+          </>
+        )}
 
         {/* Feedback Area & Word Diff */}
         <div id="feedback" className="min-h-[30px] mt-3.5 text-xs sm:text-sm font-medium">
+          {editNotice && (
+            <p id="edit-notice" className="text-xs font-medium text-[var(--text-muted)] mb-2">
+              {editNotice}
+            </p>
+          )}
           {feedback && (
             <div
               className={`flex flex-col gap-2 ${
@@ -611,7 +771,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
       {/* Primary Action Controls */}
       <div className="flex items-center gap-3 flex-wrap">
-        {!showNextBtn ? (
+        {isEditing ? null : !showNextBtn ? (
           <button
             type="button"
             id="check-btn"
@@ -639,7 +799,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </button>
         )}
 
-        {!userRevealedAnswer && !showNextBtn && !isPresentation && (
+        {!isEditing && !userRevealedAnswer && !showNextBtn && !isPresentation && (
           <button
             type="button"
             id="show-answer-btn"
@@ -651,7 +811,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
           </button>
         )}
 
-        {canOverride && (
+        {!isEditing && canOverride && (
           <button
             type="button"
             id="override-btn"
@@ -665,9 +825,20 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
         <button
           type="button"
+          id="edit-card-btn"
+          onClick={handleOpenEditor}
+          disabled={!canEdit}
+          className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent-bg)] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[var(--accent)]/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)] disabled:hover:border-transparent"
+          title="Edit this card's front and back"
+        >
+          <Pencil size={14} /> Edit card
+        </button>
+
+        <button
+          type="button"
           id="end-btn"
           onClick={() => finishSession(sessionState)}
-          className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger-bg)] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[var(--danger)]/30"
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger-bg)] rounded-xl transition-all cursor-pointer border border-transparent hover:border-[var(--danger)]/30"
         >
           <LogOut size={14} /> End session
         </button>

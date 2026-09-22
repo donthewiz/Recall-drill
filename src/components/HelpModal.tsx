@@ -80,6 +80,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Enter</kbd>: Check your answer, or continue once it's graded</li>
                 <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd>: Show the answer — resets your streak on this part to zero, but never counts as a miss</li>
                 <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Ctrl+Enter</kbd>: &ldquo;Count as correct&rdquo; override, right after a wrong answer</li>
+                <li><strong>Edit card</strong>: fix the current card's front or back mid-session (<kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Ctrl+Enter</kbd> saves, <kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd> cancels) — a real answer change restarts that card; a wording-only fix keeps your progress</li>
                 <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Tab</kbd>: Inserts a real tab character inside the bulk deck editor</li>
               </ul>
             </div>

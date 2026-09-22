@@ -2187,6 +2187,12 @@ export function editCurrentItem(
 
   const answerChanged = !exactMatch(old.back, back, state.config.strictPunctuation ?? false);
   if (!answerChanged) {
+    // An untouched back keeps its stored chunks as-is: recomputing could
+    // disagree with how an older session chunked it (e.g. one saved before
+    // MIN_WORDS_TO_CHUNK changed), and a prompt-only edit must never restart.
+    if (back === old.back) {
+      return { state: { ...state, items: replaceItem({ ...old, front }) }, restarted: false };
+    }
     const chunks = chunkText(back, state.config.chunkDifficulty, MIN_WORDS_TO_CHUNK);
     const sameChunkCount = (chunks?.length ?? null) === (old.chunks?.length ?? null);
     if (sameChunkCount && old.stage !== 'remediate') {

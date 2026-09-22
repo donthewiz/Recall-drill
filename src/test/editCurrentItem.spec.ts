@@ -130,6 +130,24 @@ describe('editCurrentItem -- progress kept', () => {
     expect(selectTrial(state)!.target.startsWith('Large green')).toBe(true);
   });
 
+  it('a prompt-only edit keeps stored chunks even when chunkText would now produce different ones', () => {
+    // Simulates a session saved under an older MIN_WORDS_TO_CHUNK (3): a
+    // 3-word back stored as two chunks, which today's chunkText won't make.
+    const s0 = stepUntil(freshState(), onItem(TACHY));
+    const oldChunks = ['fast heart', 'rate'];
+    const legacy: SessionState = {
+      ...s0,
+      items: s0.items.map(i =>
+        i.id === TACHY ? { ...i, chunks: oldChunks, combineSeq: [{ start: 1, end: 2 }], stage: 'chunks' as const } : i
+      ),
+    };
+    const { state, restarted } = editCurrentItem(legacy, { front: 'Rapid heartbeat', back: 'fast heart rate' });
+    expect(restarted).toBe(false);
+    expect(itemOf(state, TACHY).chunks).toEqual(oldChunks);
+    expect(itemOf(state, TACHY).front).toBe('Rapid heartbeat');
+    expect(progressOf(itemOf(state, TACHY))).toEqual(progressOf(itemOf(legacy, TACHY)));
+  });
+
   it('trims both fields', () => {
     const s0 = stepUntil(freshState(), onItem(TACHY));
     const { state } = editCurrentItem(s0, { front: '  Rapid heartbeat  ', back: ' fast heart rate\n' });

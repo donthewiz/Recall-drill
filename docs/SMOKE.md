@@ -113,3 +113,42 @@ the doc's original list item-for-item.
       of writing synchronously on every `sessionState` change) rather than
       reducing how often state updates — the state itself needs to stay
       real-time for the UI.
+
+## 8. Edit the current card mid-session
+
+Test deck (normal punctuation mode; repeat the equivalent-change step on a
+copy with **Punctuation must match** on):
+
+```
+Tachycardia :: fast heart rate
+-itis :: inflammation
+Menieres disease :: inner ear disorder causing vertigo tinnitus and hearing loss over time
+Hypertension :: blood pressure that stays above the normal range
+Before surgery :: pre op
+```
+
+- [ ] **Edit card** (pencil, left of End session) is enabled on a blind
+      attempt, on a presentation beat, and while **Continue** is showing
+      after a wrong answer or a cycle verdict; it's disabled during an
+      auto-advance dwell (e.g. the "Part learned!" flash).
+- [ ] The editor shows the card's **full** front and back, even mid-chunk.
+      Save is disabled while either field is empty.
+- [ ] Inside the editor, `Esc` cancels (does not trigger Show target) and
+      plain `Enter` does not check an answer; `Ctrl+Enter` saves.
+- [ ] **Prompt-only edit** mid-encode on a short card: the prompt updates;
+      status dot and cue level are unchanged.
+- [ ] **Real answer change** on the long card mid-combine: the card restarts
+      at a presentation beat with the new text. Attempts/misses unchanged.
+- [ ] **Equivalent change** (`Menieres` → `Ménière's`): progress kept. On the
+      strict copy, `pre op` → `pre-op` restarts the card.
+- [ ] **Cycle-phase real change**: that card goes back to encoding; the
+      other cards' dots don't regress; the session still finishes normally.
+- [ ] **Reveal rule**: open Edit before typing an answer, then Cancel. The
+      card shows as revealed and the next correct answer doesn't build the
+      streak ("Revealed — streak reset for this part.").
+- [ ] **Write-back**: End session → Back to Setup → the deck editor shows the
+      new text; reload → the deck library shows it; Save in the deck editor
+      doesn't revert it.
+- [ ] **Resume**: edit, reload mid-session, Resume → edited text.
+- [ ] **Folder practice**: an edit works in-session, shows "Saved for this
+      session only.", and the source deck is unchanged.

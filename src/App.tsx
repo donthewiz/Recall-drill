@@ -116,6 +116,10 @@ export default function App() {
   // SavedDeckEntry instead of localStorage. This just holds whatever the
   // active session/editor was started or resumed with.
   const [strictPunctuation, setStrictPunctuation] = useState<boolean>(false);
+  // Whether the active session maps onto one saved deck (named deckName)
+  // that a mid-session card edit may be written back to. Folder practice
+  // pools several decks, so it's false there.
+  const [sourceDeckEditable, setSourceDeckEditable] = useState<boolean>(true);
 
   // Request persistent storage once on app load so the browser is less
   // likely to evict decks under storage pressure.
@@ -220,6 +224,7 @@ export default function App() {
         ? strictPunctuationParam
         : loadDeckIndex().find(d => d.slug === slug)?.strictPunctuation ?? false;
     setStrictPunctuation(strict);
+    setSourceDeckEditable(true);
     setView('session');
   };
 
@@ -247,6 +252,7 @@ export default function App() {
     }
     setCycleOrder(state.cycleOrder ?? 'shuffled');
     setStrictPunctuation(state.strictPunctuation ?? false);
+    setSourceDeckEditable(true);
     setView('session');
   };
 
@@ -333,6 +339,16 @@ export default function App() {
 
   const handlePracticeFolder = (folderName: string, items: DeckItem[]) => {
     handleStartSession(items, folderName, encodeReps, chunkDifficulty);
+    // After handleStartSession, which sets it true for every other entry point.
+    setSourceDeckEditable(false);
+  };
+
+  // A mid-session edit was written back to the session's deck. After Back
+  // to Setup, SetupView remounts showing deckName and seeding its cards from
+  // editorDeckItems, so that has to be the updated deck -- otherwise the
+  // editor would show the pre-edit cards and its next Save would undo the fix.
+  const handleDeckCardEdited = (items: DeckItem[]) => {
+    setEditorDeckItems(items);
   };
 
   const handleRestartFresh = () => {
@@ -419,6 +435,8 @@ export default function App() {
               initialBatchIndex={sessionBatchIndex}
               initialBatchStartStats={sessionBatchStartStats}
               onFinishSession={handleFinishSession}
+              sourceDeckEditable={sourceDeckEditable}
+              onDeckCardEdited={handleDeckCardEdited}
             />
           )}
 
