@@ -533,3 +533,25 @@ other fixture covered. It's a plain constant in `drillEngine.ts`, not a
 structural decision — if real decks show people struggling with 6-8 word
 answers presented whole, or sailing through 9-10 word answers that still
 get chunked, move it.
+
+---
+
+## Known limitations
+
+- **Exact match is spacing-insensitive; `alignWords` is not.** `grade()`'s
+  exact check (via `exactMatch`) strips all spaces after normalizing, so a
+  pure spacing/punctuation variant like `"pre op"` vs `"pre-op"` matches
+  outright. But if that same attempt also has an unrelated word-level
+  difference (so the exact check misses and grading falls through to
+  `alignWords`'s per-word comparison), the spacing variant is now just two
+  different tokens to the aligner — it can misattribute which word is at
+  fault, or tip a near-miss into `wrong`, or (inside remediation)
+  misattribute the culprit chunk. "Count as correct" (Ctrl+Enter) is the
+  escape hatch for this case.
+- **`npm run simulate` does not exercise punctuation variants.** Its
+  synthetic decks (`shortDeck`/`mediumDeck`/`proseDeck`) and learner models
+  never type punctuation, so it can't measure the punctuation-normalization
+  change in `norm()`/`grade()` one way or the other — it's only useful here
+  as a check that the change didn't regress trial/keystroke counts on
+  ordinary text (it doesn't). `src/test/grade.spec.ts`'s punctuation table
+  is the actual evidence for this change's grading behavior.

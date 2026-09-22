@@ -69,3 +69,47 @@ describe('grade', () => {
     expect(r.verdict).toBe('wrong');
   });
 });
+
+// Phase 1: punctuation normalization. Grading must never fail a correct
+// answer over punctuation alone, but a symbol that changes the answer's
+// meaning (a decimal point, a leading minus sign, a comparison operator, a
+// unit-changing '+') must still be caught.
+describe('grade punctuation normalization', () => {
+  const exactPairs: [string, string][] = [
+    ['pre op', 'pre-op'],
+    ['and or', 'and/or'],
+    ['10 mg', '10mg'],
+    ['Menieres disease', "Ménière's disease"],
+    ['Na +', 'Na+'],
+    ['5 %', '5%'],
+    ['itis', '-itis'],
+    ['dont', "don't"],
+    ['7.4', '7.4'],
+    ['-5', '−5'],
+    ['- 5', '-5'],
+    ['10 20', '10-20'],
+    ['10 - 20', '10-20'],
+    ['tachycardia fast heart rate', 'tachycardia (fast heart rate)'],
+  ];
+
+  for (const [typed, target] of exactPairs) {
+    it(`"${typed}" vs "${target}" -> exact`, () => {
+      expect(grade(typed, target).verdict).toBe('exact');
+    });
+  }
+
+  const wrongPairs: [string, string][] = [
+    ['74', '7.4'],
+    ['60', '<60'],
+    ['Na', 'Na+'],
+    ['5', '-5'],
+    ['BE 2 to 2', 'BE -2 to +2'],
+    ['tachycardia', 'tachycardia (fast heart rate)'],
+  ];
+
+  for (const [typed, target] of wrongPairs) {
+    it(`"${typed}" vs "${target}" -> wrong`, () => {
+      expect(grade(typed, target).verdict).toBe('wrong');
+    });
+  }
+});

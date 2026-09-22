@@ -15,12 +15,35 @@ import {
   CycleOrder,
 } from '../types';
 
+// Phase 1 (punctuation normalization): forgives punctuation that never
+// changes meaning (commas, parens, quotes, slashes, hyphens between letters,
+// accents, etc.) while still protecting the two places a symbol carries real
+// content -- a decimal point between digits (7.4) and a leading minus sign
+// on a number (-5, not a word-prefix hyphen like "-itis" or a range like
+// 10-20). Those are shielded behind private-use placeholders before the
+// generic punctuation strip runs, then restored.
+const DECIMAL_MARKER = '';
+const NEGATIVE_MARKER = '';
+
 export function norm(s: string): string {
   return s
-    .trim()
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '') // é -> e
     .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ');
+    .replace(/[−–—]/g, '-') // minus/en/em dash -> -
+    .replace(/(\d)[.,](?=\d)/g, `$1${DECIMAL_MARKER}`) // protect decimals: 7.4
+    .replace(/(?<![a-z0-9]\s*)-\s*(?=\d)/g, NEGATIVE_MARKER) // protect negatives: -5 (not ranges 10-20)
+    .replace(new RegExp(`[^a-z0-9 ${DECIMAL_MARKER}${NEGATIVE_MARKER}+%<>=]`, 'g'), '')
+    .split(DECIMAL_MARKER).join('.')
+    .split(NEGATIVE_MARKER).join('-')
+    .replace(/\s+/g, ' ').trim();
+}
+
+// C2/Phase 1: the exact-match check grading and remediation both rely on --
+// spacing-insensitive on top of norm() (see grade() and culpritHalf() below)
+// so a card's own spacing habits never separately decide correctness on top
+// of what norm() already forgives.
+function exactMatch(a: string, b: string): boolean {
+  return norm(a).replace(/ /g, '') === norm(b).replace(/ /g, '');
 }
 
 export interface WordDiffResult {
@@ -131,7 +154,7 @@ export function grade(
 
   const diff = computeWordDiff(typed, target);
 
-  if (norm(typed) === norm(target)) {
+  if (exactMatch(typed, target)) {
     return { verdict: 'exact', diff, missingWords: [], extraWords: [], similarity: 1 };
   }
 
@@ -334,7 +357,7 @@ export function culpritHalf(typed: string, left: string, right: string): string 
   const typedWords = typed.trim().length ? typed.trim().split(/\s+/) : [];
   const leftWordCount = left.split(' ').length;
   const leftTyped = typedWords.slice(0, leftWordCount).join(' ');
-  if (norm(leftTyped) !== norm(left)) return left;
+  if (!exactMatch(leftTyped, left)) return left;
   return right;
 }
 
