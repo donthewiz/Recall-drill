@@ -115,6 +115,11 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Extra-pause case only: applyAnswer already advanced past the current
+  // item (e.g. it just got mastered), but the extra note needs the OLD
+  // item's trial to stay on screen until Continue, so that state is held
+  // here instead of being committed to sessionState right away.
+  const pendingAdvanceStateRef = useRef<SessionState | null>(null);
 
   const persistState = (state: SessionState) => {
     if (!state.items.length || !deckName) return;
@@ -262,6 +267,11 @@ export const SessionView: React.FC<SessionViewProps> = ({
   }
   const isPresentation = cue.kind === 'present' && !userRevealedAnswer;
 
+  // Extra field: an auto-advance would otherwise sweep the extra note off
+  // screen before it can be read, so a visible extra forces a manual
+  // Continue instead -- same effect as a 'manual' advance from applyAnswer.
+  const shouldPauseForExtra = showsFullBack && !!currentItem?.extra;
+
   const handleShowAnswer = () => {
     setUserRevealedAnswer(true);
   };
@@ -280,7 +290,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
     }
     persistState(result.state);
 
-    if (result.advance === 'auto') {
+    if (result.advance === 'auto' && !shouldPauseForExtra) {
       const delay = DWELL_MS[result.feedback.dwellKey] ?? 0;
       timeoutRef.current = setTimeout(() => {
         setSessionState(result.state);
@@ -290,6 +300,13 @@ export const SessionView: React.FC<SessionViewProps> = ({
         setLastVerdict(null);
         setIsProcessing(false);
       }, delay);
+    } else if (result.advance === 'auto') {
+      // Would have auto-advanced, but the extra note is showing -- hold the
+      // (already-advanced-past-this-item) state until Continue instead of
+      // committing it now, so the current card/extra stays on screen.
+      pendingAdvanceStateRef.current = result.state;
+      setShowNextBtn(true);
+      setIsProcessing(false);
     } else {
       setSessionState(result.state);
       setShowNextBtn(true);
@@ -314,7 +331,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
     triggerFlash(true);
     persistState(result.state);
 
-    if (result.advance === 'auto') {
+    if (result.advance === 'auto' && !shouldPauseForExtra) {
       const delay = DWELL_MS[result.feedback.dwellKey] ?? 0;
       timeoutRef.current = setTimeout(() => {
         setSessionState(result.state);
@@ -324,6 +341,10 @@ export const SessionView: React.FC<SessionViewProps> = ({
         setLastVerdict(null);
         setIsProcessing(false);
       }, delay);
+    } else if (result.advance === 'auto') {
+      pendingAdvanceStateRef.current = result.state;
+      setShowNextBtn(true);
+      setIsProcessing(false);
     } else {
       setSessionState(result.state);
       setShowNextBtn(true);
@@ -338,11 +359,16 @@ export const SessionView: React.FC<SessionViewProps> = ({
     if (isProcessing) return;
     setIsProcessing(true);
     setShowNextBtn(false);
-    // C5: a wrong verdict in the encode phase now also needs an explicit
-    // advance, but sessionState already points at the right trial (same
-    // item/stage, streak reset by applyAnswer) -- there's no queue to pop.
-    // Only the cycle phase's manual advance needs applyNext.
-    if (sessionState.phase === 'cycle') {
+    if (pendingAdvanceStateRef.current) {
+      // The extra-pause case: applyAnswer's already-advanced state was held
+      // back (see handleCheck/handleOverride) until this Continue.
+      setSessionState(pendingAdvanceStateRef.current);
+      pendingAdvanceStateRef.current = null;
+    } else if (sessionState.phase === 'cycle') {
+      // C5: a wrong verdict in the encode phase now also needs an explicit
+      // advance, but sessionState already points at the right trial (same
+      // item/stage, streak reset by applyAnswer) -- there's no queue to pop.
+      // Only the cycle phase's manual advance needs applyNext.
       setSessionState(applyNext(sessionState));
     }
     setTypedValue('');
@@ -372,7 +398,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // Available whenever a trial is showing and no auto-advance dwell is
   // pending -- including presentation beats and the Continue state after a
   // manual-advance verdict (sessionState still points at the shown card).
-  const canEdit = !!trial && !isProcessing && !isEditing;
+  // Extra-pause case (pendingAdvanceStateRef set): sessionState.currentId
+  // still names the just-answered item, but its already-advanced-past state
+  // is waiting off to the side for Continue -- editing here would either
+  // touch the wrong card's data or get silently clobbered when that pending
+  // state lands, so editing is blocked until Continue is pressed.
+  const canEdit = !!trial && !isProcessing && !isEditing && !pendingAdvanceStateRef.current;
 
   const handleOpenEditor = () => {
     if (!canEdit) return;
@@ -795,9 +826,9 @@ export const SessionView: React.FC<SessionViewProps> = ({
               {showsFullBack && currentItem?.extra && (
                 <div
                   id="extra-note"
-                  className="text-xs font-normal text-[var(--text-muted)] pt-2 mt-1 border-t border-[var(--border)]/60"
+                  className="text-base font-normal text-[var(--text-muted)] pt-2 mt-1 border-t border-[var(--border)]/60"
                 >
-                  <span className="font-bold uppercase tracking-wider text-[10px] mr-1.5">Extra</span>
+                  <span className="font-bold uppercase tracking-wider text-xs mr-1.5">Extra</span>
                   {currentItem.extra}
                 </div>
               )}
