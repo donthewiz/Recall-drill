@@ -109,6 +109,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editFront, setEditFront] = useState('');
   const [editBack, setEditBack] = useState('');
+  const [editExtra, setEditExtra] = useState('');
   const [editRevealsOnClose, setEditRevealsOnClose] = useState(false);
   const [editNotice, setEditNotice] = useState<string | null>(null);
 
@@ -363,6 +364,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
     // The full front/back, not trial.target (only a chunk while encoding).
     setEditFront(item.front);
     setEditBack(item.back);
+    setEditExtra(item.extra ?? '');
     setEditRevealsOnClose(!isPresentation && !showNextBtn && lastVerdict === null && !userRevealedAnswer);
     setEditNotice(null);
     setIsEditing(true);
@@ -391,9 +393,13 @@ export const SessionView: React.FC<SessionViewProps> = ({
     if (!canSaveEdit) return;
     const before = sessionState.items.find(i => i.id === sessionState.currentId);
     if (!before) return;
-    const { state, restarted } = editCurrentItem(sessionState, { front: editFront, back: editBack });
+    const { state, restarted } = editCurrentItem(sessionState, { front: editFront, back: editBack, extra: editExtra });
     const after = state.items.find(i => i.id === before.id)!;
-    const textChanged = after.front !== before.front || after.back !== before.back;
+    // Extra is display-only, but a change to it still needs writing back to
+    // the saved deck (see writeBackCardEdit) -- otherwise it would only ever
+    // live in this session's in-memory state.
+    const textChanged =
+      after.front !== before.front || after.back !== before.back || after.extra !== before.extra;
 
     if (restarted) {
       setTypedValue('');
@@ -657,6 +663,18 @@ export const SessionView: React.FC<SessionViewProps> = ({
                 // answer can't hold a line break.
                 onChange={e => setEditBack(e.target.value.replace(/\r?\n/g, ' '))}
                 rows={3}
+                spellCheck={false}
+                className="w-full mono text-sm bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-4 py-2.5 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none shadow-xs transition-all resize-y"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Extra (optional)</span>
+              <textarea
+                id="edit-extra"
+                value={editExtra}
+                onChange={e => setEditExtra(e.target.value)}
+                rows={2}
+                placeholder="Shown after you reveal the full answer -- not graded"
                 spellCheck={false}
                 className="w-full mono text-sm bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-4 py-2.5 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none shadow-xs transition-all resize-y"
               />

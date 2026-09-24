@@ -87,19 +87,32 @@ function itemsToCardRows(items: DeckItem[]): CardRowItem[] {
     id: `card_${idx}_${Math.random().toString(36).substring(2, 7)}`,
     front: it.front,
     back: it.back,
+    extra: it.extra,
   }));
 }
 
 function cardRowsToDeckItems(rows: CardRowItem[]): DeckItem[] {
   return rows
-    .map(r => ({ front: r.front.trim(), back: r.back.trim() }))
+    .map(r => {
+      const extra = (r.extra || '').trim();
+      const item: DeckItem = { front: r.front.trim(), back: r.back.trim() };
+      return extra ? { ...item, extra } : item;
+    })
     .filter(r => r.front.length > 0 && r.back.length > 0);
+}
+
+// Loaded-deck -> bulk-text serialization, shared by cardRowsToRawText (cards
+// mode -> bulk) and every "load a saved deck straight into rawText" site
+// below -- appends a third \t segment only when extra is present, so a
+// no-extra deck's bulk text is unchanged.
+function deckItemToRawLine(item: Pick<DeckItem, 'front' | 'back' | 'extra'>): string {
+  return item.extra ? `${item.front}\t${item.back}\t${item.extra}` : `${item.front}\t${item.back}`;
 }
 
 function cardRowsToRawText(rows: CardRowItem[]): string {
   return rows
     .filter(r => r.front.trim() || r.back.trim())
-    .map(r => `${r.front.trim()}\t${r.back.trim()}`)
+    .map(r => deckItemToRawLine({ front: r.front.trim(), back: r.back.trim(), extra: (r.extra || '').trim() || undefined }))
     .join('\n');
 }
 
@@ -215,14 +228,14 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const [editMode, setEditMode] = useState<'cards' | 'bulk'>('cards');
   const [rawText, setRawText] = useState(() => {
     if (initialItems && initialItems.length > 0) {
-      return initialItems.map(i => `${i.front}\t${i.back}`).join('\n');
+      return initialItems.map(deckItemToRawLine).join('\n');
     }
     if (initialRawText) return initialRawText;
     const recents = getRecentlyUsedDecks();
     if (recents.length > 0) {
       const topDeck = getDeckFromStorage(recents[0].slug);
       if (topDeck && topDeck.length > 0) {
-        return topDeck.map(i => `${i.front}\t${i.back}`).join('\n');
+        return topDeck.map(deckItemToRawLine).join('\n');
       }
     }
     return '';
@@ -415,7 +428,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
     if (initialItems && initialItems.length > 0) {
       setCards(itemsToCardRows(initialItems));
-      setRawText(initialItems.map(i => `${i.front}\t${i.back}`).join('\n'));
+      setRawText(initialItems.map(deckItemToRawLine).join('\n'));
     }
     if (initialIsEditingCards !== undefined) {
       setIsEditingCards(initialIsEditingCards);
@@ -515,7 +528,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     const parsed = getDeckFromStorage(slug);
     if (parsed && parsed.length > 0) {
       setCards(itemsToCardRows(parsed));
-      setRawText(parsed.map(p => `${p.front}\t${p.back}`).join('\n'));
+      setRawText(parsed.map(deckItemToRawLine).join('\n'));
       setMsg(`Loaded "${name}" with ${parsed.length} cards.`);
     } else {
       setCards([
@@ -540,7 +553,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       setSelectedFolderId(entry.folderId || null);
       setStrictPunctuation(entry.strictPunctuation ?? false);
       setCards(itemsToCardRows(parsed));
-      setRawText(parsed.map(p => `${p.front}\t${p.back}`).join('\n'));
+      setRawText(parsed.map(deckItemToRawLine).join('\n'));
       setMsg(`Loaded "${entry.name}" with ${parsed.length} cards.`);
       recordDeckUsed(slug, entry.name, parsed.length);
       refreshDecks();
@@ -1284,7 +1297,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
             <div className="bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-5 shadow-[var(--shadow-card)] space-y-3">
               <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
                 <span>
-                  Format: <code className="bg-[var(--surface-1)] border border-[var(--border)] px-1.5 py-0.5 rounded font-mono text-[var(--text-primary)]">front[TAB]back</code> or <code className="bg-[var(--surface-1)] border border-[var(--border)] px-1.5 py-0.5 rounded font-mono text-[var(--text-primary)]">front::back</code>
+                  Format: <code className="bg-[var(--surface-1)] border border-[var(--border)] px-1.5 py-0.5 rounded font-mono text-[var(--text-primary)]">front[TAB]back</code> or <code className="bg-[var(--surface-1)] border border-[var(--border)] px-1.5 py-0.5 rounded font-mono text-[var(--text-primary)]">front::back</code>, plus an optional <code className="bg-[var(--surface-1)] border border-[var(--border)] px-1.5 py-0.5 rounded font-mono text-[var(--text-primary)]">[TAB]extra</code> or <code className="bg-[var(--surface-1)] border border-[var(--border)] px-1.5 py-0.5 rounded font-mono text-[var(--text-primary)]">::extra</code>
                 </span>
                 <button
                   type="button"

@@ -5,6 +5,7 @@ export interface CardRowItem {
   id: string;
   front: string;
   back: string;
+  extra?: string;
 }
 
 interface CardEditorProps {
@@ -15,7 +16,7 @@ interface CardEditorProps {
 export const CardEditor: React.FC<CardEditorProps> = ({ cards, onChange }) => {
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
 
-  const handleUpdateCard = (id: string, field: 'front' | 'back', value: string) => {
+  const handleUpdateCard = (id: string, field: 'front' | 'back' | 'extra', value: string) => {
     const updated = cards.map(card => {
       if (card.id === id) {
         return { ...card, [field]: value };
@@ -30,6 +31,7 @@ export const CardEditor: React.FC<CardEditorProps> = ({ cards, onChange }) => {
       id: 'card_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
       front: '',
       back: '',
+      extra: '',
     };
     if (typeof afterIndex === 'number' && afterIndex >= 0 && afterIndex < cards.length) {
       const copy = [...cards];
@@ -45,7 +47,7 @@ export const CardEditor: React.FC<CardEditorProps> = ({ cards, onChange }) => {
   const handleDeleteCard = (id: string) => {
     if (cards.length <= 1) {
       // Don't leave with 0 cards, just clear it
-      onChange([{ id: cards[0].id, front: '', back: '' }]);
+      onChange([{ id: cards[0].id, front: '', back: '', extra: '' }]);
       return;
     }
     const updated = cards.filter(card => card.id !== id);
@@ -59,6 +61,7 @@ export const CardEditor: React.FC<CardEditorProps> = ({ cards, onChange }) => {
       id: 'card_' + Math.random().toString(36).substring(2, 9),
       front: item.front,
       back: item.back,
+      extra: item.extra,
     };
     const copy = [...cards];
     copy.splice(index + 1, 0, duplicated);
@@ -196,6 +199,23 @@ export const CardEditor: React.FC<CardEditorProps> = ({ cards, onChange }) => {
                     onFocus={() => setFocusedIndex(index)}
                     onChange={e => handleUpdateCard(card.id, 'back', e.target.value)}
                     placeholder="e.g. Paris"
+                    className="w-full text-sm font-medium bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-3.5 py-2.5 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none transition-all resize-none placeholder:text-[var(--text-muted)]/70"
+                  />
+                </div>
+
+                {/* Extra (optional, display-only) */}
+                <div className="space-y-1.5 md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] uppercase tracking-wider font-bold text-[var(--text-muted)]">
+                      Extra (optional)
+                    </label>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={card.extra ?? ''}
+                    onFocus={() => setFocusedIndex(index)}
+                    onChange={e => handleUpdateCard(card.id, 'extra', e.target.value)}
+                    placeholder="Shown after you reveal the full answer -- not graded"
                     className="w-full text-sm font-medium bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-3.5 py-2.5 focus:border-[var(--accent)] focus:bg-[var(--surface-2)] outline-none transition-all resize-none placeholder:text-[var(--text-muted)]/70"
                   />
                 </div>
