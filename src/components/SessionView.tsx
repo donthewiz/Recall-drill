@@ -220,6 +220,23 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const cue = trial?.cue ?? { kind: 'none' as const };
   const promptText = trial?.prompt ?? '';
   const phaseDetail = trial?.detail ?? '';
+  const currentItem = trial ? sessionState.items.find(i => i.id === trial.itemId) : undefined;
+  // Extra field: the post-answer feedback shows it only when the full back is
+  // what's actually on screen -- the 'full' stage, the cycle phase, and the
+  // FINAL combine window (the whole answer, start 1..n) all show it in full.
+  // Chunk presentation beats, intermediate combine windows, and remediation
+  // only ever show a fragment of the back, so extra stays hidden there --
+  // including under Esc reveal, which just reveals whatever fragment that
+  // stage tests, not the complete back. A 'wrong'/'manual' verdict doesn't
+  // change which stage/window is current (see applyAnswer), so this stays
+  // correct for the whole time feedback is shown, auto-advance or not.
+  const showsFullBack =
+    !!trial &&
+    (trial.stage === 'full' ||
+      trial.stage === 'cycle' ||
+      (trial.stage === 'combine' &&
+        !!currentItem?.combineSeq &&
+        currentItem.combineSeqIdx === currentItem.combineSeq.length - 1));
 
   // C5: cue-driven display replaces the old streak-derived isBlind toggle
   // between "show nothing" and "show the full target" (copy-typing).
@@ -773,6 +790,15 @@ export const SessionView: React.FC<SessionViewProps> = ({
                       </span>
                     )
                   )}
+                </div>
+              )}
+              {showsFullBack && currentItem?.extra && (
+                <div
+                  id="extra-note"
+                  className="text-xs font-normal text-[var(--text-muted)] pt-2 mt-1 border-t border-[var(--border)]/60"
+                >
+                  <span className="font-bold uppercase tracking-wider text-[10px] mr-1.5">Extra</span>
+                  {currentItem.extra}
                 </div>
               )}
             </div>
