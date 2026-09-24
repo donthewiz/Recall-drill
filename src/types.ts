@@ -17,6 +17,11 @@ export interface DrillItem {
   id: number;
   front: string;
   back: string;
+  // Anki-style "Extra" field: display-only, shown in post-answer feedback
+  // once the full back is on screen. Never graded, chunked, or counted
+  // toward trials -- see drillEngine.ts's grade()/chunkText() call sites,
+  // neither of which reads it.
+  extra?: string;
   status: ItemStatus;
   encodeStreak: number;
   cycleStreak: number;
@@ -72,6 +77,8 @@ export interface WordDiffResult {
 export interface DeckItem {
   front: string;
   back: string;
+  // Anki-style "Extra" field: optional, display-only. See DrillItem.extra.
+  extra?: string;
 }
 
 export interface SavedSessionState {

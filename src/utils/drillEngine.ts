@@ -239,15 +239,22 @@ export function parseDeck(text: string): DeckItem[] {
 
     let front = '';
     let back = '';
+    let extra = '';
 
     if (line.includes('\t')) {
+      // Optional third segment ("Extra"): front[TAB]back[TAB]extra. A second
+      // tab used to fold into back -- it now starts extra instead.
       const parts = line.split('\t');
       front = parts[0].trim();
-      back = parts.slice(1).join('\t').trim();
+      back = (parts[1] || '').trim();
+      extra = parts.slice(2).join('\t').trim();
     } else if (line.includes('::')) {
+      // Optional third segment: front::back::extra. A second '::' used to
+      // fold into back -- it now starts extra instead.
       const parts = line.split('::');
       front = (parts[0] || '').trim();
-      back = (parts.slice(1).join('::') || '').trim();
+      back = (parts[1] || '').trim();
+      extra = parts.slice(2).join('::').trim();
     } else if (line.includes(' - ') && !line.includes('->')) {
       // Fallback for hyphen separator
       const parts = line.split(' - ');
@@ -256,7 +263,7 @@ export function parseDeck(text: string): DeckItem[] {
     }
 
     if (front && back) {
-      out.push({ front, back });
+      out.push(extra ? { front, back, extra } : { front, back });
     }
   }
 
@@ -546,6 +553,7 @@ function buildItem(
     id,
     front: p.front,
     back: p.back,
+    extra: p.extra,
     status: 'new',
     encodeStreak: 0,
     cycleStreak: 0,
@@ -568,6 +576,7 @@ export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): D
     id: it.id,
     front: it.front,
     back: it.back,
+    extra: it.extra,
     status: it.status || 'new',
     encodeStreak: it.encodeStreak ?? 0,
     cycleStreak: it.cycleStreak ?? 0,
@@ -637,13 +646,15 @@ export function writeBackCardEdit(
   deckName: string,
   sourceDeckEditable: boolean,
   before: Pick<DrillItem, 'id' | 'front' | 'back'>,
-  after: Pick<DrillItem, 'front' | 'back'>
+  after: Pick<DrillItem, 'front' | 'back' | 'extra'>
 ): DeckItem[] | null {
   if (!sourceDeckEditable || !deckName) return null;
   const deck = getDeckFromStorage(slugify(deckName));
   const card = deck?.[before.id];
   if (!deck || !card || card.front !== before.front || card.back !== before.back) return null;
-  const updated = deck.map((c, idx) => (idx === before.id ? { front: after.front, back: after.back } : c));
+  const updated = deck.map((c, idx) =>
+    idx === before.id ? { front: after.front, back: after.back, extra: after.extra } : c
+  );
   return saveDeckToStorage(deckName, updated) ? updated : null;
 }
 
@@ -2212,7 +2223,7 @@ export function applyNext(state: SessionState): SessionState {
 // cards.
 export function editCurrentItem(
   state: SessionState,
-  edit: { front: string; back: string }
+  edit: { front: string; back: string; extra?: string }
 ): { state: SessionState; restarted: boolean } {
   const unchanged = { state, restarted: false };
   if (state.phase !== 'encode' && state.phase !== 'cycle') return unchanged;
@@ -2221,6 +2232,8 @@ export function editCurrentItem(
   const front = edit.front.trim();
   const back = edit.back.trim();
   if (!front || !back) return unchanged;
+  // Display-only: never enters answerChanged, never affects the branch below.
+  const extra = edit.extra?.trim() || undefined;
 
   const replaceItem = (item: DrillItem) => state.items.map(i => (i.id === item.id ? item : i));
 
@@ -2230,17 +2243,17 @@ export function editCurrentItem(
     // disagree with how an older session chunked it (e.g. one saved before
     // MIN_WORDS_TO_CHUNK changed), and a prompt-only edit must never restart.
     if (back === old.back) {
-      return { state: { ...state, items: replaceItem({ ...old, front }) }, restarted: false };
+      return { state: { ...state, items: replaceItem({ ...old, front, extra }) }, restarted: false };
     }
     const chunks = chunkText(back, state.config.chunkDifficulty, MIN_WORDS_TO_CHUNK);
     const sameChunkCount = (chunks?.length ?? null) === (old.chunks?.length ?? null);
     if (sameChunkCount && old.stage !== 'remediate') {
-      return { state: { ...state, items: replaceItem({ ...old, front, back, chunks }) }, restarted: false };
+      return { state: { ...state, items: replaceItem({ ...old, front, back, chunks, extra }) }, restarted: false };
     }
   }
 
   const rebuilt: DrillItem = {
-    ...buildItem({ front, back }, old.id, state.config.chunkDifficulty, state.config.ladderMode, MIN_WORDS_TO_CHUNK),
+    ...buildItem({ front, back, extra }, old.id, state.config.chunkDifficulty, state.config.ladderMode, MIN_WORDS_TO_CHUNK),
     status: 'encoding',
   };
   return {
