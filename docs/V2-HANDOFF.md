@@ -572,14 +572,24 @@ rate on drilled cards.
    same card immediately, and a chunk's presentation beat stays adjacent to
    its own blind attempt (nothing to space out there: one is ungraded, the
    other is the chunk's only real attempt).
-3. **Final check (Phase 3).** *Not yet built.* This section will gain a
-   third rule once it lands — see `docs/BASELINE.md` for the phase-by-phase
-   trial-count evidence in the meantime.
+3. **Final check (Phase 3).** After the last batch's cycle finishes, the
+   session no longer ends there — it enters one shuffled, cue-free pass over
+   *every item in the session* (`DrillItem.finalDone`/`finalMisses`),
+   regardless of `cycleOrder`. Each card needs exactly one correct answer; a
+   miss or reveal sends it to the end of this same pass (not the cycle's
+   2-3-card gap) and counts toward `finalMisses`, surfaced in DoneView as
+   "Missed in final check". Status and `cycleStreak` are never touched. This
+   is also what retires the practical impact of the last-card-lag-0 quirk
+   below: even a card that came back immediately in its own batch's cycle
+   still gets one properly-spaced retrieval here, against every other card
+   in the deck, before the session is done.
 
-No new user-facing settings. `computeMinimumTrials` is unaffected by either
-rule (both are pure reorderings, not new trials, so the perfect-run floor
-doesn't move), and `npm run simulate`'s perfect-learner rows are
-byte-identical before and after each phase — see `docs/BASELINE.md`.
+No new user-facing settings. Phases 1-2 don't move `computeMinimumTrials`'s
+floor at all (both are pure reorderings, not new trials); Phase 3 adds
+exactly **+1 trial per item** to it (one Final-check answer each), the only
+one of the three that costs anything — `npm run simulate`'s perfect-learner
+rows are byte-identical after Phases 1-2 and rise by exactly items-per-deck
+after Phase 3. See `docs/BASELINE.md` for the full phase-by-phase evidence.
 
 ---
 
@@ -602,19 +612,6 @@ byte-identical before and after each phase — see `docs/BASELINE.md`.
   as a check that the change didn't regress trial/keystroke counts on
   ordinary text (it doesn't). `src/test/grade.spec.ts`'s punctuation table
   is the actual evidence for this change's grading behavior.
-- **The last card in a batch's cycle can still come straight back, but only
-  after a miss.** Reinsertion gaps are capped at the queue length, so when
-  only one unmastered card is left, it's served again immediately, with
-  nothing in between, in both cycle orders. Since Phase 1 (within-session
-  spacing) moved first-correct reinsertion to the end of the pass, this can
-  no longer happen on a miss-free run: every card needs exactly two cycle
-  corrects, so a perfect run finishes everyone's first correct before
-  anyone's second, and no card is ever alone until it's already earning its
-  mastering answer — which doesn't reinsert at all. A miss breaks that
-  lockstep (its own reinsertion gap is 2-3 cards, not "to the end"), and can
-  leave exactly one card behind still needing a correct answer, including
-  its mastering one, with the queue already empty. Phase 3's Final check is
-  expected to remove this scenario entirely.
 - **"Every word is required" holds only on strict decks.** In normal mode the
   near tier forgives dropped or swapped stopwords. With `stemTolerance` on, it
   also forgives inflection differences at ≥ 0.9 similarity.

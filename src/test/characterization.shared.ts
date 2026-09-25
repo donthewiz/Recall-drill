@@ -127,9 +127,13 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       expect(res).toEqual({ verdict: 'exact', advance: 'manual' });
       expect(driver.snapshotItem(itemId)).toMatchObject({ cycleStreak: 2, status: 'mastered' });
       expect(driver.isFinished()).toBe(false);
-      driver.next();
 
-      expect(driver.isFinished()).toBe(true);
+      // This scenario stops here, one driver.next() short of fully finished:
+      // what that next() does now diverges by driver (Phase 3: the real
+      // engine enters the Final check instead of finishing; LegacyEngine,
+      // frozen, still finishes immediately). See characterization.engine.spec.ts
+      // and characterization.legacy.spec.ts for the driver-specific endings,
+      // same split as the C8a chunk-criterion divergence noted above.
     });
   });
 
@@ -206,7 +210,7 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
   });
 
   describe('cycle phase: miss resets streak, reinsertion keeps the item in the queue', () => {
-    it('walks miss -> correct -> correct -> mastered -> session finished', () => {
+    it('walks miss -> correct -> correct -> mastered', () => {
       const driver = makeDriver();
       driver.init([{ front: 'Q5', back: FULL_STAGE_BACK }], { encodeReps: 1 });
       const itemId = driver.currentTrial()!.itemId;
@@ -229,9 +233,9 @@ export function runCharacterizationSuite(makeDriver: () => EngineDriver): void {
       expect(res).toEqual({ verdict: 'exact', advance: 'manual' });
       expect(driver.snapshotItem(itemId)).toMatchObject({ cycleStreak: 2, status: 'mastered' });
       expect(driver.isFinished()).toBe(false);
-
-      driver.next();
-      expect(driver.isFinished()).toBe(true);
+      // Stops here, one driver.next() short of fully finished -- see the
+      // full-stage-card scenario above for why what that next() does now
+      // diverges by driver (Phase 3's Final check, real-engine-only).
       expect(driver.stats()).toEqual({ attempts: 4, misses: 1, nearMisses: 0, overrides: 0 });
     });
   });

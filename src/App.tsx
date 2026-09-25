@@ -19,6 +19,7 @@ import {
   resolveBatchConfig,
   resolveSourceDeckEditable,
   loadDeckIndex,
+  SESSION_COMPLETE_ID,
 } from './utils/drillEngine';
 import { requestPersistentStorage, PersistenceStatus } from './utils/backup';
 import { Header } from './components/Header';
@@ -40,7 +41,7 @@ export default function App() {
   const [autoOpenEditor, setAutoOpenEditor] = useState<boolean>(false);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [sessionItems, setSessionItems] = useState<DrillItem[]>([]);
-  const [sessionPhase, setSessionPhase] = useState<'encode' | 'cycle' | 'batch-done'>('encode');
+  const [sessionPhase, setSessionPhase] = useState<'encode' | 'cycle' | 'batch-done' | 'final'>('encode');
   const [sessionQueue, setSessionQueue] = useState<number[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionStats>({
     attempts: 0,
@@ -289,10 +290,14 @@ export default function App() {
     setSessionQueue(state.queue);
     setSessionBatchIndex(state.batchIndex);
     setSessionBatchStartStats(state.batchStartStats);
-    const mastered = state.items.filter(i => i.status === 'mastered').length;
     const slug = slugify(deckName);
 
-    if (mastered >= state.items.length) {
+    // Phase 3: "complete" means the Final check has finished too, not just
+    // every item reaching 'mastered' -- the last batch's cycle mastering
+    // every item no longer ends the session (see advanceBatchState), so
+    // clearing on `mastered >= items.length` would wipe a save mid-Final-
+    // check, losing finalDone progress and stranding the resume prompt.
+    if (state.currentId === SESSION_COMPLETE_ID) {
       clearSessionState(slug);
     } else {
       saveSessionState(slug, {

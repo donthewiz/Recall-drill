@@ -1,9 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { runCharacterizationSuite } from './characterization.shared';
 import { LegacyEngine } from './reference/legacyEngine';
-import { FOUR_CHUNK_BACK, FOUR_CHUNK_CHUNKS, CHUNK_DIFFICULTY } from './fixtures/deck';
+import { FOUR_CHUNK_BACK, FOUR_CHUNK_CHUNKS, CHUNK_DIFFICULTY, FULL_STAGE_BACK } from './fixtures/deck';
 
 runCharacterizationSuite(() => new LegacyEngine());
+
+// Phase 3 (Final check) is real-engine-only -- LegacyEngine is a frozen
+// pre-Phase-0 snapshot and never enters phase 'final'. This is the
+// LegacyEngine-only continuation of characterization.shared.ts's
+// "full-stage card" scenario, which now stops one driver.next() short of
+// fully finished because that next() diverges by driver -- see
+// characterization.engine.spec.ts for the real-engine version.
+describe('full-stage card (pre-Final-check behavior): finishes immediately once mastered', () => {
+  it('the driver.next() right after cycle mastery ends the session, with no Final check', () => {
+    const driver = new LegacyEngine();
+    driver.init([{ front: 'Q1', back: FULL_STAGE_BACK }], { encodeReps: 2 });
+    driver.answer(FULL_STAGE_BACK);
+    driver.answer(FULL_STAGE_BACK);
+    driver.answer('nope');
+    driver.next();
+    driver.answer(FULL_STAGE_BACK);
+    driver.next();
+    driver.answer(FULL_STAGE_BACK);
+    expect(driver.isFinished()).toBe(false);
+    driver.next();
+    expect(driver.isFinished()).toBe(true);
+  });
+});
 
 // Phase 8 (C8a) changed the chunks stage's advance criterion (see
 // characterization.shared.ts's header comment) in a way LegacyEngine, a

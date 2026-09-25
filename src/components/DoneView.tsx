@@ -20,6 +20,10 @@ export const DoneView: React.FC<DoneViewProps> = ({
   const [showItemList, setShowItemList] = useState(false);
 
   const masteredCount = items.filter(i => i.status === 'mastered').length;
+  // Phase 3: cards that took at least one miss/reveal during the Final
+  // check -- undefined finalMisses (an old save, or a card never reached in
+  // an ended-early session) reads as 0, so it's simply left out.
+  const missedInFinal = items.filter(i => (i.finalMisses ?? 0) > 0);
   const isAllMastered = masteredCount >= items.length;
   const accuracy =
     stats.attempts > 0
@@ -119,6 +123,32 @@ export const DoneView: React.FC<DoneViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Phase 3: cards that took at least one miss/reveal during the Final
+          check -- omitted entirely when nothing qualifies. */}
+      {missedInFinal.length > 0 && (
+        <div
+          id="final-check-misses"
+          className="text-left bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-3.5 space-y-2 shadow-xs"
+        >
+          <p className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+            <AlertTriangle size={13} className="text-[var(--warning)]" /> Missed in final check
+          </p>
+          <div className="divide-y divide-[var(--border)] text-xs">
+            {missedInFinal.map(it => (
+              <div key={it.id} className="py-2 first:pt-0 last:pb-0 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-[var(--text-primary)]">{it.front}</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {it.finalMisses} miss{it.finalMisses === 1 ? '' : 'es'}
+                  </span>
+                </div>
+                <p className="mono text-[var(--text-secondary)]">{it.back}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center justify-center gap-3 pt-2">

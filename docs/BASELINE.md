@@ -552,44 +552,51 @@ threshold and stopped chunking at all.
 
 ---
 
-## Within-session spacing, Phases 1-2 (2026-09-24)
+## Within-session spacing, Phases 1-3 (2026-09-24)
 
 Unlike every phase above, C1-C9 optimized what the harness's cost-only
 learner can actually see. Phases 1-3 of `docs/V2-HANDOFF.md`'s
 "Within-session spacing" work do not — they space out retrievals within a
 session, and this harness's learner has no lag or forgetting to make that
-show up as fewer trials. **These two phases are expected to be cost-neutral,
-not cost-reducing** (Phase 3 is the one exception: +1 trial per card, for its
-Final check). The measurements below exist to confirm "cost-neutral" is what
-actually happened — that reordering *when* a card is retested didn't
-accidentally change *how many times* it is — not to claim a trial-count win.
-The real benefit (fewer trials-until-retention-fails at the same spacing) is
-something only Anki's next-day Again rate can show, not this simulator.
+show up as fewer trials. **Phases 1-2 are expected to be cost-neutral, not
+cost-reducing; Phase 3 is the one exception, at a flat +1 trial per card**
+for its Final check. The measurements below exist to confirm that's exactly
+what happened — that reordering *when* a card is retested didn't
+accidentally change *how many times* it is (Phases 1-2), and that the Final
+check costs exactly what its own design says it should, no more (Phase 3) —
+not to claim a trial-count win. The real benefit (fewer
+trials-until-retention-fails at the same spacing) is something only Anki's
+next-day Again rate can show, not this simulator.
 
 Same config/fixtures/learners as the main table above (50 seeded runs per
 config, mean ± sample SD).
 
-| Deck | Learner | Trials: pre-spacing | Trials: Phase 1 | Trials: Phase 2 | Keystrokes: pre-spacing | Keystrokes: Phase 1 | Keystrokes: Phase 2 |
-|---|---|---|---|---|---|---|---|
-| shortDeck | perfect | 60.0 ± 0.0 | 60.0 ± 0.0 | 60.0 ± 0.0 | 385.0 ± 0.0 | 385.0 ± 0.0 | 385.0 ± 0.0 |
-| shortDeck | realistic | 91.6 ± 8.5 | 91.5 ± 7.5 | 91.6 ± 6.8 | 586.5 ± 56.6 | 585.0 ± 48.6 | 579.3 ± 50.8 |
-| shortDeck | struggling | 147.7 ± 13.0 | 147.9 ± 11.6 | 146.7 ± 9.0 | 944.3 ± 91.6 | 948.9 ± 84.5 | 938.9 ± 63.6 |
-| proseDeck | perfect | 144.0 ± 0.0 | 144.0 ± 0.0 | 144.0 ± 0.0 | 9764.0 ± 0.0 | 9764.0 ± 0.0 | 9764.0 ± 0.0 |
-| proseDeck | realistic | 257.9 ± 31.0 | 257.2 ± 30.5 | 253.7 ± 28.3 | 16491.5 ± 1715.4 | 16395.1 ± 1621.4 | 16187.2 ± 1443.8 |
-| proseDeck | struggling | 762.7 ± 80.7 | 765.0 ± 81.3 | 760.4 ± 97.4 | 36849.9 ± 2992.4 | 37117.0 ± 2998.3 | 36913.4 ± 3700.2 |
-| mediumDeck | perfect | 60.0 ± 0.0 | 60.0 ± 0.0 | 60.0 ± 0.0 | 2455.0 ± 0.0 | 2455.0 ± 0.0 | 2455.0 ± 0.0 |
-| mediumDeck | realistic | 92.0 ± 6.2 | 91.8 ± 7.0 | 91.5 ± 7.1 | 3763.5 ± 249.5 | 3760.7 ± 291.1 | 3740.8 ± 288.0 |
-| mediumDeck | struggling | 149.4 ± 12.6 | 150.0 ± 11.8 | 150.8 ± 9.8 | 6107.0 ± 530.6 | 6124.0 ± 496.9 | 6166.0 ± 400.4 |
+| Deck | Learner | Trials: pre-spacing | Trials: Phase 1 | Trials: Phase 2 | Trials: Phase 3 | Keystrokes: pre-spacing | Keystrokes: Phase 1 | Keystrokes: Phase 2 | Keystrokes: Phase 3 |
+|---|---|---|---|---|---|---|---|---|---|
+| shortDeck | perfect | 60.0 ± 0.0 | 60.0 ± 0.0 | 60.0 ± 0.0 | 72.0 ± 0.0 | 385.0 ± 0.0 | 385.0 ± 0.0 | 385.0 ± 0.0 | 462.0 ± 0.0 |
+| shortDeck | realistic | 91.6 ± 8.5 | 91.5 ± 7.5 | 91.6 ± 6.8 | 110.5 ± 6.9 | 586.5 ± 56.6 | 585.0 ± 48.6 | 579.3 ± 50.8 | 699.4 ± 50.1 |
+| shortDeck | struggling | 147.7 ± 13.0 | 147.9 ± 11.6 | 146.7 ± 9.0 | 177.2 ± 11.3 | 944.3 ± 91.6 | 948.9 ± 84.5 | 938.9 ± 63.6 | 1131.2 ± 77.1 |
+| proseDeck | perfect | 144.0 ± 0.0 | 144.0 ± 0.0 | 144.0 ± 0.0 | 156.0 ± 0.0 | 9764.0 ± 0.0 | 9764.0 ± 0.0 | 9764.0 ± 0.0 | 11228.0 ± 0.0 |
+| proseDeck | realistic | 257.9 ± 31.0 | 257.2 ± 30.5 | 253.7 ± 28.3 | 272.6 ± 28.4 | 16491.5 ± 1715.4 | 16395.1 ± 1621.4 | 16187.2 ± 1443.8 | 18489.8 ± 1475.8 |
+| proseDeck | struggling | 762.7 ± 80.7 | 765.0 ± 81.3 | 760.4 ± 97.4 | 790.6 ± 98.2 | 36849.9 ± 2992.4 | 37117.0 ± 2998.3 | 36913.4 ± 3700.2 | 40614.5 ± 3852.0 |
+| mediumDeck | perfect | 60.0 ± 0.0 | 60.0 ± 0.0 | 60.0 ± 0.0 | 72.0 ± 0.0 | 2455.0 ± 0.0 | 2455.0 ± 0.0 | 2455.0 ± 0.0 | 2946.0 ± 0.0 |
+| mediumDeck | realistic | 92.0 ± 6.2 | 91.8 ± 7.0 | 91.5 ± 7.1 | 111.2 ± 7.3 | 3763.5 ± 249.5 | 3760.7 ± 291.1 | 3740.8 ± 288.0 | 4551.5 ± 297.1 |
+| mediumDeck | struggling | 149.4 ± 12.6 | 150.0 ± 11.8 | 150.8 ± 9.8 | 182.4 ± 10.8 | 6107.0 ± 530.6 | 6124.0 ± 496.9 | 6166.0 ± 400.4 | 7455.2 ± 459.8 |
 
 "pre-spacing" is `3383a5c` (immediately before Phase 1), the same current-engine
 baseline every other section in this file already diffs against.
 
-**Every `perfect` row is bit-for-bit identical across all three columns.**
-That's the expected result, not a coincidence: `computeMinimumTrials` doesn't
-change (neither phase adds or removes a trial, only reorders which card a
-trial lands on), and a perfect learner never triggers a miss, so reordering
-which not-yet-mastered card comes next can't change how many trials the
-session takes, only their sequence.
+**Every `perfect` row is bit-for-bit identical across Phases 1-2, then rises
+by exactly 12 at Phase 3** — every fixture deck here has exactly 12 cards,
+and a perfect learner never misses, so the Final check costs precisely one
+trial per card, no more. That's the expected result, not a coincidence:
+Phases 1-2 don't change `computeMinimumTrials`'s floor at all (neither adds
+or removes a trial, only reorders which card a trial lands on), and Phase 3
+adds exactly `+1 * items.length` to it (see `computeMinimumTrials`'s own doc
+comment in `drillEngine.ts`) — `test/coldStartEstimate.consistency.spec.ts`
+cross-checks that formula against a real driven session for every deck/
+encodeReps/minWordsToChunk combination it covers, not just these three
+fixtures.
 
 **Every `realistic`/`struggling` row's Phase 1 and Phase 2 values sit inside
 the pre-spacing row's own SD**, the same "not distinguishable" bar the rest
@@ -599,4 +606,11 @@ consumed in a different order once reinsertion position and rotation target
 change — the seeded PRNG is deterministic per config, but a changed sequence
 of `shuffle()`/gap draws shifts which of the 50 seeds' miss patterns actually
 fire, without changing the underlying miss *rate*. This is exactly the
-"cost-neutral" result the phases were designed to produce.
+"cost-neutral" result Phases 1-2 were designed to produce.
+
+**Phase 3's `realistic`/`struggling` rows rise by somewhat more than 12** (18.9
+and 30.5 on `proseDeck`, for example) — expected, not a regression: a miss or
+reveal during the Final check requeues the card instead of counting it done,
+so a learner that isn't perfect pays more than one Final-check trial on
+whichever cards it misses there, on top of the flat +1-per-card floor every
+learner pays.

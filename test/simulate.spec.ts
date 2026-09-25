@@ -19,7 +19,7 @@ describe('simulate', () => {
 
   it('reports trialsByStage keys that are valid stage names', () => {
     const result = simulate(proseDeck, config, realisticLearner);
-    const validStages = new Set(['chunks', 'combine', 'remediate', 'full', 'cycle']);
+    const validStages = new Set(['chunks', 'combine', 'remediate', 'full', 'cycle', 'final']);
     for (const stage of Object.keys(result.trialsByStage)) {
       expect(validStages.has(stage)).toBe(true);
     }

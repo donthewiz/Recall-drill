@@ -27,8 +27,9 @@ interface SessionViewProps {
   deckName: string;
   initialItems: DrillItem[];
   // C3: 'batch-done' resumes a session saved ("Save and stop") exactly on
-  // the interstitial between batches -- straight back onto it.
-  initialPhase: 'encode' | 'cycle' | 'batch-done';
+  // the interstitial between batches -- straight back onto it. Phase 3:
+  // 'final' resumes a session saved mid-Final-check back into that pass.
+  initialPhase: 'encode' | 'cycle' | 'batch-done' | 'final';
   initialQueue: number[];
   initialStats: SessionStats;
   encodeReps: number;
@@ -60,6 +61,7 @@ const BLIND_PLACEHOLDER: Record<string, string> = {
   remediate: 'Type this from memory...',
   full: 'Type the full answer from memory...',
   cycle: 'Type the answer from memory...',
+  final: 'Type the full answer from memory...',
 };
 
 export const SessionView: React.FC<SessionViewProps> = ({
@@ -227,8 +229,9 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const phaseDetail = trial?.detail ?? '';
   const currentItem = trial ? sessionState.items.find(i => i.id === trial.itemId) : undefined;
   // Extra field: the post-answer feedback shows it only when the full back is
-  // what's actually on screen -- the 'full' stage, the cycle phase, and the
-  // FINAL combine window (the whole answer, start 1..n) all show it in full.
+  // what's actually on screen -- the 'full' stage, the cycle phase, the
+  // Final check (Phase 3: always the full back, cue-free), and the FINAL
+  // combine window (the whole answer, start 1..n) all show it in full.
   // Chunk presentation beats, intermediate combine windows, and remediation
   // only ever show a fragment of the back, so extra stays hidden there --
   // including under Esc reveal, which just reveals whatever fragment that
@@ -239,6 +242,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
     !!trial &&
     (trial.stage === 'full' ||
       trial.stage === 'cycle' ||
+      trial.stage === 'final' ||
       (trial.stage === 'combine' &&
         !!currentItem?.combineSeq &&
         currentItem.combineSeqIdx === currentItem.combineSeq.length - 1));
@@ -364,11 +368,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
       // back (see handleCheck/handleOverride) until this Continue.
       setSessionState(pendingAdvanceStateRef.current);
       pendingAdvanceStateRef.current = null;
-    } else if (sessionState.phase === 'cycle') {
+    } else if (sessionState.phase === 'cycle' || sessionState.phase === 'final') {
       // C5: a wrong verdict in the encode phase now also needs an explicit
       // advance, but sessionState already points at the right trial (same
       // item/stage, streak reset by applyAnswer) -- there's no queue to pop.
-      // Only the cycle phase's manual advance needs applyNext.
+      // Only the cycle and (Phase 3) Final-check phases' manual advance need
+      // applyNext.
       setSessionState(applyNext(sessionState));
     }
     setTypedValue('');
@@ -403,7 +408,15 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // is waiting off to the side for Continue -- editing here would either
   // touch the wrong card's data or get silently clobbered when that pending
   // state lands, so editing is blocked until Continue is pressed.
-  const canEdit = !!trial && !isProcessing && !isEditing && !pendingAdvanceStateRef.current;
+  // Phase 3: also disabled during the Final check -- editCurrentItem already
+  // no-ops there (see its doc comment), so this just keeps the button
+  // visibly disabled instead of a silent no-op click.
+  const canEdit =
+    !!trial &&
+    !isProcessing &&
+    !isEditing &&
+    !pendingAdvanceStateRef.current &&
+    sessionState.phase !== 'final';
 
   const handleOpenEditor = () => {
     if (!canEdit) return;

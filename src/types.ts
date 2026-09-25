@@ -36,6 +36,14 @@ export interface DrillItem {
   remediateQueue: string[];
   remediateReturnSeqIdx: number;
   stage: EncodeStage;
+  // Phase 3 (Final check, within-session spacing): whether this item has
+  // already had its one correct Final-check answer. Both fields are
+  // undefined on any save from before this phase -- normalizeItem threads
+  // them through unchanged, same as `extra`.
+  finalDone?: boolean;
+  // Count of wrong/revealed answers during the Final check -- distinct from
+  // `stats.misses` (session-wide) and never affects `status`/`cycleStreak`.
+  finalMisses?: number;
 }
 
 export interface SessionStats {
@@ -87,7 +95,10 @@ export interface SavedSessionState {
   // nothing to show, and SessionView renders the batch summary screen
   // instead of the card. A save made at that exact moment ("Save and stop"
   // on the interstitial) persists this phase so resuming lands back on it.
-  phase: 'encode' | 'cycle' | 'batch-done';
+  // Phase 3: 'final' is the Final check -- one shuffled, cue-free pass over
+  // every item, entered after the LAST batch's cycle finishes instead of
+  // ending the session there.
+  phase: 'encode' | 'cycle' | 'batch-done' | 'final';
   queue: number[];
   stats: SessionStats;
   items: DrillItem[];
@@ -187,7 +198,7 @@ export interface SessionConfig {
 
 export interface SessionState {
   items: DrillItem[];
-  phase: 'encode' | 'cycle' | 'batch-done';
+  phase: 'encode' | 'cycle' | 'batch-done' | 'final';
   queue: number[];
   stats: SessionStats;
   currentId: number;
@@ -220,7 +231,7 @@ export type Cue =
 
 export interface Trial {
   itemId: number;
-  stage: EncodeStage | 'cycle';
+  stage: EncodeStage | 'cycle' | 'final';
   prompt: string;
   target: string;
   cue: Cue;

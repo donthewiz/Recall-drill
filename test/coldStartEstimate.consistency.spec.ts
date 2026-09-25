@@ -20,6 +20,12 @@
 // exists to catch. Do not delete this as "redundant" with
 // c1/c3/c8a.spec.ts or simulate.spec.ts -- none of those compare the
 // estimator's prediction to a real driven session.
+//
+// Phase 3 (Final check): computeMinimumTrials's floor now includes one
+// Final-check trial per item by default, and simulate()'s `attempts` (via
+// applyAnswer's shared stats accounting) counts those trials too -- both
+// sides moved together, so this file needed no code changes; it's still
+// exactly the same cross-check, just over a floor that's 1-per-item higher.
 import { describe, expect, it } from 'vitest';
 import { DeckItem, SessionConfig } from '../src/types';
 import { buildItems, computeMinimumTrials } from '../src/utils/drillEngine';

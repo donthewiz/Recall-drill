@@ -94,10 +94,10 @@ export function simulate(
     // Phase 4 (C5): a wrong verdict in the encode phase also returns
     // advance: 'manual' now, but the engine state already points at the
     // right trial (same item/stage, streak reset) -- no queue to pop.
-    // applyNext is advanceCycleState, so it must only run for the cycle
-    // phase's manual advance (see SessionView.tsx's handleNext for the
-    // same guard).
-    if (result.advance === 'manual' && state.phase === 'cycle') {
+    // applyNext is advanceCycleState, so it must only run for the cycle and
+    // (Phase 3) Final-check phases' manual advance (see SessionView.tsx's
+    // handleNext for the same guard).
+    if (result.advance === 'manual' && (state.phase === 'cycle' || state.phase === 'final')) {
       state = applyNext(state);
     }
   }

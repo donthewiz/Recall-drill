@@ -89,9 +89,10 @@ export class RealEngineDriver implements EngineDriver {
   // points at the right trial (same item/stage, streak reset) -- nothing
   // needs popping off a queue. applyNext is advanceCycleState, so calling it
   // during the encode phase would incorrectly try to advance as if `queue`
-  // were a cycle queue. Only the cycle phase's manual advance needs it.
+  // were a cycle queue. Only the cycle and (Phase 3) Final-check phases'
+  // manual advance need it.
   next(): void {
-    if (this.state.phase === 'cycle') {
+    if (this.state.phase === 'cycle' || this.state.phase === 'final') {
       this.state = applyNext(this.state);
     }
   }

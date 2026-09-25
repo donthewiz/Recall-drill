@@ -104,7 +104,7 @@ describe('C8b: test/simulate.ts counts a presentation trial toward wall clock bu
       if (trial.cue.kind !== 'present') expectedKeystrokes += trial.target.length;
       const result = applyAnswer(state, trial.target, { revealed: false });
       state = result.state;
-      if (result.advance === 'manual' && state.phase === 'cycle') {
+      if (result.advance === 'manual' && (state.phase === 'cycle' || state.phase === 'final')) {
         state = applyNext(state);
       }
     }

@@ -59,13 +59,14 @@ function freshState(
 const itemOf = (state: SessionState, id: number): DrillItem => state.items.find(i => i.id === id)!;
 
 // One correct step: acknowledges a presentation, types the target otherwise,
-// and moves past cycle feedback / batch interstitials the way the shell does.
+// and moves past cycle/Final-check feedback / batch interstitials the way
+// the shell does.
 function step(state: SessionState): SessionState {
   if (state.phase === 'batch-done') return advanceToNextBatch(state);
   const trial = selectTrial(state)!;
   const typed = trial.cue.kind === 'present' ? '' : trial.target;
   const next = applyAnswer(state, typed, { revealed: false }).state;
-  return state.phase === 'cycle' ? applyNext(next) : next;
+  return state.phase === 'cycle' || state.phase === 'final' ? applyNext(next) : next;
 }
 
 function stepUntil(state: SessionState, done: (s: SessionState) => boolean): SessionState {
@@ -270,18 +271,24 @@ describe('editCurrentItem -- restart', () => {
       expect(itemOf(state, editedId).status).toBe('encoding');
       expect(state.stats).toEqual(s0.stats);
 
-      // Drive to completion; record which card is served at every step.
+      // Drive through re-encoding the edited card and the cycle phase that
+      // follows, recording which card is served at every step. Once every
+      // card masters, the session moves into the Final check (Phase 3),
+      // which serves every item exactly once regardless of prior mastery --
+      // driving past that boundary would defeat this test's own "mastered
+      // cards are never re-served" guarantee, which is specific to the
+      // cycle phase's own requeuing.
       let s = state;
       const served: number[] = [];
       const firstSeenStreak = new Map<number, number>();
-      for (let guard = 0; selectTrial(s); guard++) {
-        if (guard > 1000) throw new Error('session never completed');
+      for (let guard = 0; s.phase === 'encode' || s.phase === 'cycle'; guard++) {
+        if (guard > 1000) throw new Error('encode/cycle phases never completed');
         served.push(s.currentId);
         if (!firstSeenStreak.has(s.currentId)) firstSeenStreak.set(s.currentId, itemOf(s, s.currentId).cycleStreak);
         s = step(s);
       }
 
-      expect(s.currentId).toBe(SESSION_COMPLETE_ID);
+      expect(s.phase).toBe('final');
       expect(s.items.every(i => i.status === 'mastered')).toBe(true);
       for (const id of mastered) expect(served).not.toContain(id);
       // Unmastered, unedited cards come back with their streak intact.

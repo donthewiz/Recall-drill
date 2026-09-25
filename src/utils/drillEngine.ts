@@ -591,6 +591,10 @@ export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): D
     remediateQueue: it.remediateQueue || [],
     remediateReturnSeqIdx: it.remediateReturnSeqIdx ?? 0,
     stage: it.stage || (it.chunks ? 'chunks' : 'full'),
+    // Phase 3: undefined on any save from before the Final check existed --
+    // threaded through unchanged, same as `extra`.
+    finalDone: it.finalDone,
+    finalMisses: it.finalMisses,
   };
 
   if (item.status === 'encoding' && item.stage === 'remediate' && !item.remediateStack.length) {
@@ -1193,12 +1197,20 @@ function advanceEncodeState(
 // C3: once every item in the CURRENT batch is mastered, either moves to the
 // next batch's interstitial (phase 'batch-done' -- SessionView shows the
 // summary and waits for "Next batch"/"Save and stop"; see advanceToNextBatch)
-// or, if this was the last batch, ends the session the same way a
-// non-batched (whole-deck) session always did.
+// or, if this was the last batch, enters the Final check (Phase 3) instead
+// of ending the session there.
 function advanceBatchState(items: DrillItem[], stats: SessionStats, base: SessionState): SessionState {
   const totalBatches = partitionIntoBatches(items, base.config.batchSize ?? items.length).length;
   if (base.batchIndex + 1 >= totalBatches) {
-    return { ...base, items, phase: 'cycle', queue: [], stats, currentId: SESSION_COMPLETE_ID };
+    // Phase 3: one shuffled, cue-free pass over EVERY item in the session
+    // (not just this batch) -- always shuffled regardless of cycleOrder,
+    // since its job is an Anki-shaped final test, not another review cycle.
+    // This also covers the last-remaining-card-at-lag-0 case the cycle
+    // phase can otherwise leave behind (see the Known limitations note this
+    // phase retires in docs/V2-HANDOFF.md).
+    const queue = shuffle(items.map(i => i.id));
+    const nextId = queue.shift()!;
+    return { ...base, items, phase: 'final', queue, stats, currentId: nextId };
   }
   // currentId is deliberately left as-is (not SESSION_COMPLETE_ID): that
   // sentinel means "the whole session is done" to SessionView's finishing
@@ -1215,20 +1227,40 @@ function advanceCycleState(
 ): SessionState {
   let q = [...currentQueue];
   if (!q.length) {
-    // C3: scoped to the current batch, not the whole deck -- each batch runs
-    // its own cycle phase to mastery before the next batch's encode phase
-    // starts. A non-batched (whole-deck) session is just the batchSize>=
-    // items.length degenerate case of the same code path.
-    const batch = getCurrentBatch(items, base.batchIndex, base.config.batchSize ?? items.length);
-    const remaining = batch.filter(i => i.status !== 'mastered');
-    if (!remaining.length) {
-      return advanceBatchState(items, stats, base);
+    if (base.phase === 'final') {
+      // Phase 3: a single continuous pass over the whole deck, not a
+      // repeating cycle -- a correct answer marks the card finalDone and
+      // never re-adds it, while a miss/reveal pushes it to the end of THIS
+      // SAME queue (see applyAnswer/applyRevealedAnswer), so in the normal
+      // (uninterrupted) case the queue only ever empties once every item is
+      // finalDone. The `remaining.length` rebuild below is purely a resume
+      // safety net: a card that was mid-trial (already popped, not yet
+      // answered) when the session was saved is excluded from the
+      // persisted queue, same as any in-flight cycle-phase card -- without
+      // this, that one card could be silently dropped from the pass instead
+      // of self-healing on the next queue-empty check the way a cycle pass
+      // rebuild already does for 'mastered'.
+      const remaining = items.filter(i => !i.finalDone);
+      if (!remaining.length) {
+        return { ...base, items, phase: 'final', queue: [], stats, currentId: SESSION_COMPLETE_ID };
+      }
+      q = shuffle(remaining.map(i => i.id));
+    } else {
+      // C3: scoped to the current batch, not the whole deck -- each batch
+      // runs its own cycle phase to mastery before the next batch's encode
+      // phase starts. A non-batched (whole-deck) session is just the
+      // batchSize>=items.length degenerate case of the same code path.
+      const batch = getCurrentBatch(items, base.batchIndex, base.config.batchSize ?? items.length);
+      const remaining = batch.filter(i => i.status !== 'mastered');
+      if (!remaining.length) {
+        return advanceBatchState(items, stats, base);
+      }
+      q = orderCycleQueue(remaining.map(i => i.id), base.config.cycleOrder);
     }
-    q = orderCycleQueue(remaining.map(i => i.id), base.config.cycleOrder);
   }
 
   const nextId = q.shift()!;
-  return { ...base, items, phase: 'cycle', queue: q, stats, currentId: nextId };
+  return { ...base, items, phase: base.phase === 'final' ? 'final' : 'cycle', queue: q, stats, currentId: nextId };
 }
 
 // C3: advances batchIndex and starts the new batch's encode phase. Called
@@ -1347,22 +1379,32 @@ export function pickColdStartDeckShape(items: DeckItem[]): ColdStartDeckShape {
 // excluded here too for computeCumulativeColdStartMultiplier's actual/floor
 // ratio to land on 1.0 for a perfect learner. Cross-checked against
 // docs/BASELINE.md's perfect-learner rows once that gap is accounted for:
-// shortDeck/mediumDeck don't chunk at all, so their floor (60) matches
-// BASELINE.md's total trials exactly; proseDeck's floor is 108, i.e.
-// BASELINE.md's 144 minus one presentation per chunk (3 chunks/card x 12
-// cards = 36, never repeated for a perfect learner since presentations
-// only recur after a miss).
+// shortDeck/mediumDeck's floor (72, post-Phase-3) matches BASELINE.md's
+// total trials exactly (they have no presentations to subtract); proseDeck's
+// floor is 120, i.e. BASELINE.md's 156 minus one presentation per chunk (3
+// chunks/card x 12 cards = 36, never repeated for a perfect learner since
+// presentations only recur after a miss).
 //
 // Every item needs exactly 2 cycle-phase trials to reach `mastered`
-// (cycleStreak >= 2, and a perfect learner's streak only ever goes up);
-// chunked items additionally need exactly 1 graded (blind) trial per chunk
-// (C8a's cued attempt 0 is the presentation excluded above) plus the
-// combine ladder's cost (see requiredRepsForWindow); unchunked items just
-// need `encodeReps` on their single ladder rung.
+// (cycleStreak >= 2, and a perfect learner's streak only ever goes up), plus
+// (Phase 3) exactly 1 Final-check trial; chunked items additionally need
+// exactly 1 graded (blind) trial per chunk (C8a's cued attempt 0 is the
+// presentation excluded above) plus the combine ladder's cost (see
+// requiredRepsForWindow); unchunked items just need `encodeReps` on their
+// single ladder rung.
+//
+// includeFinalCheck defaults to true for every forward-looking caller
+// (computeColdStartEstimate, computeRemainingColdStartRange, tests) --
+// every session eventually runs exactly one Final-check trial per item, so
+// the floor should always reflect that total. computeCumulativeColdStartMultiplier
+// is the one caller that passes false, deliberately: see its own doc comment
+// for why the Final check's cost can't be credited to the floor before it
+// has actually run.
 export function computeMinimumTrials(
   items: DrillItem[],
   encodeReps: number,
-  ladderMode: LadderMode = 'cumulative'
+  ladderMode: LadderMode = 'cumulative',
+  includeFinalCheck: boolean = true
 ): number {
   let total = 0;
   for (const item of items) {
@@ -1376,7 +1418,8 @@ export function computeMinimumTrials(
     } else {
       total += encodeReps;
     }
-    total += 2;
+    total += 2; // cycle: exactly 2 corrects to reach mastered
+    if (includeFinalCheck) total += 1; // Phase 3: one Final-check answer
   }
   return total;
 }
@@ -1495,6 +1538,20 @@ export function saveColdStartHistory(slug: string, history: ColdStartHistory): b
 // range from this) and once more whenever a session ends (SessionView
 // persists the result via saveColdStartHistory for future setup screens) --
 // never mid-trial, so it stays out of the per-trial hot path either way.
+//
+// Phase 3: the Final check is a whole-session pass (one trial per item,
+// entered only after the LAST batch's own cycle finishes -- see
+// advanceBatchState), not a per-batch cost, so computeMinimumTrials'
+// +1-per-item floor for it must not be credited here until the Final check
+// has actually finished for every item. Crediting it any earlier -- e.g. at
+// the last batch's own "done" instant, or at a "Save and stop" mid-Final-
+// check -- would inflate the denominator (floor) against a numerator
+// (completedAttempts) that hasn't spent those trials yet, understating the
+// multiplier. Once every item is finalDone, `completedItems` is
+// necessarily the WHOLE deck (the Final check can't start before the last
+// batch does), so passing `includeFinalCheck: true` at that point still
+// covers exactly the items whose Final-check trial is actually reflected
+// in `completedAttempts`.
 export function computeCumulativeColdStartMultiplier(state: SessionState): number | null {
   const effectiveBatchSize = state.config.batchSize ?? state.items.length;
   const batches = partitionIntoBatches(state.items, effectiveBatchSize);
@@ -1504,7 +1561,13 @@ export function computeCumulativeColdStartMultiplier(state: SessionState): numbe
   if (completedThroughIdx < 0) return null;
 
   const completedItems = batches.slice(0, completedThroughIdx + 1).flat();
-  const minTrials = computeMinimumTrials(completedItems, state.config.encodeReps, state.config.ladderMode);
+  const finalCheckDone = state.items.length > 0 && state.items.every(it => it.finalDone);
+  const minTrials = computeMinimumTrials(
+    completedItems,
+    state.config.encodeReps,
+    state.config.ladderMode,
+    finalCheckDone
+  );
   const completedAttempts = currentBatchDone ? state.stats.attempts : state.batchStartStats.attempts;
   return minTrials > 0 ? completedAttempts / minTrials : null;
 }
@@ -1617,7 +1680,10 @@ export function initSession(state: SessionState): SessionState {
   // C3: a save made exactly at the interstitial ("Save and stop" on
   // 'batch-done') resumes straight back into it -- nothing to select.
   if (state.phase === 'batch-done') return state;
-  if (state.phase === 'cycle') {
+  // Phase 3: resumes into the Final check the same way 'cycle' resumes into
+  // its pass -- advanceCycleState's queue-empty branch already handles
+  // 'final' (see its own comment for the resume safety net).
+  if (state.phase === 'cycle' || state.phase === 'final') {
     return advanceCycleState(state.items, state.queue, state.stats, state);
   }
   return advanceEncodeState(state.items, state.stats, state);
@@ -1645,6 +1711,28 @@ export function selectTrial(state: SessionState): Trial | null {
       cue: { kind: 'none' },
       label: 'Spaced Retrieval Cycle',
       detail: 'Spaced Retrieval • Cycling review',
+    };
+  }
+
+  if (state.phase === 'final') {
+    // Phase 3: one shuffled, cue-free pass over every item -- k is "how many
+    // OTHER cards have already finished the Final check, plus this one", so
+    // the counter reads 1-of-N on the very first card and N-of-N on the
+    // last. Excludes `it` itself deliberately: SessionView commits a
+    // manual-advance result to state immediately on Check (not just on
+    // Continue -- see handleCheck), so by the time this trial's own
+    // feedback is showing, `it.finalDone` may already be true in `state`
+    // for a just-answered-correctly card; counting it here would double
+    // count it (e.g. "5 of 4" on the last card) until Continue moves on.
+    const doneCount = state.items.filter(i => i.finalDone && i.id !== it.id).length;
+    return {
+      itemId: it.id,
+      stage: 'final',
+      prompt: it.front,
+      target: it.back,
+      cue: { kind: 'none' },
+      label: 'Final check',
+      detail: `Final check • ${doneCount + 1} of ${state.items.length}`,
     };
   }
 
@@ -1904,10 +1992,12 @@ export function applyAnswer(
         newItems[itIdx] = it;
         // Phase 2 (within-session spacing): a correct rep still short of
         // criterion now rotates to another batch card too, not just a
-        // stage-unit completion -- the presentation beat -> blind attempt
-        // pair stays adjacent (that's the combine window's own attempt 0/1,
-        // not a rotation point), but repeated reps within the same window
-        // are spread out across the batch instead of running back to back.
+        // stage-unit completion, so repeated reps within the same combine
+        // window are spread out across the batch instead of running back to
+        // back. (Presentation beats are chunks-stage only, cue 'present' --
+        // combine windows use the ordinary firstLetter-then-blind cue ladder
+        // via cueForStreak, so there's no presentation/blind pair here that
+        // rotation could split apart.)
         const advancedState = advanceEncodeState(newItems, nextStats, base);
         return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
@@ -2110,6 +2200,47 @@ export function applyAnswer(
     };
   }
 
+  if (state.phase === 'final') {
+    // Phase 3: one shuffled, cue-free pass over every item. Grades like the
+    // cycle, but never touches status/cycleStreak -- the card's cycle
+    // mastery already stands -- and a miss/reveal doesn't use the cycle's
+    // random 2-3-card gap, it goes straight to the end of THIS pass's
+    // queue (see advanceCycleState's comment on why that queue only ever
+    // empties once every item is finalDone).
+    const gr = grade(typed, it.back, gradeOpts);
+    const isOk = gr.verdict !== 'wrong';
+    if (gr.verdict === 'near') nextStats.nearMisses++;
+    const updatedQueue = [...state.queue];
+    let feedback: Feedback;
+
+    if (isOk) {
+      it.finalDone = true;
+      feedback = successFeedback(gr, {
+        text: 'Correct! This card is done.',
+        type: 'success',
+        dwellKey: 'final-correct',
+      });
+    } else {
+      nextStats.misses++;
+      it.finalMisses = (it.finalMisses ?? 0) + 1;
+      feedback = {
+        text: 'Missed — review answer below before continuing:',
+        type: 'danger',
+        diff: gr.diff,
+        dwellKey: 'final-miss',
+      };
+      updatedQueue.push(it.id);
+    }
+
+    newItems[itIdx] = it;
+    return {
+      state: { ...base, items: newItems, queue: updatedQueue, stats: nextStats },
+      verdict: gr.verdict,
+      feedback,
+      advance: 'manual',
+    };
+  }
+
   // Phase: cycle (spaced retrieval interleaving) -- always manual advance;
   // grading updates items/queue/stats immediately but the item switch itself
   // waits for an explicit applyNext() call (mirrors handleNext/advanceCycle).
@@ -2195,6 +2326,26 @@ function applyRevealedAnswer(
     };
   }
 
+  if (state.phase === 'final') {
+    // Phase 3: per B2, not a miss -- but it still counts in finalMisses, and
+    // the card goes straight to the end of the queue (not the cycle's
+    // random 2-3-card gap; see applyAnswer's 'final' branch for why).
+    // status/cycleStreak are untouched, same as every other reveal.
+    it.finalMisses = (it.finalMisses ?? 0) + 1;
+    const updatedQueue = [...state.queue, it.id];
+    newItems[itIdx] = it;
+    return {
+      state: { ...base, items: newItems, queue: updatedQueue },
+      verdict: 'revealed',
+      feedback: {
+        text: 'Revealed — this card comes back later in the final check.',
+        type: 'danger',
+        dwellKey: 'final-revealed',
+      },
+      advance: 'manual',
+    };
+  }
+
   if (it.stage === 'chunks') {
     it.chunkStreak = 0;
   } else if (it.stage === 'combine') {
@@ -2224,8 +2375,11 @@ export function applyNext(state: SessionState): SessionState {
 }
 
 // Mid-session edit of the card currently being drilled (state.currentId).
-// Only valid in 'encode' or 'cycle'; anything else, or an empty field after
-// trimming, returns the state unchanged. Stats are never touched.
+// Only valid in 'encode' or 'cycle'; anything else -- including 'final'
+// (Phase 3: editing the card under test mid-Final-check would let a fix
+// retroactively change what "correct" means for an answer already in
+// flight) -- or an empty field after trimming, returns the state unchanged.
+// Stats are never touched.
 //
 // If the answer didn't really change -- exactMatch under the deck's own
 // punctuation mode, so 'pre op' -> 'pre-op' keeps progress on a normal deck

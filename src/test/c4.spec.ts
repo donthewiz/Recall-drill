@@ -143,7 +143,7 @@ describe('C4 acceptance: progress over a full perfect-learner session', () => {
       if (!it) break;
 
       let target: string;
-      if (state.phase === 'cycle') {
+      if (state.phase === 'cycle' || state.phase === 'final') {
         target = it.back;
       } else if (it.stage === 'chunks' && it.chunks) {
         target = it.chunks[it.chunkIndex];
@@ -156,7 +156,7 @@ describe('C4 acceptance: progress over a full perfect-learner session', () => {
 
       const result = applyAnswer(state, target, { revealed: false });
       state = result.state;
-      if (result.advance === 'manual' && state.phase === 'cycle') {
+      if (result.advance === 'manual' && (state.phase === 'cycle' || state.phase === 'final')) {
         state = applyNext(state);
       }
       readings.push(computeSessionProgress(state.items, state.config.encodeReps).deckFraction);
@@ -172,9 +172,17 @@ describe('C4 acceptance: progress over a full perfect-learner session', () => {
     expect(readings[readings.length - 1]).toBe(1);
     expect(state.items.every(it => it.status === 'mastered')).toBe(true);
 
-    // 1.0 is reached only at the very end -- every earlier reading is < 1.
-    for (let i = 0; i < readings.length - 1; i++) {
+    // 1.0 is reached exactly when the item reaches 'mastered' -- every
+    // earlier reading is < 1. (Phase 3: the session then continues into the
+    // Final check, which doesn't touch status, so progress correctly stays
+    // at 1.0 for the remaining readings instead of only the very last one.)
+    const firstMasteredIdx = readings.findIndex(r => r === 1);
+    expect(firstMasteredIdx).toBeGreaterThan(0);
+    for (let i = 0; i < firstMasteredIdx; i++) {
       expect(readings[i]).toBeLessThan(1);
+    }
+    for (let i = firstMasteredIdx; i < readings.length; i++) {
+      expect(readings[i]).toBe(1);
     }
   });
 });

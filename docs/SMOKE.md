@@ -183,3 +183,18 @@ Hypertension :: blood pressure that stays above the normal range for a long time
       is followed directly by typing that chunk — the presentation/blind pair
       never gets split apart by the rotation.
 - [ ] The status counts (attempts/misses) look normal.
+
+**After Phase 3 (Final check):**
+
+- [ ] After batch 2's cycle finishes, a **Final check** runs over all 6 cards
+      in shuffled order, with no cues (blank input, no first-letter hint) and
+      the phase line reading "Final check • k of 6".
+- [ ] Miss one on purpose: it returns at the end of the Final check (not the
+      cycle's short gap), and DoneView lists it under **"Missed in final
+      check"** with its front/back and miss count.
+- [ ] **End session** mid-Final-check, then **Resume**: you land back in the
+      Final check, already-answered cards aren't re-asked, and the card that
+      was on screen when you ended is still among the ones left to go.
+- [ ] Finish the Final check: the saved session is cleared (Start shows no
+      resume prompt for this deck), and DoneView's stats reflect the whole
+      session, Final check included.

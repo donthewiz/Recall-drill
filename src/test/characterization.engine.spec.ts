@@ -10,10 +10,63 @@ import {
   FOUR_CHUNK_CHUNKS,
   CHUNK_DIFFICULTY,
 } from './fixtures/deck';
-import { applyAnswer, buildItems, initSession, SESSION_COMPLETE_ID } from '../utils/drillEngine';
+import { applyAnswer, applyNext, buildItems, initSession, selectTrial, SESSION_COMPLETE_ID } from '../utils/drillEngine';
 import type { SessionState } from '../types';
 
 runCharacterizationSuite(() => new RealEngineDriver());
+
+// Phase 3 (Final check): the real-engine continuation of
+// characterization.shared.ts's "full-stage card" scenario, which now stops
+// one driver.next() short of fully finished because that next() diverges by
+// driver -- LegacyEngine finishes immediately (see
+// characterization.legacy.spec.ts), the real engine enters the Final check
+// instead. Driven with the raw engine functions (not RealEngineDriver)
+// since the driver's ItemSnapshot/DriverTrial shapes predate finalDone.
+describe('full-stage card (Final check): the driver.next() right after cycle mastery enters phase \'final\' instead of finishing', () => {
+  it('one shuffled Final-check trial over the single item, then the session finishes', () => {
+    let state: SessionState = initSession({
+      items: buildItems([{ front: 'Q1', back: FULL_STAGE_BACK }], 35, 'cumulative'),
+      phase: 'encode',
+      queue: [],
+      stats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
+      currentId: SESSION_COMPLETE_ID,
+      batchIndex: 0,
+      batchStartStats: { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 },
+      config: { encodeReps: 2, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative' },
+    });
+    const itemId = state.currentId;
+
+    // Drive to cycle mastery exactly as the shared scenario does.
+    state = applyAnswer(state, FULL_STAGE_BACK, { revealed: false }).state; // encodeStreak 1
+    state = applyAnswer(state, FULL_STAGE_BACK, { revealed: false }).state; // ready -> cycle
+    state = applyAnswer(state, 'nope', { revealed: false }).state; // cycle miss
+    state = applyNext(state);
+    state = applyAnswer(state, FULL_STAGE_BACK, { revealed: false }).state; // cycleStreak 1
+    state = applyNext(state);
+    state = applyAnswer(state, FULL_STAGE_BACK, { revealed: false }).state; // cycleStreak 2 -> mastered
+    expect(state.items.find(i => i.id === itemId)).toMatchObject({ status: 'mastered', cycleStreak: 2 });
+    expect(state.currentId).not.toBe(SESSION_COMPLETE_ID);
+
+    // The next() that would have finished LegacyEngine instead enters the
+    // Final check: one shuffled, cue-free trial over the (only) item.
+    state = applyNext(state);
+    expect(state.phase).toBe('final');
+    const trial = selectTrial(state)!;
+    expect(trial).toMatchObject({ itemId, stage: 'final', target: FULL_STAGE_BACK, cue: { kind: 'none' } });
+
+    const res = applyAnswer(state, FULL_STAGE_BACK, { revealed: false });
+    expect(res.verdict).toBe('exact');
+    expect(res.advance).toBe('manual');
+    expect(res.state.items.find(i => i.id === itemId)).toMatchObject({
+      finalDone: true,
+      status: 'mastered', // Phase 3 never touches status/cycleStreak.
+      cycleStreak: 2,
+    });
+
+    state = applyNext(res.state);
+    expect(state.currentId).toBe(SESSION_COMPLETE_ID);
+  });
+});
 
 // Phase 8 (C8a): the C8a-aware version of the "four-chunk card" scenario
 // that used to live in the shared suite -- see characterization.shared.ts's
