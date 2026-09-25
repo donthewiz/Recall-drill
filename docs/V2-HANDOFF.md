@@ -104,6 +104,7 @@ export function buildCombineSequence(
 
 - `{start, end}` shape is unchanged, so `findAllCulpritChunks`, `remediateReturnSeqIdx` and the combine branch of `handleCheck` need no structural change.
 - **Per-window rep requirement:** intermediate windows (`end < n`) require **1** blind success. Only the final window (`end === n`) requires `encodeReps`. Add `requiredRepsForWindow(seqItem, n, encodeReps)` to `drillEngine.ts`.
+  - **As shipped:** an intermediate window needs exactly 1 correct answer, and — because the window advances the instant that answer lands — it is always the cued (first-letter) attempt. A miss or reveal resets the streak to 0, so the retry is cued again too; an intermediate window never shows a blind attempt. Only the final window, which needs the full `encodeReps`, has room for a blind attempt (once the cued attempt 0 succeeds and streak enters 1..encodeReps-1).
 - Expose `ladderMode` as a setting in `SetupView` (default `'cumulative'`), persisted to `localStorage` under `recall_drill_ladder_mode`. Keeping `'exhaustive'` available is deliberate: it lets the trial-count claim be measured rather than trusted.
 
 **New cost for a 4-chunk answer, `encodeReps = 3`:** 12 chunk + (1 + 1 + 3) combine + 2 cycle = **19**, down from 32. At 6 chunks: 18 + (1×4 + 3) + 2 = **27**, down from 65.
@@ -145,6 +146,7 @@ Rules, in order:
 3. `near` if **either**:
    - every missing and extra word is in a `STOPWORDS` set (`a an the of to in on for and or is are was were that this it its as at by with from`), **or**
    - `similarity >= 0.9` **and** every missing word is a stopword or differs from a typed word only by a light stem (strip trailing `s`, `es`, `ed`, `ing`).
+   - **As shipped:** the stopword-only sub-bullet above has no similarity floor — it fires no matter how different the rest of the answer is, as long as every missing/extra word is a stopword — and it also accepts swapping one stopword for another (e.g. dropping "to" while adding "from"), since it only checks that each missing/extra word is *some* stopword, not the same one. So `move blood to lungs` for `move blood from lungs`, and `cats and dogs` for `cats or dogs`, both grade `near` in normal mode and `wrong` in strict mode (confirmed via a direct `grade()` call).
 4. Otherwise `wrong`.
 
 Behavior:
@@ -152,6 +154,12 @@ Behavior:
 - `near` **advances the streak** exactly like `exact`. It does **not** increment `stats.misses`. It increments a new `stats.nearMisses`, shows the diff with a neutral-toned note ("close — target wording: …") for ~1200ms, then advances.
 - `stemTolerance` must be a user setting (`recall_drill_stem_tolerance`, default on) with a visible caption warning that it should be turned **off** for terminology decks where inflection matters. Don's HR105 medical terminology deck is exactly that case.
 - **Manual override:** during the feedback window after a `wrong` verdict, show a button "Count as correct" bound to `Ctrl+Enter`. It converts the trial to `exact` retroactively: advance the streak, decrement `stats.misses`, increment `stats.overrides`. Must be reachable before auto-advance fires — extend the feedback dwell for `wrong` verdicts to 2200ms, or better, require an explicit Enter/Next on `wrong` (see C5).
+  - **As shipped:**
+    - `SessionView` commits a wrong verdict to state immediately (`handleCheck`, manual-advance branch), so the override runs on the post-miss state, not a still-pending one.
+    - The miss stays in `misses`, and `overrides` gets +1. `attempts` doesn't change.
+    - If that miss already triggered remediation (for example, the first miss on a window of ≤2 chunks), the override counts as one rep of the first remediation piece. Remediation isn't undone.
+    - In a shuffled cycle, the miss has already requeued the card and the override requeues it again, so the card sits in the queue twice.
+    - `src/test/c2.spec.ts` tests a deferred-commit flow in which the wrong result is discarded before the override runs. The UI no longer does that — it commits the miss first, as described above.
 
 **Acceptance:** unit tests over a table of (typed, target, expected verdict) covering: exact, stopword-only omission, stopword-only insertion, plural difference, one content word wrong (must be `wrong`), transposed clause, empty input (must be `wrong`).
 
@@ -221,6 +229,10 @@ Ladder per stage-unit:
 - **attempt 0:** `firstLetter`. Render each target word as its first character followed by underscores matching the remaining length, preserving word count and separators: `"The heart pumps blood"` → `"T__ h____ p____ b____"`. Put the pattern in `subText`; set `placeholder` to the pattern too.
 - **attempt 1 and later:** `{ kind: 'none' }`.
 - **Esc / "Show answer":** reveals `{ kind: 'full' }`. Per **B2**, a trial completed after a reveal resets the streak to 0 and does **not** count as a miss. Surface this in the UI copy so it isn't a surprise ("revealing resets the streak for this part").
+  - **As shipped:**
+    - A revealed trial does count as an attempt, so it raises the displayed accuracy of `(attempts − misses) / attempts`.
+    - Reveals aren't recorded anywhere: `SessionStats` has no reveal field.
+    - A reveal never touches `combineMissCount`, so a reveal never triggers remediation.
 
 Add `renderFirstLetterCue(target: string): string` to `drillEngine.ts`.
 
@@ -555,6 +567,23 @@ get chunked, move it.
   as a check that the change didn't regress trial/keystroke counts on
   ordinary text (it doesn't). `src/test/grade.spec.ts`'s punctuation table
   is the actual evidence for this change's grading behavior.
+- **The last card in a batch's cycle comes straight back.** Reinsertion gaps
+  are capped at the queue length. When only one unmastered card is left, it's
+  served again immediately, with nothing in between, in both cycle orders,
+  and that includes its mastering answer.
+- **"Every word is required" holds only on strict decks.** In normal mode the
+  near tier forgives dropped or swapped stopwords. With `stemTolerance` on, it
+  also forgives inflection differences at ≥ 0.9 similarity.
+- **"Practice again" drops Extra.** `App.tsx`'s `handleRestartFresh` rebuilds
+  items from `{front, back}` only.
+- **Ending during a pause-on-extra loses the deferred answer.** "End session"
+  during that pause calls `finishSession(sessionState)` with the pre-answer
+  state. `App.handleFinishSession` then overwrites the already-persisted
+  advanced state. (From code read, not reproduced live.)
+- **The simulation harness can't see sequencing.** The learner model's
+  `pCorrect` depends only on cue kind and prior exposures to the same
+  `item:stage:target`, never on lag or intervening items. Cycle trials start
+  from their own exposure count. `simulate()` runs one whole-deck batch.
 
 ---
 
