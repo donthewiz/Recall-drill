@@ -49,7 +49,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 2. Lenient Grading &amp; Precision Remediation
               </h4>
               <p>
-                Small slips are forgiven: dropping a filler word like &ldquo;the&rdquo;, or a minor plural/verb-ending difference, counts as a close match and still advances your streak (tracked separately from real misses; the ending-forgiveness can be turned off per deck). If you get a combination wrong, Recall Drill aligns your answer against the target word by word to find exactly which chunk you missed, isolates it, and — if you keep missing — splits it into smaller and smaller sub-phrases, down to a single word if needed, before returning you to the full combination. A wrong answer pauses so you can compare against the target before continuing; if you're sure your answer was right, &ldquo;Count as correct&rdquo; overrides it.
+                Small slips are forgiven: dropping or swapping a small filler word like &ldquo;the&rdquo; or &ldquo;and&rdquo; counts as a close match, and so does a minor plural/verb-ending difference — both still advance your streak (tracked separately from real misses). The ending-forgiveness is a global setting, and any deck with &ldquo;Punctuation must match&rdquo; turned on disables it and requires every word exactly, with no close-match forgiveness at all. If you get a combination wrong, Recall Drill aligns your answer against the target word by word to find exactly which chunk you missed, isolates it, and — if you keep missing — splits it into smaller and smaller sub-phrases, down to a single word if needed, before returning you to the full combination. A wrong answer pauses so you can compare against the target before continuing; if you're sure your answer was right, &ldquo;Count as correct&rdquo; overrides it — the streak advances, but the miss still counts in your stats.
               </p>
             </div>
           </div>
@@ -63,7 +63,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 3. Batched Encoding &amp; Spaced Cycling
               </h4>
               <p>
-                Cards are encoded a batch at a time (5 by default, adjustable from 3-10, or the whole deck at once) instead of one card being drilled to completion before the next begins — within a batch you rotate to the next unfinished card after every chunk, combination, or fixed weak spot. Once a batch is fully encoded you get a summary and a choice to continue or stop before the next batch. From there, encoded cards enter a shuffled, interleaved review cycle — a card is only marked <strong>Mastered</strong> once you recall it correctly twice with other cards in between.
+                Cards are encoded a batch at a time (5 by default, adjustable from 3-10, or the whole deck at once) instead of one card being drilled to completion before the next begins — within a batch you rotate to the next unfinished card after every chunk, combination, or fixed weak spot. Once a batch is fully encoded you get a summary and a choice to continue or stop before the next batch. From there, encoded cards enter a review cycle — shuffled by default, or in deck order if you choose &ldquo;In order&rdquo; — and a card is marked <strong>Mastered</strong> once you recall it correctly twice in a row. Other cards usually come in between, but when only one card in the batch is left to master, it comes straight back with nothing in between.
               </p>
             </div>
           </div>
@@ -78,8 +78,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
               </h4>
               <ul className="list-disc list-inside space-y-1">
                 <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Enter</kbd>: Check your answer, or continue once it's graded</li>
-                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd>: Show the answer — resets your streak on this part to zero, but never counts as a miss</li>
-                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Ctrl+Enter</kbd>: &ldquo;Count as correct&rdquo; override, right after a wrong answer</li>
+                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd>: Show the answer — resets your streak on this part to zero, but never counts as a miss (still counts as an attempt)</li>
+                <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Ctrl+Enter</kbd>: &ldquo;Count as correct&rdquo; override, right after a wrong answer (the miss still shows in your stats)</li>
                 <li><strong>Edit card</strong>: fix the current card's front or back mid-session (<kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Ctrl+Enter</kbd> saves, <kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Esc</kbd> cancels) — a real answer change restarts that card; a wording-only fix keeps your progress</li>
                 <li><kbd className="px-1.5 py-0.5 bg-[var(--surface-1)] border border-[var(--border)] rounded mono">Tab</kbd>: Inserts a real tab character inside the bulk deck editor</li>
               </ul>
