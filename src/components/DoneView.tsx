@@ -24,7 +24,13 @@ export const DoneView: React.FC<DoneViewProps> = ({
   // check -- undefined finalMisses (an old save, or a card never reached in
   // an ended-early session) reads as 0, so it's simply left out.
   const missedInFinal = items.filter(i => (i.finalMisses ?? 0) > 0);
-  const isAllMastered = masteredCount >= items.length;
+  // The session is complete once every card has finished the Final check,
+  // not just once every card is 'mastered' -- the last batch's cycle
+  // mastering everyone no longer ends the session (see advanceBatchState),
+  // so "Deck Mastered!" must wait for finalDone too, or it shows on an
+  // interrupted session that's still going to resume back into the Final
+  // check.
+  const isComplete = items.length > 0 && items.every(i => i.finalDone);
   const accuracy =
     stats.attempts > 0
       ? Math.round(((stats.attempts - stats.misses) / stats.attempts) * 100)
@@ -37,7 +43,7 @@ export const DoneView: React.FC<DoneViewProps> = ({
           <CheckCircle2 size={34} strokeWidth={2.5} />
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">
-          {isAllMastered ? 'Deck Mastered!' : 'Session Saved'}
+          {isComplete ? 'Deck Mastered!' : 'Session Saved'}
         </h2>
         <p className="text-xs font-medium text-[var(--text-secondary)] bg-[var(--surface-1)] px-3 py-1 rounded-full border border-[var(--border)] inline-block">
           {deckName}
@@ -75,7 +81,7 @@ export const DoneView: React.FC<DoneViewProps> = ({
       </div>
 
       <p id="done-stats" className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed px-2">
-        {isAllMastered ? (
+        {isComplete ? (
           <span>
             Terrific work! All {items.length} items were successfully encoded and verified through spaced retrieval.
           </span>

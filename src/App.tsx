@@ -68,6 +68,12 @@ export default function App() {
     nearMisses: 0,
     overrides: 0,
   });
+  // Phase 3: seeds SessionView's initial SessionState the same way, for
+  // computeCumulativeColdStartMultiplier's numerator during the Final check
+  // (see its doc comment in drillEngine.ts).
+  const [sessionFinalCheckStartAttempts, setSessionFinalCheckStartAttempts] = useState<number | undefined>(
+    undefined
+  );
   const [encodeReps, setEncodeReps] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('recall_drill_encode_reps');
@@ -199,6 +205,7 @@ export default function App() {
     setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
     setSessionBatchIndex(0);
     setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionFinalCheckStartAttempts(undefined);
     setEncodeReps(reps);
     try {
       localStorage.setItem('recall_drill_encode_reps', String(reps));
@@ -257,6 +264,7 @@ export default function App() {
     setSessionStats(state.stats || { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setSessionBatchIndex(batchIndex);
     setSessionBatchStartStats(state.batchStartStats ?? state.stats ?? { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionFinalCheckStartAttempts(state.finalCheckStartAttempts);
     setBatchSize(resolvedBatchSize);
     setEncodeReps(state.encodeReps || 3);
     if (state.chunkDifficulty !== undefined) {
@@ -290,6 +298,7 @@ export default function App() {
     setSessionQueue(state.queue);
     setSessionBatchIndex(state.batchIndex);
     setSessionBatchStartStats(state.batchStartStats);
+    setSessionFinalCheckStartAttempts(state.finalCheckStartAttempts);
     const slug = slugify(deckName);
 
     // Phase 3: "complete" means the Final check has finished too, not just
@@ -315,6 +324,7 @@ export default function App() {
         batchIndex: state.batchIndex,
         batchSize: state.config.batchSize,
         batchStartStats: state.batchStartStats,
+        finalCheckStartAttempts: state.finalCheckStartAttempts,
         sourceDeckEditable,
         timestamp: Date.now(),
       });
@@ -423,6 +433,7 @@ export default function App() {
     setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
     setSessionBatchIndex(0);
     setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionFinalCheckStartAttempts(undefined);
     setView('session');
   };
 
@@ -485,6 +496,7 @@ export default function App() {
               batchSize={batchSize}
               initialBatchIndex={sessionBatchIndex}
               initialBatchStartStats={sessionBatchStartStats}
+              initialFinalCheckStartAttempts={sessionFinalCheckStartAttempts}
               onFinishSession={handleFinishSession}
               sourceDeckEditable={sourceDeckEditable}
               onDeckCardEdited={handleDeckCardEdited}

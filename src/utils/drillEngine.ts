@@ -1210,7 +1210,11 @@ function advanceBatchState(items: DrillItem[], stats: SessionStats, base: Sessio
     // phase retires in docs/V2-HANDOFF.md).
     const queue = shuffle(items.map(i => i.id));
     const nextId = queue.shift()!;
-    return { ...base, items, phase: 'final', queue, stats, currentId: nextId };
+    // Phase 3: records the attempts total as of this exact instant, so
+    // computeCumulativeColdStartMultiplier can exclude in-progress
+    // Final-check attempts from its numerator until the Final check is
+    // actually done (see that function's doc comment).
+    return { ...base, items, phase: 'final', queue, stats, currentId: nextId, finalCheckStartAttempts: stats.attempts };
   }
   // currentId is deliberately left as-is (not SESSION_COMPLETE_ID): that
   // sentinel means "the whole session is done" to SessionView's finishing
@@ -1543,15 +1547,20 @@ export function saveColdStartHistory(slug: string, history: ColdStartHistory): b
 // entered only after the LAST batch's own cycle finishes -- see
 // advanceBatchState), not a per-batch cost, so computeMinimumTrials'
 // +1-per-item floor for it must not be credited here until the Final check
-// has actually finished for every item. Crediting it any earlier -- e.g. at
-// the last batch's own "done" instant, or at a "Save and stop" mid-Final-
-// check -- would inflate the denominator (floor) against a numerator
-// (completedAttempts) that hasn't spent those trials yet, understating the
-// multiplier. Once every item is finalDone, `completedItems` is
-// necessarily the WHOLE deck (the Final check can't start before the last
-// batch does), so passing `includeFinalCheck: true` at that point still
-// covers exactly the items whose Final-check trial is actually reflected
-// in `completedAttempts`.
+// has actually finished for every item -- crediting it any earlier would
+// inflate the denominator (floor) against a numerator (completedAttempts)
+// that hasn't spent those trials yet, understating the multiplier. The
+// numerator needs the matching exclusion: while phase is 'final' but
+// finalCheckDone is still false, completedAttempts must leave OUT whatever
+// Final-check attempts have already been spent so far (state.stats.attempts
+// keeps growing with every Final-check trial, correct or not), or the
+// numerator would count trials the denominator doesn't -- state was
+// snapshotted into finalCheckStartAttempts at the exact instant the Final
+// check began (see advanceBatchState) for exactly this. Once every item is
+// finalDone, `completedItems` is necessarily the WHOLE deck (the Final
+// check can't start before the last batch does), so
+// state.stats.attempts / includeFinalCheck: true both correctly cover
+// every trial, Final check included.
 export function computeCumulativeColdStartMultiplier(state: SessionState): number | null {
   const effectiveBatchSize = state.config.batchSize ?? state.items.length;
   const batches = partitionIntoBatches(state.items, effectiveBatchSize);
@@ -1568,7 +1577,14 @@ export function computeCumulativeColdStartMultiplier(state: SessionState): numbe
     state.config.ladderMode,
     finalCheckDone
   );
-  const completedAttempts = currentBatchDone ? state.stats.attempts : state.batchStartStats.attempts;
+  const completedAttempts =
+    state.phase === 'final'
+      ? finalCheckDone
+        ? state.stats.attempts
+        : state.finalCheckStartAttempts ?? state.stats.attempts
+      : currentBatchDone
+      ? state.stats.attempts
+      : state.batchStartStats.attempts;
   return minTrials > 0 ? completedAttempts / minTrials : null;
 }
 

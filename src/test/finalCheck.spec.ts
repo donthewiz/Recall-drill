@@ -12,6 +12,7 @@ import {
   applyAnswer,
   applyNext,
   buildItems,
+  computeCumulativeColdStartMultiplier,
   initSession,
   normalizeItem,
   resolveBatchConfig,
@@ -275,5 +276,30 @@ describe('Final check: save -> resume restores the queue and finalDone flags', (
       cur = answerCorrectAndAdvance(cur);
     }
     expect(cur.items.every(i => i.finalDone)).toBe(true);
+  });
+});
+
+describe('Final check: computeCumulativeColdStartMultiplier stays in sync with the floor', () => {
+  it('reads exactly 1 for a perfect learner throughout -- at the start of the Final check, partway through it, and once it completes', () => {
+    // Regression: the numerator (completedAttempts) used to keep growing
+    // with every in-progress Final-check trial while the denominator
+    // (minTrials) excluded the Final check's cost entirely until it was
+    // fully done -- inflating the multiplier above 1 for a perfect learner
+    // partway through. finalCheckStartAttempts freezes the numerator at the
+    // same "Final check not counted yet" point the denominator is at.
+    const items = buildItems(makeDeck(4), 35, 'cumulative');
+    let s = driveToFinalCheck(freshState(items));
+    expect(s.phase).toBe('final');
+    expect(computeCumulativeColdStartMultiplier(s)).toBeCloseTo(1, 10);
+
+    s = answerCorrectAndAdvance(s);
+    s = answerCorrectAndAdvance(s);
+    expect(s.items.filter(i => i.finalDone).length).toBe(2);
+    expect(computeCumulativeColdStartMultiplier(s)).toBeCloseTo(1, 10);
+
+    s = answerCorrectAndAdvance(s);
+    s = answerCorrectAndAdvance(s);
+    expect(s.currentId).toBe(SESSION_COMPLETE_ID);
+    expect(computeCumulativeColdStartMultiplier(s)).toBeCloseTo(1, 10);
   });
 });

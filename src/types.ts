@@ -120,6 +120,12 @@ export interface SavedSessionState {
   // began -- lets the interstitial report "this batch" trials/accuracy by
   // diffing against `stats` instead of carrying separate running totals.
   batchStartStats?: SessionStats;
+  // Phase 3: stats.attempts as of the moment the Final check began -- lets
+  // computeCumulativeColdStartMultiplier's numerator match its denominator
+  // while the Final check is still in progress (see that function's doc
+  // comment). Undefined on any save from before this field existed, or one
+  // that hasn't reached the Final check yet.
+  finalCheckStartAttempts?: number;
   // Whether this session maps onto one saved deck (named deckName) that a
   // mid-session card edit may be written back to -- false for folder
   // practice. Undefined on any save from before this field existed ->
@@ -207,6 +213,11 @@ export interface SessionState {
   batchIndex: number;
   // C3: see SavedSessionState.batchStartStats.
   batchStartStats: SessionStats;
+  // Phase 3: see SavedSessionState.finalCheckStartAttempts. Optional (unlike
+  // batchStartStats) so every pre-Phase-3 SessionState literal -- the many
+  // tests that construct one directly -- keeps compiling unchanged; set by
+  // advanceBatchState the moment phase first becomes 'final'.
+  finalCheckStartAttempts?: number;
   config: SessionConfig;
 }
 
