@@ -125,7 +125,9 @@ export type LadderMode = 'cumulative' | 'exhaustive';
 
 // Cycle-phase card order. 'shuffled' (default) is the original behavior: a
 // random order per pass, with a missed/revealed card reinserted 2-3 cards
-// later and a correct-but-not-yet-mastered card reinserted 3 later.
+// later and a correct-but-not-yet-mastered card reinserted at the END of the
+// current pass (Within-session spacing, 2026-09-24) -- maximizing the gap
+// before its mastering answer, per Karpicke & Bauernschmidt (2011).
 // 'inOrder' walks the current batch's not-yet-mastered cards in deck order
 // (DrillItem.id, i.e. the order they were written), one full pass at a
 // time; nothing is reinserted mid-pass -- a missed card, or one that still

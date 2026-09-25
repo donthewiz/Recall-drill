@@ -63,7 +63,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 3. Batched Encoding &amp; Spaced Cycling
               </h4>
               <p>
-                Cards are encoded a batch at a time (5 by default, adjustable from 3-10, or the whole deck at once) instead of one card being drilled to completion before the next begins — within a batch you rotate to the next unfinished card after every chunk, combination, or fixed weak spot. Once a batch is fully encoded you get a summary and a choice to continue or stop before the next batch. From there, encoded cards enter a review cycle — shuffled by default, or in deck order if you choose &ldquo;In order&rdquo; — and a card is marked <strong>Mastered</strong> once you recall it correctly twice in a row. Other cards usually come in between, but when only one card in the batch is left to master, it comes straight back with nothing in between.
+                Cards are encoded a batch at a time (5 by default, adjustable from 3-10, or the whole deck at once) instead of one card being drilled to completion before the next begins — within a batch you rotate to the next unfinished card after every chunk, combination, or fixed weak spot. Once a batch is fully encoded you get a summary and a choice to continue or stop before the next batch. From there, encoded cards enter a review cycle — shuffled by default, or in deck order if you choose &ldquo;In order&rdquo; — and a card is marked <strong>Mastered</strong> once you recall it correctly twice, with the rest of the pass in between. The exception is when only one card in the batch is left to master — it comes straight back with nothing in between.
               </p>
             </div>
           </div>

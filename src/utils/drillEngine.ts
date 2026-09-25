@@ -2121,7 +2121,12 @@ export function applyAnswer(
         type: 'success',
         dwellKey: 'cycle-correct',
       });
-      requeueCycleItem(updatedQueue, it.id, 3, state.config.cycleOrder);
+      // Within-session spacing (2026-09-24): a first-correct card goes to the
+      // END of the current pass, not a fixed gap -- maximizes the trials
+      // separating it from its mastering answer. Only the last remaining
+      // card in a pass is exempt (queue is empty, so this is a no-op and it
+      // repeats at lag 0) until the Final check covers that case instead.
+      requeueCycleItem(updatedQueue, it.id, updatedQueue.length, state.config.cycleOrder);
     }
   } else {
     nextStats.misses++;
