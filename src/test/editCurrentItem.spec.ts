@@ -97,7 +97,11 @@ const onItem = (id: number) => (s: SessionState) => s.currentId === id;
 describe('editCurrentItem -- progress kept', () => {
   it('a prompt-only edit keeps every progress field', () => {
     // Mid-streak on a full-stage card: one correct answer in, two to go.
-    const s0 = step(stepUntil(freshState(), onItem(TACHY)));
+    // Phase 2 (within-session spacing) rotates to another batch card
+    // between reps, so wait for TACHY to come back around rather than
+    // stepping once from onItem(TACHY) -- that single step now lands on a
+    // different card.
+    const s0 = stepUntil(freshState(), s => s.currentId === TACHY && itemOf(s, TACHY).encodeStreak === 1);
     expect(itemOf(s0, TACHY).encodeStreak).toBe(1);
 
     const { state, restarted } = editCurrentItem(s0, { front: 'Rapid heartbeat', back: 'fast heart rate' });
@@ -110,7 +114,9 @@ describe('editCurrentItem -- progress kept', () => {
   });
 
   it('an equivalent answer edit on a normal deck keeps progress (Menieres -> Ménière\'s)', () => {
-    const s0 = step(stepUntil(freshState(), onItem(MENIERES)));
+    // See the prompt-only-edit test above for why this waits for the
+    // rotation to come back around instead of stepping once from onItem.
+    const s0 = stepUntil(freshState(), s => s.currentId === MENIERES && itemOf(s, MENIERES).encodeStreak === 1);
     const { state, restarted } = editCurrentItem(s0, {
       front: 'Inner ear disorder',
       back: "Ménière's disease",
@@ -158,14 +164,20 @@ describe('editCurrentItem -- progress kept', () => {
 
 describe('editCurrentItem -- punctuation mode decides whether the answer changed', () => {
   it("'pre op' -> 'pre-op' keeps progress on a normal deck", () => {
-    const s0 = step(stepUntil(freshState(), onItem(PRE_OP)));
+    // See editCurrentItem.spec.ts's prompt-only-edit test for why this
+    // waits for the rotation to come back around instead of stepping once
+    // from onItem.
+    const s0 = stepUntil(freshState(), s => s.currentId === PRE_OP && itemOf(s, PRE_OP).encodeStreak === 1);
     const { state, restarted } = editCurrentItem(s0, { front: 'Before surgery', back: 'pre-op' });
     expect(restarted).toBe(false);
     expect(itemOf(state, PRE_OP).encodeStreak).toBe(1);
   });
 
   it("'pre op' -> 'pre-op' restarts on a strict deck", () => {
-    const s0 = step(stepUntil(freshState({ strict: true }), onItem(PRE_OP)));
+    const s0 = stepUntil(
+      freshState({ strict: true }),
+      s => s.currentId === PRE_OP && itemOf(s, PRE_OP).encodeStreak === 1
+    );
     expect(itemOf(s0, PRE_OP).encodeStreak).toBe(1);
     const { state, restarted } = editCurrentItem(s0, { front: 'Before surgery', back: 'pre-op' });
     expect(restarted).toBe(true);

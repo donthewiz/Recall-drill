@@ -549,3 +549,54 @@ regardless of `chunkDifficulty`) directly, and `src/test/fixtures/deck.ts`'s
 `TWO_CHUNK_BACK`/`TWO_CHUNK_DIFFICULTY` were updated (9 words at 50%, still
 exactly 2 chunks) since the old 5-word version fell under the new
 threshold and stopped chunking at all.
+
+---
+
+## Within-session spacing, Phases 1-2 (2026-09-24)
+
+Unlike every phase above, C1-C9 optimized what the harness's cost-only
+learner can actually see. Phases 1-3 of `docs/V2-HANDOFF.md`'s
+"Within-session spacing" work do not — they space out retrievals within a
+session, and this harness's learner has no lag or forgetting to make that
+show up as fewer trials. **These two phases are expected to be cost-neutral,
+not cost-reducing** (Phase 3 is the one exception: +1 trial per card, for its
+Final check). The measurements below exist to confirm "cost-neutral" is what
+actually happened — that reordering *when* a card is retested didn't
+accidentally change *how many times* it is — not to claim a trial-count win.
+The real benefit (fewer trials-until-retention-fails at the same spacing) is
+something only Anki's next-day Again rate can show, not this simulator.
+
+Same config/fixtures/learners as the main table above (50 seeded runs per
+config, mean ± sample SD).
+
+| Deck | Learner | Trials: pre-spacing | Trials: Phase 1 | Trials: Phase 2 | Keystrokes: pre-spacing | Keystrokes: Phase 1 | Keystrokes: Phase 2 |
+|---|---|---|---|---|---|---|---|
+| shortDeck | perfect | 60.0 ± 0.0 | 60.0 ± 0.0 | 60.0 ± 0.0 | 385.0 ± 0.0 | 385.0 ± 0.0 | 385.0 ± 0.0 |
+| shortDeck | realistic | 91.6 ± 8.5 | 91.5 ± 7.5 | 91.6 ± 6.8 | 586.5 ± 56.6 | 585.0 ± 48.6 | 579.3 ± 50.8 |
+| shortDeck | struggling | 147.7 ± 13.0 | 147.9 ± 11.6 | 146.7 ± 9.0 | 944.3 ± 91.6 | 948.9 ± 84.5 | 938.9 ± 63.6 |
+| proseDeck | perfect | 144.0 ± 0.0 | 144.0 ± 0.0 | 144.0 ± 0.0 | 9764.0 ± 0.0 | 9764.0 ± 0.0 | 9764.0 ± 0.0 |
+| proseDeck | realistic | 257.9 ± 31.0 | 257.2 ± 30.5 | 253.7 ± 28.3 | 16491.5 ± 1715.4 | 16395.1 ± 1621.4 | 16187.2 ± 1443.8 |
+| proseDeck | struggling | 762.7 ± 80.7 | 765.0 ± 81.3 | 760.4 ± 97.4 | 36849.9 ± 2992.4 | 37117.0 ± 2998.3 | 36913.4 ± 3700.2 |
+| mediumDeck | perfect | 60.0 ± 0.0 | 60.0 ± 0.0 | 60.0 ± 0.0 | 2455.0 ± 0.0 | 2455.0 ± 0.0 | 2455.0 ± 0.0 |
+| mediumDeck | realistic | 92.0 ± 6.2 | 91.8 ± 7.0 | 91.5 ± 7.1 | 3763.5 ± 249.5 | 3760.7 ± 291.1 | 3740.8 ± 288.0 |
+| mediumDeck | struggling | 149.4 ± 12.6 | 150.0 ± 11.8 | 150.8 ± 9.8 | 6107.0 ± 530.6 | 6124.0 ± 496.9 | 6166.0 ± 400.4 |
+
+"pre-spacing" is `3383a5c` (immediately before Phase 1), the same current-engine
+baseline every other section in this file already diffs against.
+
+**Every `perfect` row is bit-for-bit identical across all three columns.**
+That's the expected result, not a coincidence: `computeMinimumTrials` doesn't
+change (neither phase adds or removes a trial, only reorders which card a
+trial lands on), and a perfect learner never triggers a miss, so reordering
+which not-yet-mastered card comes next can't change how many trials the
+session takes, only their sequence.
+
+**Every `realistic`/`struggling` row's Phase 1 and Phase 2 values sit inside
+the pre-spacing row's own SD**, the same "not distinguishable" bar the rest
+of this file uses. The small run-to-run drift (a trial or two on `shortDeck`,
+up to ~200 keystrokes on `proseDeck`) comes from `Math.random()` being
+consumed in a different order once reinsertion position and rotation target
+change — the seeded PRNG is deterministic per config, but a changed sequence
+of `shuffle()`/gap draws shifts which of the 50 seeds' miss patterns actually
+fire, without changing the underlying miss *rate*. This is exactly the
+"cost-neutral" result the phases were designed to produce.

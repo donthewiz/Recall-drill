@@ -152,3 +152,34 @@ Before surgery :: pre op
 - [ ] **Resume**: edit, reload mid-session, Resume → edited text.
 - [ ] **Folder practice**: an edit works in-session, shows "Saved for this
       session only.", and the source deck is unchanged.
+
+## 9. Within-session spacing (2026-09-24)
+
+Paste-in deck (normal deck, batch size 5, cycle order Shuffled, 3 reps):
+
+```
+Tachycardia :: fast heart rate
+Bradycardia :: slow heart rate
+-itis :: inflammation
+-osis :: abnormal condition
+-emia :: blood condition
+Hypertension :: blood pressure that stays above the normal range for a long time
+```
+
+**After Phase 1 (cycle reinsertion gap):**
+
+- [ ] In the batch's cycle, a card that shows "Correct — will test once more
+      later" doesn't come back until every other unmastered card in that
+      pass has been shown.
+- [ ] The very last card of the batch still repeats immediately. That's
+      expected until Phase 3's Final check.
+
+**After Phase 2 (rep rotation):**
+
+- [ ] During encoding, after "1 of 3 streaks" the next card is a **different**
+      card, while more than one card is still encoding.
+- [ ] After a wrong answer, the same card comes back.
+- [ ] On the long card (6th line, in batch 2), each chunk's "Read & Continue"
+      is followed directly by typing that chunk — the presentation/blind pair
+      never gets split apart by the rotation.
+- [ ] The status counts (attempts/misses) look normal.

@@ -548,6 +548,41 @@ get chunked, move it.
 
 ---
 
+## Within-session spacing (2026-09-24)
+
+Retention within a session depends on how many trials separate two
+*successful* retrievals of the same card. Karpicke & Bauernschmidt (2011,
+JEP:LMC) found three recalls in a row were worth about one (26% vs 25%
+retention), while spacing between recalls tripled it regardless of whether
+the gaps expanded or stayed equal. The harness can't see any of this — its
+learner has no lag or forgetting — so every rule below is judged on cost and
+correctness only; the benefit is measured in Anki, via the next-day Again
+rate on drilled cards.
+
+1. **Cycle reinsertion (Phase 1).** In shuffled cycle mode, a card's
+   first-correct answer now reinserts at the **end** of the current pass
+   instead of a fixed gap of 3 cards — maximizing the trials before its
+   mastering answer, whatever the batch size. The miss/reveal reinsertion gap
+   (2-3 later) and `inOrder` mode are unchanged.
+2. **Rep rotation (Phase 2).** `applyAnswer` now rotates to another
+   still-encoding batch card after *every* correct rep that's short of
+   criterion (combine, remediate, and the full stage's streak-progress
+   returns), not just at a stage-unit's completion — so repeated reps on the
+   same target no longer run back to back. A wrong answer still retries the
+   same card immediately, and a chunk's presentation beat stays adjacent to
+   its own blind attempt (nothing to space out there: one is ungraded, the
+   other is the chunk's only real attempt).
+3. **Final check (Phase 3).** *Not yet built.* This section will gain a
+   third rule once it lands — see `docs/BASELINE.md` for the phase-by-phase
+   trial-count evidence in the meantime.
+
+No new user-facing settings. `computeMinimumTrials` is unaffected by either
+rule (both are pure reorderings, not new trials, so the perfect-run floor
+doesn't move), and `npm run simulate`'s perfect-learner rows are
+byte-identical before and after each phase — see `docs/BASELINE.md`.
+
+---
+
 ## Known limitations
 
 - **Exact match is spacing-insensitive; `alignWords` is not.** `grade()`'s
@@ -567,10 +602,19 @@ get chunked, move it.
   as a check that the change didn't regress trial/keystroke counts on
   ordinary text (it doesn't). `src/test/grade.spec.ts`'s punctuation table
   is the actual evidence for this change's grading behavior.
-- **The last card in a batch's cycle comes straight back.** Reinsertion gaps
-  are capped at the queue length. When only one unmastered card is left, it's
-  served again immediately, with nothing in between, in both cycle orders,
-  and that includes its mastering answer.
+- **The last card in a batch's cycle can still come straight back, but only
+  after a miss.** Reinsertion gaps are capped at the queue length, so when
+  only one unmastered card is left, it's served again immediately, with
+  nothing in between, in both cycle orders. Since Phase 1 (within-session
+  spacing) moved first-correct reinsertion to the end of the pass, this can
+  no longer happen on a miss-free run: every card needs exactly two cycle
+  corrects, so a perfect run finishes everyone's first correct before
+  anyone's second, and no card is ever alone until it's already earning its
+  mastering answer — which doesn't reinsert at all. A miss breaks that
+  lockstep (its own reinsertion gap is 2-3 cards, not "to the end"), and can
+  leave exactly one card behind still needing a correct answer, including
+  its mastering one, with the queue already empty. Phase 3's Final check is
+  expected to remove this scenario entirely.
 - **"Every word is required" holds only on strict decks.** In normal mode the
   near tier forgives dropped or swapped stopwords. With `stemTolerance` on, it
   also forgives inflection differences at ≥ 0.9 similarity.

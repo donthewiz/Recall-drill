@@ -1902,7 +1902,14 @@ export function applyAnswer(
           dwellKey: 'combine-streak-progress',
         });
         newItems[itIdx] = it;
-        return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
+        // Phase 2 (within-session spacing): a correct rep still short of
+        // criterion now rotates to another batch card too, not just a
+        // stage-unit completion -- the presentation beat -> blind attempt
+        // pair stays adjacent (that's the combine window's own attempt 0/1,
+        // not a rotation point), but repeated reps within the same window
+        // are spread out across the batch instead of running back to back.
+        const advancedState = advanceEncodeState(newItems, nextStats, base);
+        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
@@ -2020,7 +2027,10 @@ export function applyAnswer(
           dwellKey: 'remediate-streak-progress',
         });
         newItems[itIdx] = it;
-        return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
+        // Phase 2 (within-session spacing): rotate to another batch card
+        // between reps here too -- see the combine branch's comment above.
+        const advancedState = advanceEncodeState(newItems, nextStats, base);
+        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
@@ -2076,7 +2086,10 @@ export function applyAnswer(
         dwellKey: 'full-streak-progress',
       });
       newItems[itIdx] = it;
-      return { state: { ...base, items: newItems }, verdict: gr.verdict, feedback, advance: 'auto' };
+      // Phase 2 (within-session spacing): rotate to another batch card
+      // between reps here too -- see the combine branch's comment above.
+      const advancedState = advanceEncodeState(newItems, nextStats, base);
+      return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
     }
 
     nextStats.misses++;
