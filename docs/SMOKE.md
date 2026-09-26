@@ -198,3 +198,18 @@ Hypertension :: blood pressure that stays above the normal range for a long time
 - [ ] Finish the Final check: the saved session is cleared (Start shows no
       resume prompt for this deck), and DoneView's stats reflect the whole
       session, Final check included.
+
+**After chain contiguity (2026-09-26):**
+
+Deck (batch 5, 3 reps):
+
+```
+Tachycardia :: fast heart rate
+Hypertension :: blood pressure that stays above the normal range for a long time
+-itis :: inflammation
+```
+
+- [ ] On the Hypertension card, every part, every combination, and any
+      weak-spot drill run back to back without switching cards. The first
+      switch to another card comes after the first correct answer on the
+      whole answer.

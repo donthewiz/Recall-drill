@@ -566,12 +566,14 @@ rate on drilled cards.
    (2-3 later) and `inOrder` mode are unchanged.
 2. **Rep rotation (Phase 2).** `applyAnswer` now rotates to another
    still-encoding batch card after *every* correct rep that's short of
-   criterion (combine, remediate, and the full stage's streak-progress
-   returns), not just at a stage-unit's completion — so repeated reps on the
-   same target no longer run back to back. A wrong answer still retries the
-   same card immediately, and a chunk's presentation beat stays adjacent to
-   its own blind attempt (nothing to space out there: one is ungraded, the
-   other is the chunk's only real attempt).
+   criterion (the full stage's and the final combine window's
+   streak-progress returns), not just at a stage-unit's completion — so
+   repeated reps on the same target no longer run back to back. A wrong
+   answer still retries the same card immediately, and a chunk's
+   presentation beat stays adjacent to its own blind attempt (nothing to
+   space out there: one is ungraded, the other is the chunk's only real
+   attempt). As shipped on 2026-09-24 this also covered intermediate combine
+   windows and remediation; rule 4 narrowed it.
 3. **Final check (Phase 3).** After the last batch's cycle finishes, the
    session no longer ends there — it enters one shuffled, cue-free pass over
    *every item in the session* (`DrillItem.finalDone`/`finalMisses`),
@@ -583,13 +585,31 @@ rate on drilled cards.
    below: even a card that came back immediately in its own batch's cycle
    still gets one properly-spaced retrieval here, against every other card
    in the deck, before the session is done.
+4. **Chain contiguity (2026-09-26).** A chunked card **stays current**
+   while its answer is being assembled: a chunk learned, an intermediate
+   combine window cleared, a correct rep short of criterion on an
+   intermediate window (`exhaustive` ladder only), and every remediation
+   success return all stay on the card (`stayOnCurrentItem`). Rotation to
+   another batch card resumes only after a correct answer on the final
+   (whole-answer) combine window — both its short-of-criterion reps and the
+   one that makes the card `ready`. The full stage, misses, reveals,
+   presentation beats, the cycle and the Final check are unchanged.
+   Rationale: the spacing result is about repeated retrievals of the *same*
+   target, but a chunk → window → window chain has a *different* target at
+   each step and depends on contiguity (C3's own spec says so), so
+   interleaving other cards there only broke the ladder and hid how the
+   parts fit together. Spacing still applies to the final-window reps, the
+   cycle, and the Final check. Remediation stays on the card on purpose:
+   it's error correction inside the chain, like a wrong-answer retry.
 
 No new user-facing settings. Phases 1-2 don't move `computeMinimumTrials`'s
 floor at all (both are pure reorderings, not new trials); Phase 3 adds
 exactly **+1 trial per item** to it (one Final-check answer each), the only
 one of the three that costs anything — `npm run simulate`'s perfect-learner
 rows are byte-identical after Phases 1-2 and rise by exactly items-per-deck
-after Phase 3. See `docs/BASELINE.md` for the full phase-by-phase evidence.
+after Phase 3. Rule 4 is also a pure reordering: perfect-learner rows are
+byte-identical again, and `coldStartEstimate.consistency.spec.ts` passes
+unchanged. See `docs/BASELINE.md` for the full phase-by-phase evidence.
 
 ---
 

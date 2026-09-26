@@ -614,3 +614,33 @@ reveal during the Final check requeues the card instead of counting it done,
 so a learner that isn't perfect pays more than one Final-check trial on
 whichever cards it misses there, on top of the flat +1-per-card floor every
 learner pays.
+
+## Chain contiguity (2026-09-26)
+
+A chunked card now stays current through its chunks, intermediate combine
+windows and remediation, and rotation resumes only on the final
+(whole-answer) window (`docs/V2-HANDOFF.md`, "Within-session spacing" rule
+4). Like Phases 1-2 this is a pure reordering, so the result to check is
+that it's cost-neutral. Same config/fixtures/learners as above (50 seeded
+runs, mean ± sample SD), `665322e` → this change:
+
+| Deck | Learner | Trials: before | Trials: after | Keystrokes: before | Keystrokes: after |
+|---|---|---|---|---|---|
+| proseDeck | realistic | 272.6 ± 28.4 | 270.5 ± 28.9 | 18489.8 ± 1475.8 | 18542.0 ± 1593.8 |
+| proseDeck | struggling | 790.6 ± 98.2 | 794.9 ± 101.5 | 40614.5 ± 3852.0 | 40540.0 ± 3498.7 |
+
+**Every other row of `npm run simulate`'s output is byte-identical**, including
+all `perfect` rows and every `shortDeck`/`mediumDeck` row. The perfect rows
+can't move: a reordering doesn't change how many trials a learner that never
+misses needs. The two `proseDeck` rows that move stay within
+1 SD of their own before value, so they're **not distinguishable**. The trial
+mix moves between stages (e.g. struggling remediate 323 → 433, cycle 73 → 56
+in the sample run's breakdown) because the order in which the seeded PRNG
+draws its random numbers changed, not because the miss rate did.
+`coldStartEstimate.consistency.spec.ts` passes unchanged (the trial floor
+doesn't depend on order).
+
+Caveat, same as for Phases 1-2: the harness learner has no lag or
+forgetting, so it can't show a benefit *or* a cost from ordering. Whether
+keeping the chain together helps is a question for real use, not this
+simulator.

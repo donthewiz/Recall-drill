@@ -1156,11 +1156,14 @@ function getCurrentBatch(items: DrillItem[], batchIndex: number, batchSize: numb
   return partitionIntoBatches(items, batchSize)[batchIndex] ?? [];
 }
 
-// C3: called after every completed stage-unit (one chunk learned, one
-// combine window learned, one remediation span cleared -- see applyAnswer's
-// call sites) as well as at session/batch start. Rotates within the current
-// batch via selectNextEncodeItem instead of the old "always the first
-// new/encoding item in deck order" (which was fully massed: item 0 to
+// C3: called at session/batch start and after every correct answer that
+// isn't part of assembling a chunked card's answer -- every full-stage rep,
+// and on a chunked card every final (whole-answer) combine-window rep,
+// including the one that makes it 'ready' (chain contiguity, 2026-09-26: the
+// chunk, intermediate-window and remediation successes before that use
+// stayOnCurrentItem instead -- see applyAnswer's call sites). Rotates within
+// the current batch via selectNextEncodeItem instead of the old "always the
+// first new/encoding item in deck order" (which was fully massed: item 0 to
 // completion before item 1 was ever touched). Once every item in the batch
 // is 'ready', starts that batch's cycle phase, scoped to just its items.
 function advanceEncodeState(
@@ -1192,6 +1195,15 @@ function advanceEncodeState(
     i.id === next.id && i.status === 'new' ? { ...i, status: 'encoding' as const } : i
   );
   return { ...base, items: newItems, phase: 'encode', currentId: next.id, stats };
+}
+
+// Chain contiguity (2026-09-26): a chunked card stays current while its
+// answer is being assembled -- chunks, intermediate combine windows, and
+// remediation -- because forward chaining depends on contiguity, and each
+// step there has a different target, so there are no same-target reps to
+// space out. Rotation resumes on the final (whole-answer) window's reps.
+function stayOnCurrentItem(items: DrillItem[], stats: SessionStats, base: SessionState): SessionState {
+  return { ...base, items, phase: 'encode', stats };
 }
 
 // C3: once every item in the CURRENT batch is mastered, either moves to the
@@ -1937,8 +1949,10 @@ export function applyAnswer(
           });
         }
         newItems[itIdx] = it;
-        const advancedState = advanceEncodeState(newItems, nextStats, base);
-        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+        // Chain contiguity: stay on this card through its chunks and
+        // combine ladder (see stayOnCurrentItem).
+        const nextState = stayOnCurrentItem(newItems, nextStats, base);
+        return { state: nextState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
@@ -1997,8 +2011,13 @@ export function applyAnswer(
             });
           }
           newItems[itIdx] = it;
-          const advancedState = advanceEncodeState(newItems, nextStats, base);
-          return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+          // Chain contiguity: only the final window's completion ('ready')
+          // rotates; clearing an intermediate window stays on this card.
+          const nextState =
+            it.status === 'ready'
+              ? advanceEncodeState(newItems, nextStats, base)
+              : stayOnCurrentItem(newItems, nextStats, base);
+          return { state: nextState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
         const feedback = successFeedback(gr, {
           text: `${it.combineStreak} of ${requiredReps} streaks`,
@@ -2007,15 +2026,21 @@ export function applyAnswer(
         });
         newItems[itIdx] = it;
         // Phase 2 (within-session spacing): a correct rep still short of
-        // criterion now rotates to another batch card too, not just a
-        // stage-unit completion, so repeated reps within the same combine
-        // window are spread out across the batch instead of running back to
-        // back. (Presentation beats are chunks-stage only, cue 'present' --
-        // combine windows use the ordinary firstLetter-then-blind cue ladder
-        // via cueForStreak, so there's no presentation/blind pair here that
-        // rotation could split apart.)
-        const advancedState = advanceEncodeState(newItems, nextStats, base);
-        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+        // criterion on the FINAL (whole-answer) window rotates to another
+        // batch card, so repeated reps of the same target are spread out
+        // across the batch instead of running back to back. On an
+        // intermediate window (short-of-criterion reps there only happen in
+        // 'exhaustive' ladder mode) the card stays current instead -- chain
+        // contiguity, see stayOnCurrentItem. (Presentation beats are
+        // chunks-stage only, cue 'present' -- combine windows use the
+        // ordinary firstLetter-then-blind cue ladder via cueForStreak, so
+        // there's no presentation/blind pair here that rotation could split
+        // apart.)
+        const nextState =
+          it.combineSeqIdx === it.combineSeq.length - 1
+            ? advanceEncodeState(newItems, nextStats, base)
+            : stayOnCurrentItem(newItems, nextStats, base);
+        return { state: nextState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
@@ -2091,12 +2116,13 @@ export function applyAnswer(
                 dwellKey: 'remediate-next-spot',
               });
               newItems[itIdx] = it;
-              // C3: "one remediation span cleared" -- rotates to the next
-              // unfinished item in the batch, same as every other
-              // stage-unit completion below.
-              const advancedState = advanceEncodeState(newItems, nextStats, base);
+              // Chain contiguity: remediation is error correction inside the
+              // chain, like a wrong-answer retry -- every success return in
+              // this branch stays on the card (see stayOnCurrentItem). Once
+              // it hands back to the final window, those reps rotate.
+              const nextState = stayOnCurrentItem(newItems, nextStats, base);
               return {
-                state: advancedState,
+                state: nextState,
                 verdict: gr.verdict,
                 feedback,
                 advance: 'auto',
@@ -2111,8 +2137,8 @@ export function applyAnswer(
               dwellKey: 'remediate-resume-combine',
             });
             newItems[itIdx] = it;
-            const advancedState = advanceEncodeState(newItems, nextStats, base);
-            return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+            const nextState = stayOnCurrentItem(newItems, nextStats, base);
+            return { state: nextState, verdict: gr.verdict, feedback, advance: 'auto' };
           }
           const parentLevel = it.remediateStack[it.remediateStack.length - 1];
           parentLevel.streak = 0;
@@ -2123,9 +2149,10 @@ export function applyAnswer(
             dwellKey: 'remediate-expand-parent',
           });
           newItems[itIdx] = it;
-          // C3: same rotation as the "next queued spot" branch above.
-          const advancedState = advanceEncodeState(newItems, nextStats, base);
-          return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+          // Chain contiguity: stays on the card, same as the "next queued
+          // spot" branch above.
+          const nextState = stayOnCurrentItem(newItems, nextStats, base);
+          return { state: nextState, verdict: gr.verdict, feedback, advance: 'auto' };
         }
         const feedback = successFeedback(gr, {
           text: `${rTop.streak} of ${state.config.encodeReps} streaks`,
@@ -2133,10 +2160,10 @@ export function applyAnswer(
           dwellKey: 'remediate-streak-progress',
         });
         newItems[itIdx] = it;
-        // Phase 2 (within-session spacing): rotate to another batch card
-        // between reps here too -- see the combine branch's comment above.
-        const advancedState = advanceEncodeState(newItems, nextStats, base);
-        return { state: advancedState, verdict: gr.verdict, feedback, advance: 'auto' };
+        // Chain contiguity: reps within a remediation span stay on the card
+        // too (this was Phase 2's rotate-between-reps until 2026-09-26).
+        const nextState = stayOnCurrentItem(newItems, nextStats, base);
+        return { state: nextState, verdict: gr.verdict, feedback, advance: 'auto' };
       }
 
       nextStats.misses++;
