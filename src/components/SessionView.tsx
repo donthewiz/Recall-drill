@@ -46,6 +46,9 @@ interface SessionViewProps {
   initialBatchStartStats?: SessionStats;
   // Phase 3: see SavedSessionState.finalCheckStartAttempts.
   initialFinalCheckStartAttempts?: number;
+  // Resume position: the card on screen when the session was saved (see
+  // SavedSessionState.currentId). Undefined for a fresh start or an old save.
+  initialCurrentId?: number;
   onFinishSession: (state: SessionState) => void;
   // Whether a mid-session card edit may also be written back to the saved
   // deck named deckName. False for folder practice, which has no single
@@ -82,6 +85,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   initialBatchIndex = 0,
   initialBatchStartStats,
   initialFinalCheckStartAttempts,
+  initialCurrentId,
   onFinishSession,
   sourceDeckEditable,
   onDeckCardEdited,
@@ -92,7 +96,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       phase: initialPhase,
       queue: initialQueue,
       stats: initialStats,
-      currentId: SESSION_COMPLETE_ID,
+      currentId: initialCurrentId ?? SESSION_COMPLETE_ID,
       batchIndex: initialBatchIndex,
       batchStartStats: initialBatchStartStats ?? initialStats,
       finalCheckStartAttempts: initialFinalCheckStartAttempts,
@@ -146,6 +150,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
       batchSize: state.config.batchSize,
       batchStartStats: state.batchStartStats,
       finalCheckStartAttempts: state.finalCheckStartAttempts,
+      currentId: state.currentId,
       sourceDeckEditable,
       timestamp: Date.now(),
     });

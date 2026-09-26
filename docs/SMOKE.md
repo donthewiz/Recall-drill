@@ -213,3 +213,25 @@ Hypertension :: blood pressure that stays above the normal range for a long time
       weak-spot drill run back to back without switching cards. The first
       switch to another card comes after the first correct answer on the
       whole answer.
+
+**After resume position (2026-09-26):**
+
+Run on a clean `npm run dev`, not the installed app. Deck (batch 5, 3 reps):
+
+```
+Tachycardia :: fast heart rate
+-itis :: inflammation
+Hypertension :: blood pressure that stays above the normal range for a long time
+Bradycardia :: slow heart rate
+```
+
+- [ ] Start. On Hypertension, get a combination wrong on purpose so it says
+      "isolating…". Answer the isolated part correctly once.
+- [ ] Press **End session**, go back, and resume. The first card is
+      Hypertension, same isolated part (label **Precision Repair**) — not
+      Tachycardia.
+- [ ] Repeat with a browser refresh (F5) instead of End session, while
+      Hypertension is on its 2nd part. Resume → still Hypertension, same
+      part.
+- [ ] Resume an old save (made before this change): it opens as it did
+      before (first unfinished card), no errors.

@@ -132,6 +132,9 @@ export interface SavedSessionState {
   // false (see resolveSourceDeckEditable): with no recorded source, edits
   // stay session-only.
   sourceDeckEditable?: boolean;
+  // The card on screen when saved. Undefined on any save from before this
+  // field existed -> the batch's first unfinished card, as before.
+  currentId?: number;
   timestamp?: number;
 }
 

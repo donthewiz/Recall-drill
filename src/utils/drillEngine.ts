@@ -1714,7 +1714,25 @@ export function initSession(state: SessionState): SessionState {
   if (state.phase === 'cycle' || state.phase === 'final') {
     return advanceCycleState(state.items, state.queue, state.stats, state);
   }
-  return advanceEncodeState(state.items, state.stats, state);
+  return resumeCurrentEncodeItem(state) ?? advanceEncodeState(state.items, state.stats, state);
+}
+
+// Resume position: a save now records currentId, so a resumed encode phase
+// picks up on the card that was on screen instead of the batch's first
+// unfinished card. Without this, leaving mid-build (End session, reload,
+// closing the app) served the other cards first and then dropped back into
+// a bare chunk/window/remediation piece -- the fragmentation chain
+// contiguity removed. Returns null (caller falls back to advanceEncodeState)
+// for a fresh start (SESSION_COMPLETE_ID), an old save without currentId,
+// or a saved card that is no longer unfinished in the current batch.
+function resumeCurrentEncodeItem(state: SessionState): SessionState | null {
+  const batch = getCurrentBatch(state.items, state.batchIndex, state.config.batchSize ?? state.items.length);
+  const cur = batch.find(i => i.id === state.currentId);
+  if (!cur || cur.status === 'ready' || cur.status === 'mastered') return null;
+  const items = state.items.map(i =>
+    i.id === cur.id && i.status === 'new' ? { ...i, status: 'encoding' as const } : i
+  );
+  return { ...state, items, phase: 'encode' };
 }
 
 export function selectTrial(state: SessionState): Trial | null {

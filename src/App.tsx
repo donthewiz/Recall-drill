@@ -74,6 +74,9 @@ export default function App() {
   const [sessionFinalCheckStartAttempts, setSessionFinalCheckStartAttempts] = useState<number | undefined>(
     undefined
   );
+  // Resume position: seeds SessionView's currentId so a resumed encode phase
+  // stays on the card that was on screen (see SavedSessionState.currentId).
+  const [sessionCurrentId, setSessionCurrentId] = useState<number | undefined>(undefined);
   const [encodeReps, setEncodeReps] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('recall_drill_encode_reps');
@@ -206,6 +209,7 @@ export default function App() {
     setSessionBatchIndex(0);
     setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setSessionFinalCheckStartAttempts(undefined);
+    setSessionCurrentId(undefined);
     setEncodeReps(reps);
     try {
       localStorage.setItem('recall_drill_encode_reps', String(reps));
@@ -265,6 +269,7 @@ export default function App() {
     setSessionBatchIndex(batchIndex);
     setSessionBatchStartStats(state.batchStartStats ?? state.stats ?? { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setSessionFinalCheckStartAttempts(state.finalCheckStartAttempts);
+    setSessionCurrentId(state.currentId);
     setBatchSize(resolvedBatchSize);
     setEncodeReps(state.encodeReps || 3);
     if (state.chunkDifficulty !== undefined) {
@@ -299,6 +304,7 @@ export default function App() {
     setSessionBatchIndex(state.batchIndex);
     setSessionBatchStartStats(state.batchStartStats);
     setSessionFinalCheckStartAttempts(state.finalCheckStartAttempts);
+    setSessionCurrentId(state.currentId);
     const slug = slugify(deckName);
 
     // Phase 3: "complete" means the Final check has finished too, not just
@@ -325,6 +331,7 @@ export default function App() {
         batchSize: state.config.batchSize,
         batchStartStats: state.batchStartStats,
         finalCheckStartAttempts: state.finalCheckStartAttempts,
+        currentId: state.currentId,
         sourceDeckEditable,
         timestamp: Date.now(),
       });
@@ -434,6 +441,7 @@ export default function App() {
     setSessionBatchIndex(0);
     setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
     setSessionFinalCheckStartAttempts(undefined);
+    setSessionCurrentId(undefined);
     setView('session');
   };
 
@@ -497,6 +505,7 @@ export default function App() {
               initialBatchIndex={sessionBatchIndex}
               initialBatchStartStats={sessionBatchStartStats}
               initialFinalCheckStartAttempts={sessionFinalCheckStartAttempts}
+              initialCurrentId={sessionCurrentId}
               onFinishSession={handleFinishSession}
               sourceDeckEditable={sourceDeckEditable}
               onDeckCardEdited={handleDeckCardEdited}

@@ -602,6 +602,17 @@ rate on drilled cards.
    cycle, and the Final check. Remediation stays on the card on purpose:
    it's error correction inside the chain, like a wrong-answer retry.
 
+   **Resume position (2026-09-26).** Saves now record `currentId`, and an
+   `encode`-phase resume stays on that card if it's still unfinished (not
+   `ready`/`mastered`) in the current batch, so chain contiguity survives
+   End session, a reload, or closing the app — before this, a resume always
+   started at the batch's first unfinished card, served the others, then
+   dropped back into a bare chunk or remediation piece. Older saves (no
+   `currentId`), a saved card that's since finished, and the `cycle`,
+   `final` and `batch-done` phases resume exactly as before. Cycle and
+   Final check still resume via their queues; the in-flight cycle card is
+   picked up on the next pass rebuild, as before (out of scope).
+
 No new user-facing settings. Phases 1-2 don't move `computeMinimumTrials`'s
 floor at all (both are pure reorderings, not new trials); Phase 3 adds
 exactly **+1 trial per item** to it (one Final-check answer each), the only
