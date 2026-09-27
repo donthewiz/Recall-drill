@@ -74,6 +74,22 @@ first written.
       advances exactly as a genuine correct answer would, the session's
       `overrides` stat increments (visible in the footer once >0), and the
       trial moves on normally.
+- [ ] **Short card, 2nd rep:** answer wrong on a short card's 2nd try, then
+      **Count as correct**. The streak reads 2 of 3 (not 1), and the Misses
+      count doesn't go up.
+- [ ] **First combination on a long card:** answer the first 2-part
+      combination wrong, then **Count as correct**. It moves on to the whole
+      answer — no "isolating…" and no Precision Repair.
+- [ ] **Review:** on a card's second review try, answer wrong, then **Count
+      as correct**. It says **Mastered** and doesn't come back in that review.
+- [ ] **Final check:** answer one wrong, then **Count as correct**. That card
+      doesn't come back in the pass, and the end screen doesn't list it as
+      missed.
+- [ ] **After a reveal:** press `Esc` (Show target) and submit. There is no
+      **Count as correct** button.
+- [ ] **Edit + override:** answer wrong, open **Edit card**, fix a typo in
+      the back (wording only), save, then **Count as correct**. The fix
+      sticks and the card moves on.
 
 ## 5. Reveal-then-type
 

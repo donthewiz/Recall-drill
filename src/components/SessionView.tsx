@@ -130,6 +130,13 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // item's trial to stay on screen until Continue, so that state is held
   // here instead of being committed to sessionState right away.
   const pendingAdvanceStateRef = useRef<SessionState | null>(null);
+  // "Count as correct": the state from just BEFORE the answer that graded
+  // wrong. handleCheck commits a wrong verdict right away (its miss, streak
+  // reset, remediation trigger, cycle requeue), so the override must run on
+  // this snapshot instead -- as if the answer had graded correct -- or it
+  // lands on the post-miss state and never counts as a correct answer. Set
+  // only on a 'wrong' verdict; cleared on every other verdict and after use.
+  const preWrongStateRef = useRef<SessionState | null>(null);
 
   const persistState = (state: SessionState) => {
     if (!state.items.length || !deckName) return;
@@ -295,6 +302,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
     setIsProcessing(true);
 
     const result = applyAnswer(sessionState, typedValue, { revealed: userRevealedAnswer });
+    preWrongStateRef.current = result.verdict === 'wrong' ? sessionState : null;
     setFeedback(result.feedback);
     setLastVerdict(result.verdict);
     // C8b: acknowledging a presentation is neither a success nor a failure
@@ -328,18 +336,26 @@ export const SessionView: React.FC<SessionViewProps> = ({
     }
   };
 
-  // C2 manual override: retroactively counts a still-pending 'wrong' verdict
-  // as correct. Only reachable while that verdict's feedback is still showing
-  // (i.e. before handleCheck's dwell timer commits it) -- cancels that timer
-  // and re-grades the SAME trial against its own target, which always grades
-  // 'exact'; applyAnswer's override flag then swaps the stats accounting
-  // (no new attempt, +1 override) instead of +1 attempt/+1 miss.
+  // C2 manual override: counts a still-showing 'wrong' verdict as correct.
+  // Re-grades the answered trial against its own target (always 'exact') on
+  // the pre-answer snapshot in preWrongStateRef, so the result is exactly a
+  // correct answer: the streak advances, no remediation, a cycle card can
+  // master, a Final-check card is done. applyAnswer's override flag swaps
+  // the stats accounting (no attempt, +1 override); the discarded wrong
+  // result's miss never lands.
   const handleOverride = () => {
-    if (lastVerdict !== 'wrong' || !trial) return;
+    const pre = preWrongStateRef.current;
+    if (lastVerdict !== 'wrong' || !pre) return;
+    const preTrial = selectTrial(pre);
+    if (!preTrial) return;
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setIsProcessing(true);
+    preWrongStateRef.current = null;
 
-    const result = applyAnswer(sessionState, trial.target, { revealed: false, override: true });
+    // Runs on the pre-answer snapshot against the trial that was actually
+    // answered (not the post-miss trial, which may be a presentation beat or
+    // a remediation piece) -- the deferred-commit flow c2.spec.ts pins.
+    const result = applyAnswer(pre, preTrial.target, { revealed: false, override: true });
     setFeedback(result.feedback);
     setLastVerdict(result.verdict);
     triggerFlash(true);
@@ -373,6 +389,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
     if (isProcessing) return;
     setIsProcessing(true);
     setShowNextBtn(false);
+    preWrongStateRef.current = null;
     if (pendingAdvanceStateRef.current) {
       // The extra-pause case: applyAnswer's already-advanced state was held
       // back (see handleCheck/handleOverride) until this Continue.
@@ -481,6 +498,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
     }
     // Kept progress: feedback/Continue state is left exactly as it was.
     if (state !== sessionState) setSessionState(state);
+    // A pending "Count as correct" must credit the edited card, not undo the
+    // edit: apply the same edit to the pre-answer snapshot (a restart has
+    // already cleared lastVerdict, so there is no override left to offer).
+    if (preWrongStateRef.current) {
+      preWrongStateRef.current = restarted
+        ? null
+        : editCurrentItem(preWrongStateRef.current, { front: editFront, back: editBack, extra: editExtra }).state;
+    }
     if (textChanged && !writeBackEdit(before, after)) {
       setEditNotice('Saved for this session only.');
     }
