@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Moon, Sun, Monitor, HelpCircle, Layers, FolderHeart } from 'lucide-react';
+import { Moon, Sun, Monitor, HelpCircle, Layers, FolderHeart } from 'lucide-react';
 import { ViewState } from '../types';
 
 interface HeaderProps {

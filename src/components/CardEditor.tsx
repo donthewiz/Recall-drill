@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, GripVertical, Plus, Copy, ArrowUpDown } from 'lucide-react';
+import { Trash2, Plus, Copy, ArrowUpDown } from 'lucide-react';
 
 export interface CardRowItem {
   id: string;
