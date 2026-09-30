@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Session source persistence: a saved session records whether it maps onto
 // one saved deck (sourceDeckEditable), so a resumed folder-practice session
 // stays session-only instead of defaulting to editable. Round-trips through

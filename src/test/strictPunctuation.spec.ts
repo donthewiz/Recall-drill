@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Phase 2: per-deck "Punctuation must match" mode.
 // grade()-level unit tests for the strict comparator, plus applyAnswer/
 // storage integration tests proving the deck's mode is actually respected

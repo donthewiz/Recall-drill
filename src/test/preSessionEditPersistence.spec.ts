@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Regression-guard for a data-loss bug reported against the card-edit
 // stack ("Regression A"): a card edited and saved in the deck editor
 // *before* a session starts must still be there after the session ends,

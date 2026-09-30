@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Resume position (2026-09-26): a save records currentId, and a resumed
 // encode phase picks up on the card that was on screen instead of the
 // batch's first unfinished card. Without it, leaving a chunked card mid-build

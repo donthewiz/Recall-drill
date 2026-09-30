@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Anki-style optional "Extra" field: display-only, never graded/chunked,
 // must not affect trial counts. This file covers the data-model plumbing --
 // parseDeck, buildItems/normalizeItem, editCurrentItem, and the backup

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // A folder is not a deck: recordDeckUsed used to create a payload-less
 // deck-index entry for a folder-practice session (its "no existing entry"
 // branch runs whenever the slug isn't already in the index, regardless of
