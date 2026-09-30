@@ -19,7 +19,6 @@ import {
   moveMultipleDecksToFolder,
   getFolderPath,
   getFolderFullPath,
-  getFolderDescendantIds,
   getAllCardsInFolderTree,
 } from '../utils/drillEngine';
 import {
@@ -46,16 +45,12 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronRight,
-  ChevronLeft,
   Move,
   X,
-  Check,
   FolderTree,
   FolderInput,
   FolderDown,
   GripVertical,
-  CheckSquare,
-  Square,
   Download,
   Upload,
   ShieldCheck,
@@ -63,6 +58,10 @@ import {
   ShieldQuestion,
   AlertTriangle,
 } from 'lucide-react';
+import { FolderNameModal } from './decks/FolderNameModal';
+import { MoveModal, MovingItem } from './decks/MoveModal';
+import { AddExistingDecksModal } from './decks/AddExistingDecksModal';
+import { ImportBackupModal } from './decks/ImportBackupModal';
 
 interface DecksViewProps {
   onSelectDeck: (deckName: string, items: DeckItem[], startInEditMode?: boolean, folderId?: string | null) => void;
@@ -93,23 +92,16 @@ export const DecksView: React.FC<DecksViewProps> = ({
 
   // Add Existing Decks to Folder modal state
   const [showAddExistingModal, setShowAddExistingModal] = useState(false);
-  const [selectedDecksToAdd, setSelectedDecksToAdd] = useState<string[]>([]);
-  const [addExistingSearch, setAddExistingSearch] = useState('');
 
   // Deletion confirm states
   const [confirmDeleteSlug, setConfirmDeleteSlug] = useState<string | null>(null);
   const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<string | null>(null);
 
-  // Folder creation / rename modal states
-  const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename' | null>(null);
-  const [folderNameInput, setFolderNameInput] = useState('');
-  const [folderRenameTargetId, setFolderRenameTargetId] = useState<string | null>(null);
+  // Folder creation / rename modal (the modal owns its own input state)
+  const [folderModal, setFolderModal] = useState<{ mode: 'create' } | { mode: 'rename'; folder: DeckFolder } | null>(null);
 
-  // Move modal state (for moving a deck or a folder)
-  const [movingItem, setMovingItem] = useState<{ type: 'deck' | 'folder'; id: string; name: string } | null>(null);
-  const [selectedMoveDestination, setSelectedMoveDestination] = useState<string | null>(null);
-  const [showNewFolderInMove, setShowNewFolderInMove] = useState(false);
-  const [newFolderInMoveInput, setNewFolderInMoveInput] = useState('');
+  // Move modal target (a deck or a folder)
+  const [movingItem, setMovingItem] = useState<MovingItem | null>(null);
 
   // Backup / restore state
   const [lastExportAt, setLastExportAt] = useState<string | null>(null);
@@ -186,56 +178,41 @@ export const DecksView: React.FC<DecksViewProps> = ({
   };
 
   // Folder modal handlers
-  const openCreateFolderModal = () => {
-    setFolderNameInput('');
-    setFolderModalMode('create');
-  };
+  const openCreateFolderModal = () => setFolderModal({ mode: 'create' });
 
   const openRenameFolderModal = (e: React.MouseEvent, folder: DeckFolder) => {
     e.stopPropagation();
-    setFolderRenameTargetId(folder.id);
-    setFolderNameInput(folder.name);
-    setFolderModalMode('rename');
+    setFolderModal({ mode: 'rename', folder });
   };
 
-  const handleSaveFolderModal = () => {
-    const trimmed = folderNameInput.trim();
-    if (!trimmed) return;
-
-    if (folderModalMode === 'create') {
-      createFolder(trimmed, currentFolderId);
-    } else if (folderModalMode === 'rename' && folderRenameTargetId) {
-      renameFolder(folderRenameTargetId, trimmed);
+  const handleSaveFolderModal = (name: string) => {
+    if (!folderModal) return;
+    if (folderModal.mode === 'create') {
+      createFolder(name, currentFolderId);
+    } else {
+      renameFolder(folderModal.folder.id, name);
     }
-
     refreshData();
-    setFolderModalMode(null);
-    setFolderNameInput('');
-    setFolderRenameTargetId(null);
+    setFolderModal(null);
   };
 
   // Move handlers
   const openMoveModal = (e: React.MouseEvent, type: 'deck' | 'folder', id: string, name: string) => {
     e.stopPropagation();
     setMovingItem({ type, id, name });
-    setSelectedMoveDestination(currentFolderId);
-    setShowNewFolderInMove(false);
-    setNewFolderInMoveInput('');
   };
 
-  const handleConfirmMove = () => {
+  const handleConfirmMove = (destination: string | null) => {
     if (!movingItem) return;
-
+    const targetFolder = destination ? folders.find(f => f.id === destination) : null;
+    const targetName = targetFolder ? `"${targetFolder.name}"` : 'Root';
     if (movingItem.type === 'deck') {
-      moveDeckToFolder(movingItem.id, selectedMoveDestination);
-      const targetFolder = selectedMoveDestination ? folders.find(f => f.id === selectedMoveDestination) : null;
-      showToast(`Moved "${movingItem.name}" to ${targetFolder ? `"${targetFolder.name}"` : 'Root'}`);
+      moveDeckToFolder(movingItem.id, destination);
+      showToast(`Moved "${movingItem.name}" to ${targetName}`);
     } else {
-      moveFolder(movingItem.id, selectedMoveDestination);
-      const targetFolder = selectedMoveDestination ? folders.find(f => f.id === selectedMoveDestination) : null;
-      showToast(`Moved folder "${movingItem.name}" to ${targetFolder ? `"${targetFolder.name}"` : 'Root'}`);
+      moveFolder(movingItem.id, destination);
+      showToast(`Moved folder "${movingItem.name}" to ${targetName}`);
     }
-
     refreshData();
     setMovingItem(null);
   };
@@ -311,60 +288,35 @@ export const DecksView: React.FC<DecksViewProps> = ({
   };
 
   // Add Existing Decks handlers
-  const openAddExistingModal = () => {
-    setSelectedDecksToAdd([]);
-    setAddExistingSearch('');
-    setShowAddExistingModal(true);
-  };
+  const openAddExistingModal = () => setShowAddExistingModal(true);
 
-  const handleToggleSelectDeckToAdd = (slug: string) => {
-    setSelectedDecksToAdd(prev =>
-      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
-    );
-  };
-
-  const handleSelectAllDecksToAdd = (candidateSlugs: string[]) => {
-    if (selectedDecksToAdd.length === candidateSlugs.length) {
-      setSelectedDecksToAdd([]);
-    } else {
-      setSelectedDecksToAdd(candidateSlugs);
-    }
-  };
-
-  const handleAddSingleExistingDeck = (slug: string) => {
-    if (!currentFolderId) return;
+  const handleAddSingleExistingDeck = (slug: string): boolean => {
+    if (!currentFolderId) return false;
     const deck = savedDecks.find(d => d.slug === slug);
     const ok = moveDeckToFolder(slug, currentFolderId);
     if (ok) {
       refreshData();
-      const folderName = currentFolder?.name || 'folder';
-      showToast(`Added "${deck?.name || 'Deck'}" to "${folderName}"`);
-      setSelectedDecksToAdd(prev => prev.filter(s => s !== slug));
+      showToast(`Added "${deck?.name || 'Deck'}" to "${currentFolder?.name || 'folder'}"`);
     }
+    return ok;
   };
 
-  const handleConfirmAddSelectedDecks = () => {
-    if (!currentFolderId || selectedDecksToAdd.length === 0) return;
-    const count = selectedDecksToAdd.length;
-    const ok = moveMultipleDecksToFolder(selectedDecksToAdd, currentFolderId);
+  const handleAddSelectedDecks = (slugs: string[]): boolean => {
+    if (!currentFolderId || slugs.length === 0) return false;
+    const ok = moveMultipleDecksToFolder(slugs, currentFolderId);
     if (ok) {
       refreshData();
-      const folderName = currentFolder?.name || 'folder';
-      showToast(`Added ${count} deck${count > 1 ? 's' : ''} to "${folderName}"`);
+      showToast(`Added ${slugs.length} deck${slugs.length > 1 ? 's' : ''} to "${currentFolder?.name || 'folder'}"`);
       setShowAddExistingModal(false);
-      setSelectedDecksToAdd([]);
     }
+    return ok;
   };
 
-  const handleCreateFolderInMoveModal = () => {
-    const trimmed = newFolderInMoveInput.trim();
-    if (!trimmed) return;
-    const created = createFolder(trimmed, selectedMoveDestination);
+  const handleCreateFolderInMoveModal = (name: string, parentId: string | null) => {
+    const created = createFolder(name, parentId);
     refreshData();
-    setSelectedMoveDestination(created.id);
-    setNewFolderInMoveInput('');
-    setShowNewFolderInMove(false);
     showToast(`Created folder "${created.name}"`);
+    return created;
   };
 
   // Export / Import handlers
@@ -403,9 +355,8 @@ export const DecksView: React.FC<DecksViewProps> = ({
     reader.readAsText(file);
   };
 
-  const handleConfirmImport = (mode: 'merge' | 'replace') => {
-    if (!pendingImport) return;
-    const summary = importBackupPayload(pendingImport, mode);
+  const handleConfirmImport = (payload: BackupPayload, mode: 'merge' | 'replace') => {
+    const summary = importBackupPayload(payload, mode);
     refreshData();
     setPendingImport(null);
     const parts = [`Imported ${summary.decksImported} deck${summary.decksImported === 1 ? '' : 's'}`];
@@ -439,32 +390,6 @@ export const DecksView: React.FC<DecksViewProps> = ({
   const filteredFolders = isSearching
     ? folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : [];
-
-  // Helper to build indented hierarchy for folder picker dropdown/modal
-  const buildFolderTreeOptions = (
-    parentId: string | null = null,
-    depth: number = 0,
-    excludedIds: string[] = []
-  ): { id: string | null; name: string; depth: number }[] => {
-    const list: { id: string | null; name: string; depth: number }[] = [];
-    if (depth === 0) {
-      list.push({ id: null, name: 'Root (All Decks)', depth: 0 });
-    }
-
-    const children = folders.filter(
-      f => f.parentId === parentId && !excludedIds.includes(f.id)
-    );
-    for (const child of children) {
-      list.push({ id: child.id, name: child.name, depth: depth + 1 });
-      list.push(...buildFolderTreeOptions(child.id, depth + 1, excludedIds));
-    }
-    return list;
-  };
-
-  const moveExcludedIds =
-    movingItem?.type === 'folder'
-      ? [movingItem.id, ...getFolderDescendantIds(movingItem.id, folders)]
-      : [];
 
   return (
     <div className="space-y-6">
@@ -1312,421 +1237,50 @@ export const DecksView: React.FC<DecksViewProps> = ({
         </div>
       )}
 
-      {/* CREATE / RENAME FOLDER MODAL */}
-      {folderModalMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Folder size={18} className="text-[var(--accent)]" />
-                <h3 className="text-base font-bold text-[var(--text-primary)]">
-                  {folderModalMode === 'create'
-                    ? currentFolder
-                      ? `Create Sub-folder in "${currentFolder.name}"`
-                      : 'Create New Folder'
-                    : 'Rename Folder'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFolderModalMode(null)}
-                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
-                Folder name
-              </label>
-              <input
-                type="text"
-                autoFocus
-                value={folderNameInput}
-                onChange={e => setFolderNameInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleSaveFolderModal();
-                  if (e.key === 'Escape') setFolderModalMode(null);
-                }}
-                placeholder="e.g. Cardiology, Irregular Verbs, Calculus..."
-                className="w-full bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl px-3.5 py-2.5 text-sm font-medium focus:border-[var(--accent)] outline-none transition-all placeholder:text-[var(--text-muted)]"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setFolderModalMode(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!folderNameInput.trim()}
-                onClick={handleSaveFolderModal}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-              >
-                {folderModalMode === 'create' ? 'Create Folder' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {folderModal && (
+        <FolderNameModal
+          title={
+            folderModal.mode === 'create'
+              ? currentFolder
+                ? `Create Sub-folder in "${currentFolder.name}"`
+                : 'Create New Folder'
+              : 'Rename Folder'
+          }
+          initialName={folderModal.mode === 'rename' ? folderModal.folder.name : ''}
+          submitLabel={folderModal.mode === 'create' ? 'Create Folder' : 'Save Changes'}
+          onSave={handleSaveFolderModal}
+          onClose={() => setFolderModal(null)}
+        />
       )}
 
-      {/* MOVE DECK / FOLDER MODAL */}
       {movingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Move size={18} className="text-[var(--accent)]" />
-                <h3 className="text-base font-bold text-[var(--text-primary)] truncate">
-                  {movingItem.type === 'deck' ? `Move or Add "${movingItem.name}" to Folder` : `Move Folder "${movingItem.name}"`}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMovingItem(null)}
-                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <p className="text-xs text-[var(--text-secondary)]">
-              Choose the target destination folder. Sub-decks and sub-folders can be nested to any depth:
-            </p>
-
-            <div className="max-h-60 overflow-y-auto space-y-1 pr-1 border border-[var(--border)] rounded-xl p-2 bg-[var(--surface-1)]">
-              {buildFolderTreeOptions(null, 0, moveExcludedIds).map(opt => {
-                const isSelected = selectedMoveDestination === opt.id;
-                return (
-                  <button
-                    key={opt.id || 'root'}
-                    type="button"
-                    onClick={() => setSelectedMoveDestination(opt.id)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-[var(--accent)] text-white font-bold'
-                        : 'hover:bg-[var(--surface-2)] text-[var(--text-primary)]'
-                    }`}
-                    style={{ paddingLeft: `${Math.max(12, opt.depth * 16 + 12)}px` }}
-                  >
-                    <span className="flex items-center gap-1.5 truncate">
-                      {opt.id === null ? (
-                        <FolderTree size={14} className={isSelected ? 'text-white' : 'text-[var(--accent)]'} />
-                      ) : (
-                        <Folder size={14} className={isSelected ? 'text-white' : 'text-[var(--accent)]'} />
-                      )}
-                      <span className="truncate">{opt.name}</span>
-                    </span>
-                    {isSelected && <Check size={14} className="shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Inline New Folder Creation */}
-            <div className="pt-1 border-t border-[var(--border)]/60">
-              {showNewFolderInMove ? (
-                <div className="space-y-2 bg-[var(--surface-1)] p-3 rounded-xl border border-[var(--border)]">
-                  <span className="text-[11px] font-semibold text-[var(--text-secondary)] block">
-                    Create new folder inside selected destination:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      autoFocus
-                      value={newFolderInMoveInput}
-                      onChange={e => setNewFolderInMoveInput(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleCreateFolderInMoveModal();
-                        if (e.key === 'Escape') setShowNewFolderInMove(false);
-                      }}
-                      placeholder="Folder name..."
-                      className="flex-1 bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs font-medium focus:border-[var(--accent)] outline-none"
-                    />
-                    <button
-                      type="button"
-                      disabled={!newFolderInMoveInput.trim()}
-                      onClick={handleCreateFolderInMoveModal}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--accent)] text-white disabled:opacity-50 cursor-pointer"
-                    >
-                      Create
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowNewFolderInMove(false)}
-                      className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] px-1.5 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowNewFolderInMove(true)}
-                  className="text-xs text-[var(--accent)] hover:underline font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <FolderPlus size={14} />
-                  <span>+ Create new folder here</span>
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setMovingItem(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmMove}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-all shadow-xs cursor-pointer"
-              >
-                Move Here
-              </button>
-            </div>
-          </div>
-        </div>
+        <MoveModal
+          item={movingItem}
+          folders={folders}
+          initialDestination={currentFolderId}
+          onCreateFolder={handleCreateFolderInMoveModal}
+          onConfirm={handleConfirmMove}
+          onClose={() => setMovingItem(null)}
+        />
       )}
 
-      {/* ADD EXISTING DECKS TO FOLDER MODAL */}
       {showAddExistingModal && currentFolder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FolderInput size={20} className="text-[var(--accent)]" />
-                <div>
-                  <h3 className="text-base font-bold text-[var(--text-primary)]">
-                    Add Existing Decks to &ldquo;{currentFolder.name}&rdquo;
-                  </h3>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Select existing decks from your library to add or move into this folder.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAddExistingModal(false)}
-                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Search filter for eligible decks */}
-            {(() => {
-              const eligibleDecks = savedDecks.filter(
-                d => (d.folderId || null) !== currentFolderId
-              );
-              const filteredEligible = eligibleDecks.filter(d =>
-                d.name.toLowerCase().includes(addExistingSearch.toLowerCase())
-              );
-              const allFilteredSelected =
-                filteredEligible.length > 0 &&
-                filteredEligible.every(d => selectedDecksToAdd.includes(d.slug));
-
-              return (
-                <>
-                  {eligibleDecks.length > 0 ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <Search
-                            size={14}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-                          />
-                          <input
-                            type="text"
-                            value={addExistingSearch}
-                            onChange={e => setAddExistingSearch(e.target.value)}
-                            placeholder="Filter existing decks..."
-                            className="w-full bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] rounded-xl pl-8 pr-3 py-1.5 text-xs font-medium focus:border-[var(--accent)] outline-none"
-                          />
-                        </div>
-
-                        {filteredEligible.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleSelectAllDecksToAdd(filteredEligible.map(d => d.slug))
-                            }
-                            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-1)] text-[var(--text-primary)] border border-[var(--border)] shrink-0 cursor-pointer"
-                          >
-                            {allFilteredSelected ? 'Deselect All' : `Select All (${filteredEligible.length})`}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Decks Selection List */}
-                      <div className="max-h-72 overflow-y-auto space-y-2 pr-1 border border-[var(--border)] rounded-xl p-2 bg-[var(--surface-1)]">
-                        {filteredEligible.length > 0 ? (
-                          filteredEligible.map(deck => {
-                            const isSelected = selectedDecksToAdd.includes(deck.slug);
-                            const currentPath = getFolderFullPath(deck.folderId || null, folders);
-
-                            return (
-                              <div
-                                key={deck.slug}
-                                onClick={() => handleToggleSelectDeckToAdd(deck.slug)}
-                                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                                  isSelected
-                                    ? 'bg-[var(--accent-bg)] border-[var(--accent)] ring-1 ring-[var(--accent)]'
-                                    : 'bg-[var(--surface-card)] hover:bg-[var(--surface-2)] border-[var(--border)]'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="text-[var(--accent)] shrink-0">
-                                    {isSelected ? (
-                                      <CheckSquare size={18} />
-                                    ) : (
-                                      <Square size={18} className="text-[var(--text-muted)]" />
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <h4 className="text-xs font-bold text-[var(--text-primary)] truncate">
-                                      {deck.name}
-                                    </h4>
-                                    <p className="text-[11px] text-[var(--text-muted)] flex items-center gap-1.5 mt-0.5">
-                                      <span>{deck.count} {deck.count === 1 ? 'card' : 'cards'}</span>
-                                      <span>•</span>
-                                      <span className="truncate">Currently in: {currentPath}</span>
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    handleAddSingleExistingDeck(deck.slug);
-                                  }}
-                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[var(--surface-2)] hover:bg-[var(--accent)] text-[var(--text-primary)] hover:text-white border border-[var(--border)] hover:border-transparent transition-all shrink-0 cursor-pointer"
-                                  title="Add this deck immediately"
-                                >
-                                  + Add
-                                </button>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="text-center py-6 text-xs text-[var(--text-muted)]">
-                            No decks match &ldquo;{addExistingSearch}&rdquo;.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 px-4 bg-[var(--surface-1)] rounded-xl border border-[var(--border)]">
-                      <p className="text-xs font-semibold text-[var(--text-primary)]">
-                        All library decks are already in this folder!
-                      </p>
-                      <p className="text-[11px] text-[var(--text-secondary)] mt-1">
-                        To add more decks, create a new deck or move decks from other folders.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]/60">
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {selectedDecksToAdd.length} of {eligibleDecks.length} selected
-                    </span>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddExistingModal(false)}
-                        className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={selectedDecksToAdd.length === 0}
-                        onClick={handleConfirmAddSelectedDecks}
-                        className="px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-                      >
-                        Add {selectedDecksToAdd.length > 0 ? `Selected (${selectedDecksToAdd.length})` : 'Selected'}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
+        <AddExistingDecksModal
+          folder={currentFolder}
+          decks={savedDecks}
+          folders={folders}
+          onAddOne={handleAddSingleExistingDeck}
+          onAddMany={handleAddSelectedDecks}
+          onClose={() => setShowAddExistingModal(false)}
+        />
       )}
 
-      {/* IMPORT BACKUP CONFIRMATION MODAL */}
       {pendingImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Upload size={18} className="text-[var(--accent)]" />
-                <h3 className="text-base font-bold text-[var(--text-primary)]">Import Backup</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPendingImport(null)}
-                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <p className="text-xs text-[var(--text-secondary)]">
-              This file contains <strong>{pendingImport.decks.length}</strong>{' '}
-              deck{pendingImport.decks.length === 1 ? '' : 's'} and{' '}
-              <strong>{pendingImport.folders.length}</strong>{' '}
-              folder{pendingImport.folders.length === 1 ? '' : 's'}, exported{' '}
-              {new Date(pendingImport.exportedAt).toLocaleString()}. Choose how to bring it in:
-            </p>
-
-            <div className="space-y-2.5">
-              <button
-                type="button"
-                onClick={() => handleConfirmImport('merge')}
-                className="w-full text-left px-4 py-3 rounded-xl border border-[var(--border)] hover:border-[var(--accent)] bg-[var(--surface-1)] transition-all cursor-pointer"
-              >
-                <span className="block text-sm font-bold text-[var(--text-primary)]">Merge</span>
-                <span className="block text-[11px] text-[var(--text-secondary)] mt-0.5">
-                  Add decks and folders from this file that you don&apos;t already have (matched by slug).
-                  Nothing existing is changed or removed.
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleConfirmImport('replace')}
-                className="w-full text-left px-4 py-3 rounded-xl border border-red-500/30 hover:border-red-500 bg-red-500/5 transition-all cursor-pointer"
-              >
-                <span className="block text-sm font-bold text-red-600 dark:text-red-400">Replace everything</span>
-                <span className="block text-[11px] text-[var(--text-secondary)] mt-0.5">
-                  Permanently deletes all of your current decks and folders, then restores exactly what&apos;s in
-                  this file.
-                </span>
-              </button>
-            </div>
-
-            <div className="flex items-center justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => setPendingImport(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <ImportBackupModal
+          payload={pendingImport}
+          onConfirm={mode => handleConfirmImport(pendingImport, mode)}
+          onClose={() => setPendingImport(null)}
+        />
       )}
     </div>
   );
