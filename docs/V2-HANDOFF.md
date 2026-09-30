@@ -22,6 +22,8 @@ Consequences that bind every decision below:
 
 ### Files
 
+> **2026-09-30:** `drillEngine.ts` is now a barrel re-exporting `src/utils/` modules split by concern (`grading`, `items`, `storage`, `session`, `estimate`, `progress`, `history`). References to `drillEngine.ts` below still resolve through it. The table describes the codebase as of this doc (2026-09-19).
+
 | Path | Role |
 |---|---|
 | `src/types.ts` | `DrillItem`, `SavedSessionState`, `EncodeStage`, etc. |

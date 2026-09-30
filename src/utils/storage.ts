@@ -412,6 +412,8 @@ export function getRecentlyUsedDecks(): SavedDeckEntry[] {
 export function deleteDeckFromStorage(slug: string): boolean {
   lsDelete(`deck:${slug}`);
   lsDelete(`session:${slug}`);
+  // history.ts's key; inlined since history.ts imports this module.
+  lsDelete(`session-history:${slug}`);
   const index = loadDeckIndex();
   const next = index.filter(e => e.slug !== slug);
   lsSet('deck-index', next);

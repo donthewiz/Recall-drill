@@ -984,6 +984,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
             Attempts: {sessionState.stats.attempts} • Misses: {sessionState.stats.misses}
             {sessionState.stats.nearMisses > 0 && <> • Near: {sessionState.stats.nearMisses}</>}
             {sessionState.stats.overrides > 0 && <> • Overrides: {sessionState.stats.overrides}</>}
+            {(sessionState.stats.reveals ?? 0) > 0 && <> • Reveals: {sessionState.stats.reveals}</>}
           </span>
         </div>
 

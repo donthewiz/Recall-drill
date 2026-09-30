@@ -43,8 +43,10 @@ function playUntil(stop: (s: SessionState) => boolean): SessionState {
 }
 
 const item = (s: SessionState, id: number) => s.items.find(i => i.id === id)!;
+// Ladder position only: per-card telemetry (attempts/misses/...) is left out,
+// since the old post-miss route below also recorded the miss it overrode.
 const progress = (i: DrillItem) => {
-  const { id: _id, ...rest } = i;
+  const { id: _id, attempts: _a, misses: _m, reveals: _r, nearMisses: _n, hardSpans: _h, ...rest } = i;
   return rest;
 };
 

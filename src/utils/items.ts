@@ -376,6 +376,12 @@ export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): D
     // threaded through unchanged, same as `extra`.
     finalDone: it.finalDone,
     finalMisses: it.finalMisses,
+    // Per-card telemetry: same, undefined on older saves.
+    attempts: it.attempts,
+    misses: it.misses,
+    reveals: it.reveals,
+    nearMisses: it.nearMisses,
+    hardSpans: it.hardSpans,
   };
 
   if (item.status === 'encoding' && item.stage === 'remediate' && !item.remediateStack.length) {

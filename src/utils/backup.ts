@@ -1,12 +1,13 @@
 // Storage-durability helpers: requesting persistent storage, and exporting /
 // importing a full backup of the deck library.
 //
-// localStorage keys this file reads and writes (see also drillEngine.ts,
+// localStorage keys this file reads and writes (see also storage.ts,
 // which owns the per-key read/write helpers `lsGet`/`lsSet`/`lsDelete`):
 //   - 'deck-index'    -- SavedDeckEntry[], the deck library's index
 //   - 'deck-folders'  -- DeckFolder[], the folder tree
 //   - `deck:${slug}`  -- DeckItem[], one deck's cards
 //   - `session:${slug}` -- SavedSessionState, one deck's in-progress session
+//   - `session-history:${slug}` -- SessionHistoryEntry[], one deck's completed sessions
 //   - 'recall_drill_last_export' -- ISO timestamp of the last successful export
 
 import {
@@ -25,6 +26,7 @@ import {
   lsSet,
   lsDelete,
 } from './drillEngine';
+import { SessionHistoryEntry, clearSessionHistory, getSessionHistory, setSessionHistory } from './history';
 
 export const BACKUP_SCHEMA_VERSION = 1;
 
@@ -41,6 +43,8 @@ export interface DeckBackupEntry {
   strictPunctuation?: boolean;
   items: DeckItem[];
   session?: SavedSessionState | null;
+  // Absent from backups made before session history existed.
+  history?: SessionHistoryEntry[];
 }
 
 export interface BackupPayload {
@@ -66,6 +70,7 @@ export function buildBackupPayload(): BackupPayload {
       strictPunctuation: d.strictPunctuation,
       items: getDeckFromStorage(d.slug) || [],
       session: getSessionState(d.slug),
+      history: getSessionHistory(d.slug),
     })),
   };
 }
@@ -174,6 +179,7 @@ export function importBackupPayload(
     existing.forEach(d => {
       lsDelete(`deck:${d.slug}`);
       lsDelete(`session:${d.slug}`);
+      clearSessionHistory(d.slug);
     });
     lsSet('deck-index', []);
     saveFolderIndex([]);
@@ -207,6 +213,9 @@ export function importBackupPayload(
     lsSet(`deck:${deck.slug}`, deck.items);
     if (deck.session) {
       lsSet(`session:${deck.slug}`, deck.session);
+    }
+    if (Array.isArray(deck.history)) {
+      setSessionHistory(deck.slug, deck.history);
     }
 
     const entry: SavedDeckEntry = {

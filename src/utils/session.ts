@@ -246,6 +246,19 @@ export function advanceToNextBatch(state: SessionState): SessionState {
   return advanceEncodeState(state.items, state.stats, resetState);
 }
 
+export function emptyStats(): SessionStats {
+  return { attempts: 0, misses: 0, nearMisses: 0, overrides: 0, reveals: 0 };
+}
+
+// Share of graded attempts answered correctly without help: a revealed
+// trial counts as an attempt but never as a miss (B2), so it's subtracted
+// here explicitly -- otherwise peeking at the answer raised accuracy.
+export function computeAccuracyPercent(stats: Pick<SessionStats, 'attempts' | 'misses' | 'reveals'>): number {
+  if (stats.attempts <= 0) return 100;
+  const correct = stats.attempts - stats.misses - (stats.reveals ?? 0);
+  return Math.max(0, Math.round((correct / stats.attempts) * 100));
+}
+
 // C3: batch-level summary for the interstitial (items mastered, trials
 // spent, accuracy) -- diffs `stats` against the snapshot captured when this
 // batch began (batchStartStats) rather than tracking a second running
@@ -262,9 +275,11 @@ export function computeBatchSummary(state: SessionState): {
   const batches = partitionIntoBatches(state.items, effectiveBatchSize);
   const batch = batches[state.batchIndex] ?? [];
   const trialsSpent = state.stats.attempts - state.batchStartStats.attempts;
-  const missesInBatch = state.stats.misses - state.batchStartStats.misses;
-  const accuracyPercent =
-    trialsSpent > 0 ? Math.round(((trialsSpent - missesInBatch) / trialsSpent) * 100) : 100;
+  const accuracyPercent = computeAccuracyPercent({
+    attempts: trialsSpent,
+    misses: state.stats.misses - state.batchStartStats.misses,
+    reveals: (state.stats.reveals ?? 0) - (state.batchStartStats.reveals ?? 0),
+  });
 
   return {
     batchNumber: state.batchIndex + 1,
@@ -430,6 +445,58 @@ export interface ApplyAnswerResult {
 }
 
 export function applyAnswer(
+  state: SessionState,
+  typed: string,
+  opts: { revealed: boolean; override?: boolean }
+): ApplyAnswerResult {
+  const result = gradeAndAdvance(state, typed, opts);
+  return {
+    ...result,
+    state: recordTrialTelemetry(state, result.state, result.verdict),
+  };
+}
+
+// Folds one answered trial into stats.reveals and the answered card's own
+// counters. Runs after the grading/transition logic so none of its many
+// branches has to do this bookkeeping itself. Looks the card up by the
+// trial's id (before.currentId), since `after` may already have rotated to
+// another card. A "Count as correct" override counts as the card's attempt,
+// so the card ends up exactly as a typed correct answer would leave it.
+function recordTrialTelemetry(
+  before: SessionState,
+  after: SessionState,
+  verdict: Verdict
+): SessionState {
+  if (verdict === 'presented') return after;
+  const prev = before.items.find(i => i.id === before.currentId);
+  if (!prev) return after;
+  const priorSpans = new Set([...prev.remediateStack.map(r => r.text), ...prev.remediateQueue]);
+  const items = after.items.map(i => {
+    if (i.id !== prev.id) return i;
+    let hardSpans = [...(i.hardSpans ?? [])];
+    for (const text of [...i.remediateStack.map(r => r.text), ...i.remediateQueue]) {
+      if (priorSpans.has(text)) continue;
+      // Keep the narrowest spots: remediation halves a failing chunk, so a
+      // new span inside a recorded one replaces it, and one that contains
+      // an already-recorded narrower span adds nothing.
+      if (hardSpans.some(h => text.includes(h))) continue;
+      hardSpans = [...hardSpans.filter(h => !h.includes(text)), text];
+    }
+    return {
+      ...i,
+      attempts: (i.attempts ?? 0) + 1,
+      misses: (i.misses ?? 0) + (verdict === 'wrong' ? 1 : 0),
+      reveals: (i.reveals ?? 0) + (verdict === 'revealed' ? 1 : 0),
+      nearMisses: (i.nearMisses ?? 0) + (verdict === 'near' ? 1 : 0),
+      hardSpans,
+    };
+  });
+  const stats =
+    verdict === 'revealed' ? { ...after.stats, reveals: (after.stats.reveals ?? 0) + 1 } : after.stats;
+  return { ...after, items, stats };
+}
+
+function gradeAndAdvance(
   state: SessionState,
   typed: string,
   // override (C2): retroactively counts a still-pending wrong verdict as

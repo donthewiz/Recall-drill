@@ -44,6 +44,18 @@ export interface DrillItem {
   // Count of wrong/revealed answers during the Final check -- distinct from
   // `stats.misses` (session-wide) and never affects `status`/`cycleStreak`.
   finalMisses?: number;
+  // Per-card telemetry, recorded by applyAnswer across every phase. All
+  // undefined on saves from before it existed (read as 0 / []). attempts
+  // counts every answer on this card except chunk presentations; unlike
+  // stats.attempts it includes a "Count as correct" override, which leaves
+  // the card exactly as a typed correct answer would.
+  attempts?: number;
+  misses?: number;
+  reveals?: number;
+  nearMisses?: number;
+  // Distinct text spans that were sent to remediation (the parts of the
+  // answer that broke when combining), in the order they first broke.
+  hardSpans?: string[];
 }
 
 export interface SessionStats {
@@ -54,6 +66,10 @@ export interface SessionStats {
   // from misses -- neither counts toward `misses`.
   nearMisses: number;
   overrides: number;
+  // Trials answered after pressing "Show answer". They count as attempts
+  // but not as misses, so accuracy subtracts them separately (see
+  // computeAccuracyPercent). Undefined on saves from before it existed.
+  reveals?: number;
   startTime?: number;
 }
 

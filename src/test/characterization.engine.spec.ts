@@ -274,7 +274,7 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const res = driver.answer(FULL_STAGE_BACK);
     expect(res).toEqual({ verdict: 'revealed', advance: 'auto' });
     expect(driver.snapshotItem(itemId)).toMatchObject({ status: 'encoding', encodeStreak: 0 });
-    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0 });
+    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0, reveals: 1 });
 
     // The trial stays put (same item, same stage) -- not blind again until
     // another genuine correct answer.
@@ -296,7 +296,7 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const res = driver.answer('nonsense');
     expect(res).toEqual({ verdict: 'revealed', advance: 'auto' });
     expect(driver.snapshotItem(itemId)).toMatchObject({ encodeStreak: 0 });
-    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0 });
+    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0, reveals: 1 });
   });
 
   it('combine stage: reveal resets combineStreak, not combineMissCount', () => {
@@ -332,6 +332,6 @@ describe('B2 fix: revealing resets the streak and does not count as a miss', () 
     const res = driver.answer(FULL_STAGE_BACK);
     expect(res).toEqual({ verdict: 'revealed', advance: 'manual' });
     expect(driver.snapshotItem(itemId)).toMatchObject({ cycleStreak: 0 });
-    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0 });
+    expect(driver.stats()).toEqual({ attempts: 2, misses: 0, nearMisses: 0, overrides: 0, reveals: 1 });
   });
 });

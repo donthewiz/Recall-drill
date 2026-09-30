@@ -20,7 +20,11 @@ import {
   resolveSourceDeckEditable,
   loadDeckIndex,
   SESSION_COMPLETE_ID,
+  emptyStats,
+  appendSessionHistory,
+  buildHistoryEntry,
 } from './utils/drillEngine';
+import { readSetting, writeSetting, ThemeSetting } from './utils/settings';
 import { requestPersistentStorage, PersistenceStatus } from './utils/backup';
 import { Header } from './components/Header';
 import { SetupView } from './components/SetupView';
@@ -31,7 +35,7 @@ import { HelpModal } from './components/HelpModal';
 
 export default function App() {
   const [view, setView] = useState<ViewState>('setup');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+  const [theme, setTheme] = useState<ThemeSetting>(() => readSetting('theme'));
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [storagePersistStatus, setStoragePersistStatus] = useState<PersistenceStatus>('checking');
 
@@ -43,31 +47,13 @@ export default function App() {
   const [sessionItems, setSessionItems] = useState<DrillItem[]>([]);
   const [sessionPhase, setSessionPhase] = useState<'encode' | 'cycle' | 'batch-done' | 'final'>('encode');
   const [sessionQueue, setSessionQueue] = useState<number[]>([]);
-  const [sessionStats, setSessionStats] = useState<SessionStats>({
-    attempts: 0,
-    misses: 0,
-    nearMisses: 0,
-    overrides: 0,
-  });
+  const [sessionStats, setSessionStats] = useState<SessionStats>(emptyStats);
   // C3: batchSize 0 means "whole deck as one batch" (see partitionIntoBatches);
   // sessionBatchIndex/sessionBatchStartStats seed SessionView's initial
   // SessionState the same way sessionPhase/sessionQueue/sessionStats do.
-  const [batchSize, setBatchSize] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('recall_drill_batch_size');
-      if (saved) return parseInt(saved, 10);
-    } catch {
-      // ignore
-    }
-    return 5;
-  });
+  const [batchSize, setBatchSize] = useState<number>(() => readSetting('batchSize'));
   const [sessionBatchIndex, setSessionBatchIndex] = useState<number>(0);
-  const [sessionBatchStartStats, setSessionBatchStartStats] = useState<SessionStats>({
-    attempts: 0,
-    misses: 0,
-    nearMisses: 0,
-    overrides: 0,
-  });
+  const [sessionBatchStartStats, setSessionBatchStartStats] = useState<SessionStats>(emptyStats);
   // Phase 3: seeds SessionView's initial SessionState the same way, for
   // computeCumulativeColdStartMultiplier's numerator during the Final check
   // (see its doc comment in drillEngine.ts).
@@ -77,51 +63,11 @@ export default function App() {
   // Resume position: seeds SessionView's currentId so a resumed encode phase
   // stays on the card that was on screen (see SavedSessionState.currentId).
   const [sessionCurrentId, setSessionCurrentId] = useState<number | undefined>(undefined);
-  const [encodeReps, setEncodeReps] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('recall_drill_encode_reps');
-      if (saved) return parseInt(saved, 10);
-    } catch {
-      // ignore
-    }
-    return 3;
-  });
-  const [chunkDifficulty, setChunkDifficulty] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('recall_drill_chunk_difficulty');
-      if (saved) return parseInt(saved, 10);
-    } catch {
-      // ignore
-    }
-    return 35;
-  });
-  const [stemTolerance, setStemTolerance] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('recall_drill_stem_tolerance');
-      if (saved !== null) return saved === 'true';
-    } catch {
-      // ignore
-    }
-    return true;
-  });
-  const [ladderMode, setLadderMode] = useState<LadderMode>(() => {
-    try {
-      const saved = localStorage.getItem('recall_drill_ladder_mode');
-      if (saved === 'cumulative' || saved === 'exhaustive') return saved;
-    } catch {
-      // ignore
-    }
-    return 'cumulative';
-  });
-  const [cycleOrder, setCycleOrder] = useState<CycleOrder>(() => {
-    try {
-      const saved = localStorage.getItem('recall_drill_cycle_order');
-      if (saved === 'shuffled' || saved === 'inOrder') return saved;
-    } catch {
-      // ignore
-    }
-    return 'shuffled';
-  });
+  const [encodeReps, setEncodeReps] = useState<number>(() => readSetting('encodeReps'));
+  const [chunkDifficulty, setChunkDifficulty] = useState<number>(() => readSetting('chunkDifficulty'));
+  const [stemTolerance, setStemTolerance] = useState<boolean>(() => readSetting('stemTolerance'));
+  const [ladderMode, setLadderMode] = useState<LadderMode>(() => readSetting('ladderMode'));
+  const [cycleOrder, setCycleOrder] = useState<CycleOrder>(() => readSetting('cycleOrder'));
   // Phase 2: per-deck setting, not a global "last used" default like the
   // settings above -- SetupView reads/writes it on the selected deck's
   // SavedDeckEntry instead of localStorage. This just holds whatever the
@@ -138,17 +84,9 @@ export default function App() {
     requestPersistentStorage().then(setStoragePersistStatus);
   }, []);
 
-  // Setup theme listener & class assignment
+  // Theme class assignment (and the system-theme listener)
   useEffect(() => {
-    const savedTheme = (localStorage.getItem('recall_drill_theme') as
-      | 'light'
-      | 'dark'
-      | 'system') || 'system';
-    setTheme(savedTheme);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('recall_drill_theme', theme);
+    writeSetting('theme', theme);
     const root = document.documentElement;
 
     const applyDark = (isDark: boolean) => {
@@ -205,17 +143,13 @@ export default function App() {
     setSessionItems(items);
     setSessionPhase('encode');
     setSessionQueue([]);
-    setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
+    setSessionStats({ ...emptyStats(), startTime: Date.now() });
     setSessionBatchIndex(0);
-    setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionBatchStartStats(emptyStats());
     setSessionFinalCheckStartAttempts(undefined);
     setSessionCurrentId(undefined);
     setEncodeReps(reps);
-    try {
-      localStorage.setItem('recall_drill_encode_reps', String(reps));
-    } catch {
-      // ignore
-    }
+    writeSetting('encodeReps', reps);
     if (difficultyPct !== undefined) {
       setChunkDifficulty(difficultyPct);
     }
@@ -227,19 +161,11 @@ export default function App() {
     }
     if (batchSizeParam !== undefined) {
       setBatchSize(batchSizeParam);
-      try {
-        localStorage.setItem('recall_drill_batch_size', String(batchSizeParam));
-      } catch {
-        // ignore
-      }
+      writeSetting('batchSize', batchSizeParam);
     }
     if (cycleOrderParam !== undefined) {
       setCycleOrder(cycleOrderParam);
-      try {
-        localStorage.setItem('recall_drill_cycle_order', cycleOrderParam);
-      } catch {
-        // ignore
-      }
+      writeSetting('cycleOrder', cycleOrderParam);
     }
     // Phase 2: an explicit param (SetupView's toggle) always wins; otherwise
     // fall back to the target deck's own saved setting (quick-start /
@@ -265,9 +191,11 @@ export default function App() {
     setSessionItems(items);
     setSessionPhase(state.phase);
     setSessionQueue(state.queue || []);
-    setSessionStats(state.stats || { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    // Spread over emptyStats so a save from before a stats field existed
+    // (e.g. reveals) resumes with it at 0.
+    setSessionStats({ ...emptyStats(), ...state.stats });
     setSessionBatchIndex(batchIndex);
-    setSessionBatchStartStats(state.batchStartStats ?? state.stats ?? { attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionBatchStartStats({ ...emptyStats(), ...(state.batchStartStats ?? state.stats) });
     setSessionFinalCheckStartAttempts(state.finalCheckStartAttempts);
     setSessionCurrentId(state.currentId);
     setBatchSize(resolvedBatchSize);
@@ -314,6 +242,10 @@ export default function App() {
     // check, losing finalDone progress and stranding the resume prompt.
     if (state.currentId === SESSION_COMPLETE_ID) {
       clearSessionState(slug);
+      // Only for a real deck: folder practice and "Drill these again" have
+      // no deck-index entry, so their history would be unreachable (and
+      // left out of backups).
+      if (sourceDeckEditable) appendSessionHistory(slug, buildHistoryEntry(state));
     } else {
       saveSessionState(slug, {
         deckName,
@@ -419,13 +351,34 @@ export default function App() {
     setEditorDeckItems(items);
   };
 
+  // DoneView's "Drill these again": a fresh session over just the cards
+  // missed in the Final check. Run like folder practice (session-only, no
+  // deck write-back) under its own name, so it never touches the source
+  // deck's saved session or cards.
+  const handleDrillAgain = (cards: DeckItem[]) => {
+    if (!cards.length) return;
+    const baseName = deckName.replace(/ \(missed cards\)$/, '');
+    handleStartSession(
+      cards,
+      `${baseName} (missed cards)`,
+      encodeReps,
+      chunkDifficulty,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      strictPunctuation,
+      true
+    );
+  };
+
   const handleRestartFresh = () => {
     if (!sessionItems.length) {
       setView('setup');
       return;
     }
     const freshItems = buildItems(
-      sessionItems.map(i => ({ front: i.front, back: i.back })),
+      sessionItems.map(i => ({ front: i.front, back: i.back, extra: i.extra })),
       chunkDifficulty,
       ladderMode,
       batchSize,
@@ -437,9 +390,9 @@ export default function App() {
     setSessionItems(freshItems);
     setSessionPhase('encode');
     setSessionQueue([]);
-    setSessionStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0, startTime: Date.now() });
+    setSessionStats({ ...emptyStats(), startTime: Date.now() });
     setSessionBatchIndex(0);
-    setSessionBatchStartStats({ attempts: 0, misses: 0, nearMisses: 0, overrides: 0 });
+    setSessionBatchStartStats(emptyStats());
     setSessionFinalCheckStartAttempts(undefined);
     setSessionCurrentId(undefined);
     setView('session');
@@ -519,6 +472,7 @@ export default function App() {
               stats={sessionStats}
               onBackToSetup={handleBackToSetup}
               onRestartFresh={handleRestartFresh}
+              onDrillAgain={handleDrillAgain}
             />
           )}
         </main>

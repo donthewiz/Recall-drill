@@ -6,3 +6,4 @@ export * from './storage';
 export * from './session';
 export * from './estimate';
 export * from './progress';
+export * from './history';

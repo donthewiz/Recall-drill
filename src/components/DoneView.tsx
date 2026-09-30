@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { DrillItem, SessionStats } from '../types';
-import { CheckCircle2, RotateCcw, ChevronDown, ChevronUp, BookOpen, Target, Check, AlertTriangle } from 'lucide-react';
+import { DeckItem, DrillItem, SessionStats } from '../types';
+import { computeAccuracyPercent, rankHardestCards } from '../utils/drillEngine';
+import { CheckCircle2, RotateCcw, ChevronDown, ChevronUp, BookOpen, Target, Check, AlertTriangle, Flame, Repeat } from 'lucide-react';
 
 interface DoneViewProps {
   deckName: string;
@@ -8,6 +9,8 @@ interface DoneViewProps {
   stats: SessionStats;
   onBackToSetup: () => void;
   onRestartFresh: () => void;
+  // Starts a new session over just these cards (the Final-check misses).
+  onDrillAgain?: (cards: DeckItem[]) => void;
 }
 
 export const DoneView: React.FC<DoneViewProps> = ({
@@ -16,6 +19,7 @@ export const DoneView: React.FC<DoneViewProps> = ({
   stats,
   onBackToSetup,
   onRestartFresh,
+  onDrillAgain,
 }) => {
   const [showItemList, setShowItemList] = useState(false);
 
@@ -31,10 +35,9 @@ export const DoneView: React.FC<DoneViewProps> = ({
   // interrupted session that's still going to resume back into the Final
   // check.
   const isComplete = items.length > 0 && items.every(i => i.finalDone);
-  const accuracy =
-    stats.attempts > 0
-      ? Math.round(((stats.attempts - stats.misses) / stats.attempts) * 100)
-      : 100;
+  const accuracy = computeAccuracyPercent(stats);
+  const hardest = rankHardestCards(items);
+  const reveals = stats.reveals ?? 0;
 
   return (
     <div id="done-view" className="py-6 max-w-lg mx-auto space-y-6 text-center">
@@ -78,7 +81,58 @@ export const DoneView: React.FC<DoneViewProps> = ({
             {accuracy}%
           </p>
         </div>
+        <p className="col-span-3 text-[11px] text-[var(--text-muted)]">
+          {stats.misses} miss{stats.misses === 1 ? '' : 'es'} • {reveals} reveal{reveals === 1 ? '' : 's'}
+          {stats.nearMisses > 0 && <> • {stats.nearMisses} near</>}
+          {stats.overrides > 0 && <> • {stats.overrides} override{stats.overrides === 1 ? '' : 's'}</>}
+          {reveals > 0 && <> — answers typed after a reveal don&rsquo;t count toward accuracy</>}
+        </p>
       </div>
+
+      {/* The cards that cost the most this session, with the parts of the
+          answer that broke while combining -- omitted when nothing did. */}
+      {hardest.length > 0 && (
+        <div
+          id="hardest-cards"
+          className="text-left bg-[var(--surface-card)] border border-[var(--border)] rounded-2xl p-3.5 space-y-2 shadow-xs"
+        >
+          <p className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+            <Flame size={13} className="text-[var(--warning)]" /> Where you struggled
+          </p>
+          <div className="divide-y divide-[var(--border)] text-xs">
+            {hardest.map(it => {
+              const parts = [
+                (it.misses ?? 0) > 0 && `${it.misses} miss${it.misses === 1 ? '' : 'es'}`,
+                (it.reveals ?? 0) > 0 && `${it.reveals} reveal${it.reveals === 1 ? '' : 's'}`,
+                (it.finalMisses ?? 0) > 0 && `${it.finalMisses} in final check`,
+              ].filter(Boolean);
+              return (
+                <div key={it.id} className="py-2 first:pt-0 last:pb-0 space-y-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="font-semibold text-[var(--text-primary)]">{it.front}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] shrink-0 text-right">
+                      {parts.join(' • ')} • {it.attempts ?? 0} tries
+                    </span>
+                  </div>
+                  <p className="mono text-[var(--text-secondary)]">{it.back}</p>
+                  {(it.hardSpans?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {it.hardSpans!.map(span => (
+                        <span
+                          key={span}
+                          className="mono text-[10px] px-1.5 py-0.5 rounded-md bg-[var(--warning-bg)] text-[var(--warning)] border border-[var(--warning)]/30"
+                        >
+                          {span}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <p id="done-stats" className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed px-2">
         {isComplete ? (
@@ -153,6 +207,18 @@ export const DoneView: React.FC<DoneViewProps> = ({
               </div>
             ))}
           </div>
+          {isComplete && onDrillAgain && (
+            <button
+              type="button"
+              id="drill-missed-btn"
+              onClick={() =>
+                onDrillAgain(missedInFinal.map(it => ({ front: it.front, back: it.back, extra: it.extra })))
+              }
+              className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--surface-1)] hover:bg-[var(--surface-2)] text-[var(--text-primary)] border border-[var(--border)] font-medium text-xs active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Repeat size={13} /> Drill {missedInFinal.length === 1 ? 'this card' : `these ${missedInFinal.length} cards`} again
+            </button>
+          )}
         </div>
       )}
 

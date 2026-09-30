@@ -251,3 +251,26 @@ Bradycardia :: slow heart rate
       part.
 - [ ] Resume an old save (made before this change): it opens as it did
       before (first unfinished card), no errors.
+
+## 10. Session review: reveals, trouble spots, history, drill again (2026-09-30)
+
+Two-card deck is enough (e.g. `Tachy :: fast heart rate`, `itis :: inflammation`),
+blind typings at 1.
+
+- [ ] On the first card, press **Show target** (Esc), type the answer, check it.
+      The session footer shows **Reveals: 1**.
+- [ ] Get `itis` wrong once in the review cycle and once in the Final check.
+- [ ] On **Deck Mastered!**: the line under the stats reads e.g.
+      "2 misses • 1 reveal — answers typed after a reveal don't count toward
+      accuracy", and Accuracy is (attempts − misses − reveals) / attempts
+      (11 attempts, 2 misses, 1 reveal → 73%).
+- [ ] **Where you struggled** lists `itis` first (misses + final-check miss),
+      then the revealed card. On a long card that went through **Precision
+      Repair**, the part that broke shows as a highlighted chip.
+- [ ] **Drill this card again** (under Missed in final check) starts a
+      session over just the missed card, titled "<deck> (missed cards)". It
+      does not add a deck to the library.
+- [ ] In devtools, `localStorage['session-history:<deck-slug>']` has one
+      entry with per-card `words`, `chunks`, `attempts`, `misses`,
+      `reveals`, `finalMisses`, `hardSpans`. **Export all decks** includes
+      it under each deck's `history`.
