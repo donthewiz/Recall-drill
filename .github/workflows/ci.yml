@@ -18,3 +18,30 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  # The Anki add-on's Python engine (anki-addon/recalldrill/engine/), a port of
+  # the TS engine in src/utils/. The engine is pure Python, so this job installs
+  # no anki.
+  addon-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Anki 26.08.1's bundled Python (anki-addon/docs/DECISIONS.md, Versions).
+          python-version: '3.13.13'
+      # The engine needs nothing else. Versions match anki-addon/requirements-dev.txt.
+      - run: pip install pytest==9.1.1 pytest-cov==7.1.0 ruff==0.16.10
+      - run: ruff check anki-addon
+      - run: pytest anki-addon/tests/engine anki-addon/tests/test_layering.py -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Drift guard. Regenerates the golden traces from the TS engine and fails
+      # if they differ from the committed ones. Any TS engine change that moves
+      # behavior fails CI here until the goldens are regenerated
+      # (npx tsx anki-addon/tools/export_golden.ts) and the Python port passes
+      # again against them (the pytest step above), in the same commit.
+      - run: npx tsx anki-addon/tools/export_golden.ts && git diff --exit-code anki-addon/tests/golden

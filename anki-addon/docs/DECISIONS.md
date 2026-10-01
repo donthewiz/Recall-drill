@@ -192,6 +192,17 @@ Pending Phase 3b.
 
 (none yet)
 
+## Changing the engine now
+
+Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
+
+1. Change the TS engine (and its vitest specs).
+2. Regenerate the goldens from the repo root: `npx tsx anki-addon/tools/export_golden.ts`.
+3. Port the same change to the Python engine.
+4. Both suites green: `npm run lint && npm test` and `pytest anki-addon/tests`.
+
+A TS change alone fails the drift guard. Regenerated goldens without the Python change fail the parity tests. To chase a mismatch in a seeded `simulate()` run, `npx tsx anki-addon/tools/export_golden.ts --full <deck>:<learner>[:<run>]` and `python anki-addon/tools/simulate.py --full <same>` write that run's full state after every step to the gitignored `tests/golden/_debug/`, one line per step; diff the two files. A behavior the add-on adds on top of the TS engine goes under "Engine extensions" above, with its own tests, not into the goldens.
+
 ## Dev install (Windows)
 
 Not run by Claude Code. Don runs it by hand:

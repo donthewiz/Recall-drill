@@ -644,3 +644,42 @@ Caveat, same as for Phases 1-2: the harness learner has no lag or
 forgetting, so it can't show a benefit *or* a cost from ordering. Whether
 keeping the chain together helps is a question for real use, not this
 simulator.
+
+## Python port (Anki add-on, Phase 1b, 2026-10-01)
+
+The Anki add-on's Python engine (`anki-addon/recalldrill/engine/`) runs the
+same harness: `anki-addon/tools/simulate.py` ports `simulate()`, the three
+learner models, `runSeeded` and `fmt`, and reads the decks and config from
+`anki-addon/tests/golden/session_sim.json` (written from the TS fixtures by
+`anki-addon/tools/export_golden.ts`). Its PRNG (mulberry32 seeded by
+`hashSeed`) and every random draw match the TS engine's, so the scoreboard
+isn't just statistically close: it is **identical to TS, run for run**. All
+450 seeded runs (3 decks × 3 learners × 50) give the same total trials,
+trials by stage, keystrokes, attempts and wall-clock estimate, and the same
+SHA-256 over each run's trial-by-trial trace
+(`anki-addon/tests/engine/test_simulate_parity.py`). The printed table below
+is byte-identical to `npm run simulate`'s "Current engine" section:
+
+```
+anki-addon/.venv/bin/python anki-addon/tools/simulate.py
+```
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 72.0 ± 0.0 | 462.0 ± 0.0 | 210.7 ± 0.0 | full:36 cycle:24 final:12 |
+| shortDeck | realistic | 110.5 ± 6.9 | 699.4 ± 50.1 | 321.2 ± 20.7 | full:59 cycle:34 final:16 |
+| shortDeck | struggling | 177.2 ± 11.3 | 1131.2 ± 77.1 | 517.1 ± 32.6 | full:87 cycle:62 final:34 |
+| proseDeck | perfect | 156.0 ± 0.0 | 11228.0 ± 0.0 | 2729.1 ± 0.0 | chunks:72 combine:48 cycle:24 final:12 |
+| proseDeck | realistic | 270.5 ± 28.9 | 18542.0 ± 1593.8 | 4526.2 ± 395.3 | chunks:84 remediate:81 combine:70 cycle:44 final:15 |
+| proseDeck | struggling | 794.9 ± 101.5 | 40540.0 ± 3498.7 | 10201.2 ± 918.0 | remediate:433 chunks:140 combine:108 cycle:56 final:30 |
+| mediumDeck | perfect | 72.0 ± 0.0 | 2946.0 ± 0.0 | 762.7 ± 0.0 | full:36 cycle:24 final:12 |
+| mediumDeck | realistic | 111.2 ± 7.3 | 4551.5 ± 297.1 | 1178.3 ± 76.8 | full:58 cycle:42 final:18 |
+| mediumDeck | struggling | 182.4 ± 10.8 | 7455.2 ± 459.8 | 1930.3 ± 118.2 | full:84 cycle:59 final:39 |
+
+The mean ± SD columns go through `jscompat.js_to_fixed`, which rounds like
+JS `toFixed` (ties away from zero on the exact binary value) rather than
+Python's round-half-even, and the means and SDs are summed left to right like
+the TS `reduce` (Python 3.12+'s `sum()` of floats is compensated and can
+differ in the last bit). CI regenerates the golden data from the TS engine on
+every push and fails if it changed (`anki-addon/docs/DECISIONS.md`, "Changing
+the engine now").
