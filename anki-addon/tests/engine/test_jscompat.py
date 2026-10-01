@@ -17,11 +17,15 @@ from recalldrill.engine.jscompat import (
     i32,
     imul,
     is_js_ws,
+    js_iso_string,
     js_round,
     js_split_ws,
+    js_sum,
+    js_to_fixed,
     js_trim,
     truthy,
     u32,
+    utf16_len,
     utf16_units,
 )
 
@@ -64,7 +68,61 @@ def test_truthy_matches_js(case: Any) -> None:
     check(truthy(case["value"]), case["out"], "!!value", value=case["value"])
 
 
+def _number(x: Any) -> float:
+    """A golden number; NaN, the infinities and -0 are written as strings."""
+    return float(x) if isinstance(x, str) else x
+
+
+@pytest.mark.parametrize("case", GOLDEN["toFixed"], ids=_ids(GOLDEN["toFixed"]))
+def test_js_to_fixed_matches_to_fixed(case: Any) -> None:
+    x = _number(case["x"])
+    digits = (0, 1, 2) if isinstance(case["x"], str) else (0, 1, 2, 3, 20)
+    check([js_to_fixed(x, d) for d in digits], case["digits"], "toFixed", x=case["x"])
+
+
+@pytest.mark.parametrize("case", GOLDEN["toISOString"], ids=_ids(GOLDEN["toISOString"]))
+def test_js_iso_string_matches_to_iso_string(case: Any) -> None:
+    ms = _number(case["ms"])
+    if case["out"] is None:
+        assert case["error"] == "RangeError"
+        with pytest.raises(ValueError, match="Invalid time value"):
+            js_iso_string(ms)
+    else:
+        check(js_iso_string(ms), case["out"], "toISOString", ms=case["ms"])
+
+
+@pytest.mark.parametrize("case", GOLDEN["length"], ids=_ids(GOLDEN["length"]))
+def test_utf16_len_matches_length(case: Any) -> None:
+    check(utf16_len(case["text"]), case["out"], ".length", text=case["text"])
+
+
+@pytest.mark.parametrize("case", GOLDEN["reduceSum"], ids=_ids(GOLDEN["reduceSum"]))
+def test_js_sum_matches_reduce(case: Any) -> None:
+    check(js_sum(case["values"]), case["out"], "reduce((a, b) => a + b, 0)", values=case["values"])
+
+
 # Why each helper exists: the Python built-in gives a different answer.
+
+
+def test_python_format_rounds_ties_to_even() -> None:
+    assert f"{0.25:.1f}" == "0.2" and js_to_fixed(0.25, 1) == "0.3"
+    assert f"{-0.0:.1f}" == "-0.0" and js_to_fixed(-0.0, 1) == "0.0"
+    assert js_to_fixed(-0.04, 1) == "-0.0"
+    assert js_to_fixed(1e21, 1) == "1e+21"
+    with pytest.raises(ValueError):
+        js_to_fixed(1.0, 101)
+
+
+def test_python_sum_is_compensated() -> None:
+    """Python 3.12+ sums floats with compensation; JS reduce rounds at every step."""
+    values = [0.1, 0.2, 0.3]
+    assert sum(values) == 0.6
+    assert js_sum(values) == 0.6000000000000001
+
+
+def test_python_len_counts_code_points() -> None:
+    face = chr(0x1F600)
+    assert len(face) == 1 and utf16_len(face) == 2
 
 
 def test_python_round_is_bankers_rounding() -> None:

@@ -60,3 +60,48 @@ TWO_CHUNK_BACK = "the mitochondria produces most of the cells energy supply"
 TWO_CHUNK_CHUNKS = ["the mitochondria produces most of", "the cells energy supply"]
 FOUR_CHUNK_BACK = "large green trees grow slowly near the quiet river"
 FOUR_CHUNK_CHUNKS = ["large green", "trees grow", "slowly near", "the quiet river"]
+
+
+_ABSENT = "<absent>"
+
+
+def first_difference(expected: Any, actual: Any, path: str = "") -> tuple[str, Any, Any] | None:
+    """The first place two JSON values differ: (path, TS value, Python value), or None.
+
+    Dict keys are walked in sorted order; a key on one side only shows as
+    ``<absent>`` on the other.
+    """
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        for key in sorted(set(expected) | set(actual)):
+            sub = f"{path}.{key}" if path else str(key)
+            if key not in actual:
+                return sub, expected[key], _ABSENT
+            if key not in expected:
+                return sub, _ABSENT, actual[key]
+            found = first_difference(expected[key], actual[key], sub)
+            if found:
+                return found
+        return None
+    if isinstance(expected, list | tuple) and isinstance(actual, list | tuple):
+        for i, (e, a) in enumerate(zip(expected, actual, strict=False)):
+            found = first_difference(e, a, f"{path}[{i}]")
+            if found:
+                return found
+        if len(expected) != len(actual):
+            return f"{path}.length", len(expected), len(actual)
+        return None
+    return None if same_json(expected, actual) else (path or "<root>", expected, actual)
+
+
+def fail_on_difference(expected: Any, actual: Any, where: str) -> None:
+    """Fails with the first differing key, as JSON, unless the values are equal."""
+    found = first_difference(expected, actual)
+    if found is None:
+        return
+    path, e, a = found
+    pytest.fail(
+        f"{where}: Python != TS at {path}\n"
+        f"  TS:     {json.dumps(e, ensure_ascii=False)}\n"
+        f"  Python: {json.dumps(a, ensure_ascii=False)}",
+        pytrace=False,
+    )
