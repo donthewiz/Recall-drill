@@ -137,7 +137,12 @@ Matches the 26.9.3 pre-check exactly (A 0, B 120, C 80).
 - Simulated with the same trick as that test (creation stamp moved back one day): `queue -3 → 0`. Covered by `test_manually_buried_card_returns_after_rollover` and the experiment's Part 2.
 - Confirm in real time in Don's manual check, step 5.
 
-**New-card limit under B:** handed-off cards take new/day slots in the Med Term preset, and they take them **first** (position 0). Med Term preset `new/day`: **_still pending Don_**. It was left blank in the decisions of 2026-10-01. The Anki connector has no deck-options read, and the real collection is not opened directly while Anki runs.
+**New-card limit under B:** handed-off cards take new/day slots in the deck's preset, and they take them **first** (position 0).
+
+**Decision (Don, 2026-10-01): resolved, no cap intended.** The Med Term preset's new/day is not meant to hold handed-off cards back. If it ever does, Don raises the preset's limit by hand.
+- The add-on never changes deck options.
+- No code change for this decision. The Phase 4 handoff forecast reads the real new/day value from deck options (`col.decks.config_dict_for_deck_id(did)["new"]["perDay"]`).
+- When handed-off cards plus siblings would exceed that value, the forecast **warns** and never blocks the handoff.
 
 **Cost summary:**
 - **A** keeps new/day free, and the handoff is one clean undo step. The cost: it **skips Anki's learning steps**, the first interval is ~2 days with no same-day re-check, and **every handed-off card is permanently invisible to the FSRS optimizer**. That grows with every deck drilled.
@@ -156,7 +161,7 @@ Matches the 26.9.3 pre-check exactly (A 0, B 120, C 80).
 - Siblings that are not suspended, or not new, are left alone.
 
 Notes for the phase that builds this (not decisions):
-- Siblings also take new/day slots, so a handoff of *n* two-direction notes uses up to 2*n*.
+- Siblings also take new/day slots, so a handoff of *n* two-direction notes uses up to 2*n*. The Phase 4 forecast counts them (see "New-card limit under B").
 - If the deck preset has "Bury new siblings" on, then on the next day Anki buries a sibling once its drilled card has been studied. The sibling then shows the day after. That's Anki's normal behavior, not a handoff bug.
 
 ## Disambiguation hints
@@ -204,5 +209,5 @@ cmd /c mklink /J "%APPDATA%\Anki2\addons21\recall_drill_dev" "C:\Users\donth\Doc
 1. Create the junction above and restart Anki.
 2. Tools menu shows **Recall Drill (dev)**, and its About box shows `Recall Drill 0.0.0 (dev)` and the Anki version. Nothing else changed, and no error pop-up.
 3. Tools → Add-ons lists it, and the Debug Console shows no traceback.
-4. Answered 2026-10-01 (see the decisions above), except the Med Term preset new/day, which is still pending.
+4. Answered 2026-10-01 (see the decisions above).
 5. Optional, for the bury question: in a throwaway deck, bury a card by hand (Browse → Toggle Bury), and check the next day (after Anki's next-day rollover, Preferences → Review) that it's back.
