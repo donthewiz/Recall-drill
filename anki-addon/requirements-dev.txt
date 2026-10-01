@@ -1,0 +1,8 @@
+# Dev and CI only; nothing here ships in the .ankiaddon.
+# Python 3.13 (Anki 26.08.1 bundles 3.13.13).
+anki==26.8.1
+aqt==26.8.1  # for type-checking ui/; pulls PyQt6 6.11.x like Anki 26.08.1's Qt 6.11
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.10
+pyright==1.1.414

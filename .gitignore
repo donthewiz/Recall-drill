@@ -6,3 +6,13 @@ coverage/
 *.log
 .env*
 .claude/
+
+# Anki add-on (anki-addon/)
+anki-addon/.venv/
+anki-addon/**/__pycache__/
+anki-addon/meta.json
+anki-addon/user_files/*
+!anki-addon/user_files/README.txt
+anki-addon/dist/
+.pytest_cache/
+.ruff_cache/
