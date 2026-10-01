@@ -16,3 +16,4 @@ anki-addon/user_files/*
 anki-addon/dist/
 .pytest_cache/
 .ruff_cache/
+.coverage
