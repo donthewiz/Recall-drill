@@ -17,10 +17,10 @@ import { MIN_WORDS_TO_CHUNK, chunkText, renderFirstLetterCue, requiredRepsForWin
 // ---------------------------------------------------------------------------
 // Phase 0 extraction: pure session state machine (selectTrial / applyAnswer /
 // applyNext / initSession). Transcribed verbatim from src/components/
-// SessionView.tsx's handleCheck/advanceEncode/advanceCycle -- no behavior
-// changes, including known bugs B1 (findAllCulpritChunks positional misfire)
-// and B2 (a revealed answer is never read by grading). Do not fix those here;
-// they ship as Phase 1.
+// SessionView.tsx's handleCheck/advanceEncode/advanceCycle. The extraction
+// itself changed no behavior and kept known bugs B1 (findAllCulpritChunks
+// positional misfire) and B2 (a revealed answer was never read by grading);
+// both were fixed afterwards, in Phase 1.
 //
 // currentId: -1 is the sentinel selectTrial uses to signal "session complete"
 // (buildItems' ids start at 0, so -1 never collides with a real item).
@@ -99,6 +99,14 @@ function requeueCycleItem(queue: number[], id: number, gap: number, cycleOrder: 
   queue.splice(Math.min(gap, queue.length), 0, id);
 }
 
+// A missed or revealed cycle card comes back a random 2-3 cards later
+// ('shuffled'). 'inOrder' reinserts nothing (see requeueCycleItem), so it
+// draws no random number either.
+function requeueMissedCycleItem(queue: number[], id: number, cycleOrder: CycleOrder = 'shuffled'): void {
+  if (cycleOrder === 'inOrder') return;
+  requeueCycleItem(queue, id, 2 + Math.floor(Math.random() * 2), cycleOrder);
+}
+
 // C3: this batch's items, in whatever order buildItems' one-time
 // shuffleWithinBatches call left them in (see that function's comment) --
 // partitionIntoBatches only slices, it never reorders.
@@ -171,7 +179,8 @@ function advanceBatchState(items: DrillItem[], stats: SessionStats, base: Sessio
     // phase can otherwise leave behind (see the Known limitations note this
     // phase retires in docs/V2-HANDOFF.md).
     const queue = shuffle(items.map(i => i.id));
-    const nextId = queue.shift()!;
+    // An empty deck has no card to test, so the session is already complete.
+    const nextId = queue.shift() ?? SESSION_COMPLETE_ID;
     // Phase 3: records the attempts total as of this exact instant, so
     // computeCumulativeColdStartMultiplier can exclude in-progress
     // Final-check attempts from its numerator until the Final check is
@@ -291,6 +300,8 @@ export function computeBatchSummary(state: SessionState): {
   };
 }
 
+// Equivalent of SessionView's mount useEffect: picks the first trial of a
+// fresh or resumed session before any answer has been submitted.
 export function initSession(state: SessionState): SessionState {
   // C3: a save made exactly at the interstitial ("Save and stop" on
   // 'batch-done') resumes straight back into it -- nothing to select.
@@ -981,8 +992,7 @@ function gradeAndAdvance(
       diff: gr.diff,
       dwellKey: 'cycle-miss',
     };
-    const gap = 2 + Math.floor(Math.random() * 2);
-    requeueCycleItem(updatedQueue, it.id, gap, state.config.cycleOrder);
+    requeueMissedCycleItem(updatedQueue, it.id, state.config.cycleOrder);
   }
 
   newItems[itIdx] = it;
@@ -1015,8 +1025,7 @@ function applyRevealedAnswer(
   if (state.phase === 'cycle') {
     it.cycleStreak = 0;
     const updatedQueue = [...state.queue];
-    const gap = 2 + Math.floor(Math.random() * 2);
-    requeueCycleItem(updatedQueue, it.id, gap, state.config.cycleOrder);
+    requeueMissedCycleItem(updatedQueue, it.id, state.config.cycleOrder);
     newItems[itIdx] = it;
     return {
       state: { ...base, items: newItems, queue: updatedQueue },

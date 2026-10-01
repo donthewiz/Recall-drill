@@ -683,3 +683,23 @@ the TS `reduce` (Python 3.12+'s `sum()` of floats is compensated and can
 differ in the last bit). CI regenerates the golden data from the TS engine on
 every push and fails if it changed (`anki-addon/docs/DECISIONS.md`, "Changing
 the engine now").
+
+## Engine fixes from the Python port review (2026-10-01)
+
+Three small `src/utils/` fixes the Phase 1b port turned up, each with a new
+spec, ported to the Python engine in the same commit:
+
+- An empty deck now starts complete: the Final check with `currentId`
+  `SESSION_COMPLETE_ID`, not `undefined`. (The setup screen refuses an empty
+  deck, so the app never reached this.)
+- `inOrder` cycle mode no longer draws (and throws away) a random number on
+  every cycle miss or reveal.
+- `buildHistoryEntry` keeps a `startTime` of 0 instead of treating it as
+  missing.
+
+`npm run simulate` is **byte-identical before and after**. The scoreboard
+runs with the default shuffled cycle order, and none of its learners'
+sessions changes. The golden traces that did move are the four scripted
+`inOrder` scenarios with a cycle miss or reveal (their later shuffles now
+draw different numbers), the empty-deck scenario, and the `startTime` 0
+history case.

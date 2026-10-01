@@ -279,6 +279,16 @@ describe('Final check: save -> resume restores the queue and finalDone flags', (
   });
 });
 
+describe('Final check: an empty deck', () => {
+  it('starts complete: the Final check with no card to serve and currentId SESSION_COMPLETE_ID', () => {
+    const s = freshState(buildItems([], 35, 'cumulative'));
+    expect(s.phase).toBe('final');
+    expect(s.queue).toEqual([]);
+    expect(s.currentId).toBe(SESSION_COMPLETE_ID);
+    expect(selectTrial(s)).toBeNull();
+  });
+});
+
 describe('Final check: computeCumulativeColdStartMultiplier stays in sync with the floor', () => {
   it('reads exactly 1 for a perfect learner throughout -- at the start of the Final check, partway through it, and once it completes', () => {
     // Regression: the numerator (completedAttempts) used to keep growing

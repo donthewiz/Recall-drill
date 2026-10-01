@@ -77,7 +77,7 @@ export function buildHistoryCard(item: DrillItem): SessionHistoryCard {
 
 export function buildHistoryEntry(state: SessionState, finishedAt: Date = new Date()): SessionHistoryEntry {
   return {
-    startedAt: state.stats.startTime ? new Date(state.stats.startTime).toISOString() : undefined,
+    startedAt: state.stats.startTime !== undefined ? new Date(state.stats.startTime).toISOString() : undefined,
     finishedAt: finishedAt.toISOString(),
     stats: state.stats,
     config: {

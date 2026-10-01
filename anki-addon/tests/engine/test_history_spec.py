@@ -88,6 +88,16 @@ def test_records_each_card() -> None:
     assert chunks is not None and card1["chunks"] == len(chunks)
 
 
+def test_keeps_a_start_time_of_zero() -> None:
+    """TS: buildHistoryEntry > keeps a startTime of 0 (the epoch) instead of treating it as
+    missing"""
+    state = done_state(items())
+    state["stats"] = {**empty_stats(), "startTime": 0}
+    assert build_history_entry(state, 0).get("startedAt") == "1970-01-01T00:00:00.000Z"
+    del state["stats"]["startTime"]
+    assert "startedAt" not in build_history_entry(state, 0)
+
+
 def test_rank_orders_by_trouble_then_attempts_then_deck_order() -> None:
     """TS: rankHardestCards > orders by misses + reveals + final-check misses, then
     attempts, then deck order"""

@@ -85,6 +85,3 @@ export function computeSessionProgress(
     readyCount: items.filter(it => it.status === 'ready').length,
   };
 }
-
-// Equivalent of SessionView's mount useEffect: picks the first trial of a
-// fresh or resumed session before any answer has been submitted.

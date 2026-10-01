@@ -1,6 +1,6 @@
 # Vitest spec → Python test map
 
-Every vitest spec file (30 files, 271 tests) and where its behavior is checked in the add-on. Phase 1a started this map; Phase 1b finished it.
+Every vitest spec file (30 files, 275 tests) and where its behavior is checked in the add-on. Phase 1a started this map; Phase 1b finished it.
 
 **Statuses:**
 - **ported**: a pytest twin per TS `it`, with the TS test name in the docstring.
@@ -38,12 +38,12 @@ A scenario drives the same deck, config and answers as the `it`, and the golden 
 | 11 | `src/test/characterization.legacy.spec.ts` | 5 | N/A | Tests the frozen `LegacyEngine` reference snapshot (`src/test/reference/`), which the add-on doesn't port. |
 | 12 | `src/test/chunkText.spec.ts` | 3 | ported | `test_chunk_text_spec.py`; `items.json` |
 | 13 | `src/test/cycleGap.spec.ts` | 1 | golden | scenario |
-| 14 | `src/test/cycleOrder.spec.ts` | 10 | ported (3) + golden (7) | `test_cycle_order_spec.py`; scenarios |
+| 14 | `src/test/cycleOrder.spec.ts` | 12 | ported (5) + golden (7) | `test_cycle_order_spec.py`; scenarios |
 | 15 | `src/test/editCurrentItem.spec.ts` | 16 | ported (1) + golden (15) | `test_edit_current_item_spec.py`; scenarios |
 | 16 | `src/test/extraField.spec.ts` | 14 | ported (10) + golden (3) + N/A (1) | `test_extra_field_spec.py`; scenarios |
-| 17 | `src/test/finalCheck.spec.ts` | 7 | golden | scenarios |
+| 17 | `src/test/finalCheck.spec.ts` | 8 | golden | scenarios |
 | 18 | `src/test/grade.spec.ts` | 30 | ported | `test_grade_spec.py`; `grading.json` |
-| 19 | `src/test/history.spec.ts` | 7 | ported (3) + N/A (4) | `test_history_spec.py`; `pure.historyEntries`/`rankHardestCards` |
+| 19 | `src/test/history.spec.ts` | 8 | ported (4) + N/A (4) | `test_history_spec.py`; `pure.historyEntries`/`rankHardestCards` |
 | 20 | `src/test/overrideCredit.spec.ts` | 6 | golden | scenario `override-at-every-stage` |
 | 21 | `src/test/phantomFolderEntry.spec.ts` | 6 | N/A | Web app's deck index and folders in `localStorage`. |
 | 22 | `src/test/preSessionEditPersistence.spec.ts` | 2 | N/A | Web app's deck editor persistence in `localStorage`. |
@@ -56,7 +56,7 @@ A scenario drives the same deck, config and answers as the `it`, and the golden 
 | 29 | `test/coldStartEstimate.consistency.spec.ts` | 28 | ported | `test_simulate_parity.py` (seeded golden runs + the spec's assertion) |
 | 30 | `test/simulate.spec.ts` | 4 | ported | `test_simulate_parity.py` (seeded golden runs + the spec's assertions) |
 
-**Totals:** 271 TS tests. 238 are covered (ported, golden, or both) and 33 are N/A. Nothing that exercises engine behavior is left uncovered.
+**Totals:** 275 TS tests. 242 are covered (ported, golden, or both) and 33 are N/A. Nothing that exercises engine behavior is left uncovered.
 
 ## Not covered, and why
 
@@ -76,7 +76,7 @@ The golden data also checks behavior no vitest `it` pins, all listed in the scen
 - A reveal at every stage (chunk presentation and blind attempt, combine, remediate at depth 1 and 2, full, cycle, final) and an override after a wrong answer at every stage, including remediation retries and splits.
 - Deep remediation: a ≤ 2-chunk window remediating on the first miss, a > 2-chunk window on the second, two culprit spots, recursive halving to depth 3, and one-word pieces that never split.
 - Save and resume mid-encode, mid-remediation, mid-cycle, at batch-done and mid-final, plus old save shapes (no `currentId`, telemetry, `finalDone`/`finalMisses`, `stats.reveals`, `finalCheckStartAttempts`, settings fields, or `batchIndex`/`batchSize`/`batchStartStats`; a pre-C8a `chunkStreak`; a remediate card with an empty stack).
-- Config variety: `batchSize` 0/3/5, `cycleOrder` both ways, `ladderMode` exhaustive, `encodeReps` 1/2/3/5/8, `chunkDifficulty` 15/20/35/50/100, `minWordsToChunk` 3, `buildItems` with and without the within-batch shuffle, an empty deck.
+- Config variety: `batchSize` 0/3/5, `cycleOrder` both ways, `ladderMode` exhaustive, `encodeReps` 1/2/3/5/8, `chunkDifficulty` 15/20/35/50/100, `minWordsToChunk` 3, `buildItems` with and without the within-batch shuffle.
 - Edits: restart with an Extra note, an edit with a pending "Count as correct" (SessionView applies the edit to the pre-answer state), and edits in cycle and final.
 - `computeBatchSummary`, `computeAccuracyPercent`, `computeSessionProgress`, `computeCumulativeColdStartMultiplier` and `computeRemainingColdStartRange` at recorded steps; `computeColdStartEstimate` for every scenario deck at every exposure level; `buildHistoryEntry` and `rankHardestCards` at session ends.
 
@@ -212,6 +212,8 @@ Files that were already fully ported in Phase 1a (`chunkText`, `grade`) and the 
 | a miss does not break order: the card returns on the next pass | golden `cycle-order-inorder-miss` |
 | a revealed answer also waits for the next pass | golden `reveal-inorder-cycle-and-final`, `cycle-order-inorder-reveal` |
 | is scoped to the current batch | golden `config-batch-3-inorder`, `cycle-order-inorder-batch-scope` |
+| cycleOrder=inOrder: a miss and a reveal each draw 0 random number(s) | ported: `test_cycle_order_spec.py`; golden: the random draws in every `inOrder` scenario (e.g. `cycle-order-inorder-miss`) |
+| cycleOrder=shuffled: a miss and a reveal each draw 1 random number(s) | ported: `test_cycle_order_spec.py`; golden: the random draws in every shuffled scenario |
 | cycleOrder=shuffled: a first correct is reinserted into the current pass | golden `cycle-order-shuffled-first-correct` |
 | cycleOrder=undefined: a first correct is reinserted into the current pass | golden `cycle-order-undefined-first-correct` |
 | keeps deck order and the first encode trial is the first card | golden `cycle-order-encode-deck-order` |
@@ -267,6 +269,7 @@ Files that were already fully ported in Phase 1a (`chunkText`, `grade`) and the 
 | increments finalMisses, leaves stats.misses alone, and requeues to the end | golden `final-check-reveal` |
 | a mid-Final-check resume preserves finalDone and still tests the card that was in flight at save time | golden `resume-mid-final` |
 | an old save with no finalDone/finalMisses on any item resumes fine | golden `resume-old-save-shapes` |
+| starts complete: the Final check with no card to serve and currentId SESSION_COMPLETE_ID | golden `empty-deck` |
 | reads exactly 1 for a perfect learner throughout -- at the start of the Final check, partway through it, and once it completes | golden `final-check-multiplier` |
 
 ### `src/test/history.spec.ts`
@@ -274,6 +277,7 @@ Files that were already fully ported in Phase 1a (`chunkText`, `grade`) and the 
 | `it(...)` | Covered by |
 |---|---|
 | records each card with its length, chunking, and cost | ported: `test_history_spec.py`; golden `pure.historyEntries` |
+| keeps a startTime of 0 (the epoch) instead of treating it as missing | ported: `test_history_spec.py`; golden `pure.historyEntries` |
 | orders by misses + reveals + final-check misses, then attempts, then deck order | ported: `test_history_spec.py`; golden `pure.rankHardestCards` |
 | leaves out cards with no trouble, and respects the limit | ported: `test_history_spec.py`; golden `pure.rankHardestCards` |
 | appends per deck and keeps only the newest entries | N/A: `localStorage` history (add-on storage is Phase 3a) |

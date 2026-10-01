@@ -34,7 +34,7 @@ Recall Drill is a **session-only typed-recall drill** for prose and terminology 
 |---|---|
 | `npm run dev` | Dev server on port 3000 (`.claude/launch.json` has "Recall-drill dev") |
 | `npm run lint` | `tsc --noEmit` |
-| `npm test` | 271 tests, about 3–4s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
+| `npm test` | 275 tests, about 3–4s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
 | `npm run build` | Production build |
 | `npm run simulate` | Trial-count scoreboard (`test/simulate*.ts`): 50 seeded runs × 3 decks × 3 learner models, mean ± SD. Deterministic. **Any engine change must report this before and after.** `docs/BASELINE.md` keeps the history. |
 
