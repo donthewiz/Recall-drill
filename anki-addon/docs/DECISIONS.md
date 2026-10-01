@@ -5,6 +5,21 @@ Phase 0 (2026-10-01). The design spec is the Claude-project doc
 `recall-drill-anki-addon-prompts-index.md`. This file records what is actually
 true on Don's Anki, and the decisions taken (or pending) on top of the spec.
 
+## Scope
+
+**The add-on serves all of Don's decks, not just Med Term** (Don, 2026-10-01). That includes the cloze decks built by the `anki-cards` skill, which carry:
+- `rd::drill::A` / `rd::drill::A1` / `rd::drill::B` tags;
+- `Layer::N` ordering;
+- long HTML Extra fields;
+- red-flag repair cards.
+
+Nothing may assume Med Term's shape (Basic and Reverse, short answers).
+
+**Tag namespace (checked on 26.08.1):** the skill's `rd::drill::*` tags and the handoff tag `rd::drilled` share the `rd::` prefix.
+- `tag:rd::drill` matches only the skill's tags (a tag and its children; no prefix match).
+- `tag:rd::drill*` and `tag:rd::*` match **both**.
+- Add-on searches must use exact tag names, never a wildcard over `rd::`.
+
 ## Versions
 
 | What | Value |
@@ -47,7 +62,17 @@ true on Don's Anki, and the decisions taken (or pending) on top of the spec.
 
 ## API facts
 
-Executable: [`tests/anki_io/test_api_facts.py`](../tests/anki_io/test_api_facts.py), on a scratch collection with FSRS on. **Where the spec was wrong or silent:**
+Executable: [`tests/anki_io/test_api_facts.py`](../tests/anki_io/test_api_facts.py), on a scratch collection with FSRS on.
+
+**Rules the add-on follows** (Phase 0 corrections, adopted by Don 2026-10-01; details in the table):
+1. Image Occlusion = `originalStockKind == StockNotetype.OriginalStockKind.ORIGINAL_STOCK_KIND_IMAGE_OCCLUSION` (**6**). Never `StockNotetype.Kind.KIND_IMAGE_OCCLUSION` (5 = cloze's value).
+2. Cloze = `model["type"] == 1` **and not** Image Occlusion.
+3. `extract_cloze_for_typing(ordinal=…)` takes `card.ord + 1`.
+4. `prop:d` searches use the 0–1 scale. `memory_state.difficulty` is 1–10.
+5. `set_due_date` also unsuspends. (Moot for the handoff under decision B, but true of any other use.)
+6. `deck:"X"` also matches the deck's cards that currently sit in a filtered deck (via `odid`).
+
+**Where the spec was wrong or silent:**
 
 | Fact | Spec said | Actually true on 26.08.1 |
 |---|---|---|
@@ -112,41 +137,47 @@ Matches the 26.9.3 pre-check exactly (A 0, B 120, C 80).
 - Simulated with the same trick as that test (creation stamp moved back one day): `queue -3 → 0`. Covered by `test_manually_buried_card_returns_after_rollover` and the experiment's Part 2.
 - Confirm in real time in Don's manual check, step 5.
 
-**New-card limit under B:** handed-off cards take new/day slots in the Med Term preset, and they take them **first** (position 0). Med Term preset `new/day`: **_pending Don_**. The Anki connector has no deck-options read, and the real collection is not opened directly while Anki runs.
+**New-card limit under B:** handed-off cards take new/day slots in the Med Term preset, and they take them **first** (position 0). Med Term preset `new/day`: **_still pending Don_**. It was left blank in the decisions of 2026-10-01. The Anki connector has no deck-options read, and the real collection is not opened directly while Anki runs.
 
 **Cost summary:**
 - **A** keeps new/day free, and the handoff is one clean undo step. The cost: it **skips Anki's learning steps**, the first interval is ~2 days with no same-day re-check, and **every handed-off card is permanently invisible to the FSRS optimizer**. That grows with every deck drilled.
 - **B** keeps every card in optimizer training and gives Anki's learning steps a same-day-plus-one check. The cost: each card **counts against new/day** on the day after, ahead of the deck's other new cards. The handoff is three ops (wrap them in one custom undo entry, as A does). The card's day-1 review is a learning step, not a spaced review.
-- **Recommendation (for Don to weigh, not decided):** B, if the Med Term new/day is at least the usual batch handed off per day. Optimizer exclusion is permanent and cumulative, while the new/day cost is one day per card. If new/day is the binding constraint, the add-on could raise the day's limit for that deck (Anki's "today only" deck limit) rather than switch to A.
 
-**Decision: _pending Don_**
+**Decision (Don, 2026-10-01): B.** Unsuspend, reposition to the front of the new queue, bury (manual) until tomorrow. Reasons:
+- A permanently excludes drilled cards from FSRS optimizer training (A = 0, B = 120, D = 0 above).
+- B matches Don's medterm routine.
 
 ## Siblings at handoff
 
-**pending.** Options:
-- (a) hand off only the drilled card and leave siblings as they are;
-- (b) bury the drilled cards' siblings for the handoff day;
-- (c) hand off the siblings too.
+**Decision (Don, 2026-10-01): yes, hand off the siblings too.** When one card of a note is drilled (e.g. the Reverse card), the note's **undrilled, suspended, new** siblings are also unsuspended as plain new cards.
+- Siblings are repositioned **right after the drilled cards**: drilled cards first, then siblings, then the deck's other new cards.
+- Siblings are buried until tomorrow, like the drilled cards.
+- This matches the medterm routine, which unsuspends both directions.
+- Siblings that are not suspended, or not new, are left alone.
 
-Recommendation: _index doc's recommendation not visible to this session; Don to paste it, and it gets copied here verbatim._
+Notes for the phase that builds this (not decisions):
+- Siblings also take new/day slots, so a handoff of *n* two-direction notes uses up to 2*n*.
+- If the deck preset has "Bury new siblings" on, then on the next day Anki buries a sibling once its drilled card has been studied. The sibling then shows the day after. That's Anki's normal behavior, not a handoff bug.
 
 ## Disambiguation hints
 
-**pending.** Options:
-- (a) show a hint (Extra field or deck path) when two prompts collide;
-- (b) accept any colliding card's answer;
-- (c) leave it to the user to edit the cards.
-
-Recommendation: _from the index doc (not visible to this session)._
+**Decision (Don, 2026-10-01): yes.**
+- **On by default** only for **non-cloze** note types (cloze = `type == 1` and not IO; see API facts), on decks with **strict punctuation** on.
+- The auto-hint rules are a port of the medterm skill's rules. The Phase 2 prompt includes the reference code.
+- Manual per-card hint overrides live in `user_files/hints.json` (local, does not sync).
 
 ## Mid-session edit
 
-**pending.** Options:
-- (a) write the edit back to the note immediately (undoable, syncs);
-- (b) keep edits session-only, as drill-again does on the web;
-- (c) disallow edits in the add-on.
+**Decision (Don, 2026-10-01): session-only.** The drill **never writes note fields itself**.
+- An **"Edit in Anki"** button opens Anki's Browser on that card.
+- When the Browser closes, the add-on reloads the card from the collection and applies the edit to the session.
+- The web app's rule for an edit that changes the answer (restart the card, reset its telemetry) is the reference behavior for "applies the edit".
 
-The web app restarts the card and resets its telemetry when the answer changes. Recommendation: _from the index doc (not visible to this session)._
+Implementation note (checked in the installed `aqt` 26.08.1 source):
+- There is **no `browser_will_close` / `browser_did_close` hook**.
+- `Browser.closeEvent` saves the note via `editor.call_after_note_saved`, then `_closeWindow` tears down.
+- The Browser is a singleton (`aqt.dialogs.open("Browser", mw, …)`) and may already be open.
+- Candidate signals for "closed / edited": the Browser window's Qt `destroyed`/`finished` signal, or `operation_did_execute` with `changes.note_text` for the card's note. To be settled in the phase that builds it.
 
 ## UI tech
 
@@ -173,5 +204,5 @@ cmd /c mklink /J "%APPDATA%\Anki2\addons21\recall_drill_dev" "C:\Users\donth\Doc
 1. Create the junction above and restart Anki.
 2. Tools menu shows **Recall Drill (dev)**, and its About box shows `Recall Drill 0.0.0 (dev)` and the Anki version. Nothing else changed, and no error pop-up.
 3. Tools → Add-ons lists it, and the Debug Console shows no traceback.
-4. Answer the pending items above (A/B, Med Term new/day, siblings, hints, mid-session edit). Claude Code records the answers in the next prompt's first step.
+4. Answered 2026-10-01 (see the decisions above), except the Med Term preset new/day, which is still pending.
 5. Optional, for the bury question: in a throwaway deck, bury a card by hand (Browse → Toggle Bury), and check the next day (after Anki's next-day rollover, Preferences → Review) that it's back.
