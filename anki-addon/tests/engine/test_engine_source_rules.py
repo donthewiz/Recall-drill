@@ -62,6 +62,15 @@ def test_no_python_round(path: Path) -> None:
     assert not re.findall(r"(?<![\w.])round\(", source)
 
 
+SUM_CALL = re.compile(r"(?<![\w.])sum\(")
+
+
+@pytest.mark.parametrize("path", NOT_JSCOMPAT, ids=_ids(NOT_JSCOMPAT))
+def test_no_python_sum(path: Path) -> None:
+    """Python 3.12+'s sum() of floats is compensated; JS reduce isn't. Use jscompat.js_sum."""
+    assert not SUM_CALL.findall(_code_only(path.read_text(encoding="utf-8")))
+
+
 BARE_TEXT_CALLS = re.compile(
     r"\.(?:split|rsplit|strip|lstrip|rstrip)\(\)"
     r"|\.(?:splitlines|isspace|isdigit|isdecimal|isnumeric|isalnum|isalpha)\("
@@ -112,6 +121,8 @@ def test_rules_catch_violations() -> None:
     """The scanners themselves flag what they should, so the tests above can't pass vacuously."""
     assert re.findall(r"(?<![\w.])round\(", "x = round(2.5)")
     assert not re.findall(r"(?<![\w.])round\(", "x = js_round(2.5) + Math.round")
+    assert SUM_CALL.findall(_code_only("t = sum(xs)\n"))
+    assert not SUM_CALL.findall(_code_only("t = js_sum(xs) + np.sum(xs)  # sum(xs)\n"))
     assert BARE_TEXT_CALLS.findall(_code_only("y = s.strip()\nz = s.split()\nw = c.isdigit()\n"))
     assert not BARE_TEXT_CALLS.findall(_code_only('y = s.strip(CHARS)  # s.strip()\n"s.split()"\n'))
     strings = _non_docstring_strings('"""doc \\\\s"""\nP = "[0-9]\\\\s"\n')

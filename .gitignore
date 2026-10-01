@@ -14,6 +14,7 @@ anki-addon/meta.json
 anki-addon/user_files/*
 !anki-addon/user_files/README.txt
 anki-addon/dist/
+anki-addon/tests/golden/_debug/
 .pytest_cache/
 .ruff_cache/
 .coverage
