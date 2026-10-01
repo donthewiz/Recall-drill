@@ -2540,7 +2540,7 @@ SCENARIOS.push(
   },
   {
     name: 'empty-deck',
-    covers: ['session.ts: initSession on an empty deck (the Final check starts with no currentId)'],
+    covers: ['finalCheck.spec.ts: starts complete: the Final check with no card to serve and currentId SESSION_COMPLETE_ID'],
     setup: { deck: [], config: cfg(3, 35) },
     script: d => {
       d.do('next').do('probe');

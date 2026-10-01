@@ -6,7 +6,7 @@
 //   - inOrder is scoped to the current batch like shuffled mode.
 //   - shuffled (and undefined, for old saves/configs) keeps the original
 //     mid-pass reinsertion.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyAnswer, applyNext, buildItems, initSession, orderCycleQueue } from '../utils/drillEngine';
 import type { CycleOrder, DeckItem, SessionState } from '../types';
 
@@ -97,6 +97,23 @@ describe('inOrder cycle phase', () => {
     expect(s.currentId).toBe(0);
     expect(s.queue).toEqual([1, 2, 3, 4]);
   });
+});
+
+describe('random draws on a cycle miss or reveal', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  for (const [order, draws] of [['inOrder', 0], ['shuffled', 1]] as const) {
+    it(`cycleOrder=${order}: a miss and a reveal each draw ${draws} random number(s)`, () => {
+      const s = cycleState(5, 5, order);
+      const random = vi.spyOn(Math, 'random');
+      applyAnswer(s, 'zzzz wrong', { revealed: false });
+      expect(random).toHaveBeenCalledTimes(draws);
+      random.mockClear();
+      applyAnswer(s, '', { revealed: true });
+      expect(random).toHaveBeenCalledTimes(draws);
+    });
+  }
 });
 
 describe('shuffled cycle phase is unchanged', () => {

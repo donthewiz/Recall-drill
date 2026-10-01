@@ -97,9 +97,9 @@ def build_history_entry(state: SessionState, finished_at: float) -> SessionHisto
         "config": config,
         "cards": [build_history_card(i) for i in state["items"]],
     }
-    # TS `startTime ? ... : undefined`: a missing or 0 startTime leaves it out.
+    # A missing startTime leaves startedAt out; 0 (the epoch) is a real time.
     start_time = state["stats"].get("startTime")
-    if start_time:
+    if start_time is not None:
         entry["startedAt"] = js_iso_string(start_time)
     return entry
 

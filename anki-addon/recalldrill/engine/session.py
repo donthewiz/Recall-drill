@@ -13,6 +13,7 @@ TS name                         Python name
 ``DWELL_MS``                    ``DWELL_MS``
 ``orderCycleQueue``             ``order_cycle_queue``
 ``requeueCycleItem``            ``_requeue_cycle_item``
+``requeueMissedCycleItem``      ``_requeue_missed_cycle_item``
 ``getCurrentBatch``             ``_get_current_batch``
 ``advanceEncodeState``          ``_advance_encode_state``
 ``stayOnCurrentItem``           ``_stay_on_current_item``
@@ -49,7 +50,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict
 
 from . import rand
 from .grading import exact_match, grade
@@ -163,6 +164,17 @@ def _requeue_cycle_item(
     queue.insert(min(gap, len(queue)), item_id)
 
 
+def _requeue_missed_cycle_item(
+    queue: list[int], item_id: int, cycle_order: CycleOrder | None = "shuffled"
+) -> None:
+    """A missed or revealed cycle card comes back a random 2-3 cards later ('shuffled').
+    'inOrder' reinserts nothing (see :func:`_requeue_cycle_item`), so it draws no random
+    number either."""
+    if cycle_order == "inOrder":
+        return
+    _requeue_cycle_item(queue, item_id, 2 + math.floor(rand.random() * 2), cycle_order)
+
+
 def _batch_size(state: SessionState, items: Sequence[DrillItem]) -> int:
     """TS ``state.config.batchSize ?? items.length``."""
     size = state["config"].get("batchSize")
@@ -182,15 +194,9 @@ def _get_current_batch(
     return batch if batch is not None else []
 
 
-def _find_item(items: Sequence[DrillItem], item_id: int | None) -> DrillItem | None:
+def _find_item(items: Sequence[DrillItem], item_id: int) -> DrillItem | None:
     """TS ``items.find(i => i.id === id)``."""
     return next((i for i in items if i["id"] == item_id), None)
-
-
-def _current_id(state: SessionState) -> int | None:
-    """``state.currentId``; None only after a Final check started on an empty deck
-    (TS ``undefined``, see :func:`_advance_batch_state`)."""
-    return state.get("currentId")
 
 
 def _advance_encode_state(
@@ -238,22 +244,16 @@ def _advance_batch_state(
     if base["batchIndex"] + 1 >= total_batches:
         # Phase 3: one shuffled, cue-free pass over EVERY item, always shuffled.
         queue = shuffle([i["id"] for i in items])
-        state: SessionState = {
+        # An empty deck has no card to test, so the session is already complete.
+        return {
             **base,
             "items": items,
             "phase": "final",
             "queue": queue[1:],
             "stats": stats,
+            "currentId": queue[0] if queue else SESSION_COMPLETE_ID,
             "finalCheckStartAttempts": stats["attempts"],
         }
-        if queue:
-            state["currentId"] = queue[0]
-        else:
-            # TS `queue.shift()!` on an empty deck is undefined, which JSON
-            # drops: the state has no currentId at all (the one place the
-            # required key goes missing; _current_id reads it safely).
-            del cast(dict[str, object], state)["currentId"]
-        return state
     # currentId is deliberately left as-is: more batches remain.
     return {**base, "items": items, "phase": "batch-done", "queue": [], "stats": stats}
 
@@ -367,7 +367,7 @@ def _resume_current_encode_item(state: SessionState) -> SessionState | None:
     batch = _get_current_batch(
         state["items"], state["batchIndex"], _batch_size(state, state["items"])
     )
-    cur = _find_item(batch, _current_id(state))
+    cur = _find_item(batch, state["currentId"])
     if cur is None or cur["status"] == "ready" or cur["status"] == "mastered":
         return None
     items: list[DrillItem] = [
@@ -399,7 +399,7 @@ def select_trial(state: SessionState) -> Trial | None:
     # C3: the interstitial has no trial.
     if state["phase"] == "batch-done":
         return None
-    it = _find_item(state["items"], _current_id(state))
+    it = _find_item(state["items"], state["currentId"])
     if it is None:
         return None
 
@@ -521,7 +521,7 @@ def _record_trial_telemetry(
     """
     if verdict == "presented":
         return after
-    prev = _find_item(before["items"], _current_id(before))
+    prev = _find_item(before["items"], before["currentId"])
     if prev is None:
         return after
     prior_spans = {r["text"] for r in prev["remediateStack"]} | set(prev["remediateQueue"])
@@ -569,7 +569,7 @@ def _success_feedback(gr: GradeResult, default_feedback: Feedback) -> Feedback:
 def _grade_and_advance(
     state: SessionState, typed: str, *, revealed: bool, override: bool | None
 ) -> ApplyAnswerResult:
-    current_item = _find_item(state["items"], _current_id(state))
+    current_item = _find_item(state["items"], state["currentId"])
     if current_item is None:
         raise RuntimeError("applyAnswer called with no current item")
 
@@ -1050,9 +1050,7 @@ def _grade_and_advance(
             "diff": gr["diff"],
             "dwellKey": "cycle-miss",
         }
-        # Drawn even in 'inOrder' mode, where the requeue then does nothing.
-        gap = 2 + math.floor(rand.random() * 2)
-        _requeue_cycle_item(updated_queue, it["id"], gap, state["config"].get("cycleOrder"))
+        _requeue_missed_cycle_item(updated_queue, it["id"], state["config"].get("cycleOrder"))
 
     new_items[it_idx] = it
     return {
@@ -1080,8 +1078,7 @@ def _apply_revealed_answer(
     if state["phase"] == "cycle":
         it["cycleStreak"] = 0
         updated_queue = list(state["queue"])
-        gap = 2 + math.floor(rand.random() * 2)
-        _requeue_cycle_item(updated_queue, it["id"], gap, state["config"].get("cycleOrder"))
+        _requeue_missed_cycle_item(updated_queue, it["id"], state["config"].get("cycleOrder"))
         new_items[it_idx] = it
         return {
             "state": {**base, "items": new_items, "queue": updated_queue},
@@ -1144,7 +1141,7 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
     unchanged: EditResult = {"state": state, "restarted": False}
     if state["phase"] != "encode" and state["phase"] != "cycle":
         return unchanged
-    old = _find_item(state["items"], _current_id(state))
+    old = _find_item(state["items"], state["currentId"])
     if old is None:
         return unchanged
     front = js_trim(edit["front"])

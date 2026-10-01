@@ -63,6 +63,14 @@ describe('buildHistoryEntry', () => {
     });
     expect(e.cards[1].chunks).toBe(items[1].chunks!.length);
   });
+
+  it('keeps a startTime of 0 (the epoch) instead of treating it as missing', () => {
+    const items = buildItems(DECK, 35, 'cumulative', undefined, undefined, false);
+    const state = { ...doneState(items), stats: { ...emptyStats(), startTime: 0 } };
+    expect(buildHistoryEntry(state, new Date(0)).startedAt).toBe('1970-01-01T00:00:00.000Z');
+    const { startTime: _startTime, ...noStartTime } = state.stats;
+    expect(buildHistoryEntry({ ...state, stats: noStartTime }).startedAt).toBeUndefined();
+  });
 });
 
 describe('rankHardestCards', () => {

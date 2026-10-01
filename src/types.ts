@@ -187,8 +187,11 @@ export interface Feedback {
   text: string;
   type: 'success' | 'danger' | 'info';
   diff?: WordDiffResult[];
-  // One of 17 keys enumerated in drillEngine.ts's DWELL_MS table -- drives
-  // SessionView's setTimeout delay lookup without re-deriving the branch logic.
+  // Names the branch that produced this feedback. For an 'auto' advance it is
+  // a key of session.ts's DWELL_MS table, which drives SessionView's
+  // setTimeout delay without re-deriving the branch logic. The 'manual'
+  // cycle and Final-check keys (cycle-*, final-*) aren't in the table: those
+  // wait for Continue, so SessionView never looks them up.
   dwellKey: string;
 }
 
