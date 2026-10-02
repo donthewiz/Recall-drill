@@ -13,6 +13,12 @@ Run from the repo root::
 It prints the same text, byte for byte, as the "Current engine" section of
 ``npm run simulate`` (the Phase 0 legacy sections are not ported).
 
+``--difficulty-overrides`` prints, after that section, a **Python-only** one
+(no TS counterpart, so it is not part of the parity check): the same decks and
+learners with the FSRS difficulty pattern of :data:`OVERRIDE_PATTERN` stored on
+the items (docs/DECISIONS.md, "Engine extensions"). Without the flag the output
+is unchanged.
+
 ``--full <deck>:<learner>[:<run>]`` writes that seeded run's full state after
 every step to ``tests/golden/_debug/<deck>.<learner>.<run>.py.jsonl``, in the
 same format as ``export_golden.ts --full`` writes the TS side, for diffing.
@@ -35,6 +41,7 @@ ADDON_ROOT = Path(__file__).resolve().parent.parent
 if str(ADDON_ROOT) not in sys.path:
     sys.path.insert(0, str(ADDON_ROOT))
 
+from recalldrill.difficulty import easy_reps, hard_threshold  # noqa: E402
 from recalldrill.engine import rand  # noqa: E402
 from recalldrill.engine.items import MIN_WORDS_TO_CHUNK, build_items  # noqa: E402
 from recalldrill.engine.jscompat import js_sum, js_to_fixed, utf16_len  # noqa: E402
@@ -45,7 +52,13 @@ from recalldrill.engine.session import (  # noqa: E402
     init_session,
     select_trial,
 )
-from recalldrill.engine.types import Cue, DeckItem, SessionConfig, SessionState  # noqa: E402
+from recalldrill.engine.types import (  # noqa: E402
+    Cue,
+    DeckItem,
+    ItemOverrides,
+    SessionConfig,
+    SessionState,
+)
 
 GOLDEN_SIM = ADDON_ROOT / "tests" / "golden" / "session_sim.json"
 DEBUG_DIR = ADDON_ROOT / "tests" / "golden" / "_debug"
@@ -149,6 +162,7 @@ def simulate(
     *,
     record: Literal["none", "hash", "full"] = "none",
     call: EngineCall = _plain_call,
+    overrides: Sequence[ItemOverrides | None] | None = None,
 ) -> SimRun:
     """Port of ``simulate()``: drives the engine with a synthetic learner.
 
@@ -157,10 +171,16 @@ def simulate(
     under ``withSeededRandom(seed)``. ``trace_hash`` is SHA-256 over one line
     per trial, ``itemId|stage|cue.kind|target|typed|verdict|advance|dwellKey``,
     each ending in a newline. ``record`` also keeps each step (with the state's
-    hash, or the full state).
+    hash, or the full state). ``overrides`` (Python-only, per card) is stored on
+    the items; None is the TS run.
     """
     items = build_items(
-        deck, config["chunkDifficulty"], config["ladderMode"], None, min_words_to_chunk
+        deck,
+        config["chunkDifficulty"],
+        config["ladderMode"],
+        None,
+        min_words_to_chunk,
+        overrides=overrides,
     )
     state: SessionState = call(
         init_session,
@@ -325,6 +345,68 @@ def all_runs(sim: dict[str, Any]) -> dict[tuple[str, str], list[SimRun]]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Python-only: difficulty overrides (no TS counterpart)
+# ---------------------------------------------------------------------------
+
+OVERRIDE_PATTERN: tuple[int, ...] = (1,) * 4 + (0,) * 4 + (-1,) * 4
+"""Per card index: cards 0-3 hard (+1), 4-7 unchanged, 8-11 easy (-1)."""
+
+
+def pattern_overrides(
+    n: int, encode_reps: int, min_words_to_chunk: int = MIN_WORDS_TO_CHUNK
+) -> list[ItemOverrides]:
+    """:data:`OVERRIDE_PATTERN` as ``difficulty.adjust_card`` makes it, with the
+    config defaults: +1 is one more rep and a chunk threshold 2 lower (never under
+    4); -1 is one fewer rep (never under 2, or the deck's own if lower)."""
+    out: list[ItemOverrides] = []
+    for i in range(n):
+        step = OVERRIDE_PATTERN[i] if i < len(OVERRIDE_PATTERN) else 0
+        o: ItemOverrides = {}
+        if step > 0:
+            o["encodeRepsOverride"] = encode_reps + 1
+            t = hard_threshold(min_words_to_chunk, 2)
+            if t != min_words_to_chunk:
+                o["minWordsToChunkOverride"] = t
+        elif step < 0:
+            reps = easy_reps(encode_reps, 2)
+            if reps != encode_reps:
+                o["encodeRepsOverride"] = reps
+        out.append(o)
+    return out
+
+
+def override_runs(sim: dict[str, Any]) -> dict[tuple[str, str], list[SimRun]]:
+    """The scoreboard's seeded runs again, with :func:`pattern_overrides` on the items."""
+    reps = sim["config"]["encodeReps"]
+    return {
+        (deck_name, learner_name): [
+            run_config(
+                sim,
+                deck_name,
+                learner_name,
+                i,
+                overrides=pattern_overrides(len(sim["decks"][deck_name]), reps),
+            )
+            for i in range(sim["runsPerConfig"])
+        ]
+        for deck_name in sim["deckOrder"]
+        for learner_name in sim["learnerOrder"]
+    }
+
+
+def override_report(sim: dict[str, Any], runs: dict[tuple[str, str], list[SimRun]]) -> str:
+    """The Python-only section: the same table, with the override pattern."""
+    table = current_engine_report(sim, runs).split("\n", 2)[2]
+    header = (
+        "\n=== Python-only: difficulty overrides, "
+        f"{sim['runsPerConfig']} seeded runs per config (mean +/- SD) ===\n"
+        "Cards 0-3 +1 rep and chunk threshold T-2, 4-7 unchanged, 8-11 -1 rep. "
+        "No TS counterpart: not a parity check.\n"
+    )
+    return header + table
+
+
 def _compact(value: object) -> str:
     """export_golden.ts's compact(): sorted keys, ASCII only."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -363,6 +445,8 @@ def main(argv: Sequence[str]) -> int:
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     sys.stdout.write(current_engine_report(sim, all_runs(sim)))
+    if "--difficulty-overrides" in argv:
+        sys.stdout.write(override_report(sim, override_runs(sim)))
     return 0
 
 

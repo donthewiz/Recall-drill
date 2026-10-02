@@ -9,6 +9,13 @@ A card whose front shows an image (``<img>``) gets no disambiguation hint and
 stays out of the conflict pool: the cards of one figure share the same header
 text, and the image is what tells them apart. ``SourceRef.image_front`` marks
 them so later collision checks (another card's answer) skip them too.
+
+**Difficulty** (Phase 6, ``difficulty.py``): with :class:`DifficultyInputs`,
+each card's effective encode reps and chunk threshold come from its FSRS
+difficulty (or, without FSRS, its review history). ``BuildResult.adjustments``
+is a side table parallel to ``deck_items``; the session build stores
+:meth:`BuildResult.overrides` on the engine items. Each ``SourceRef`` carries
+the card's FSRS D and S, for the history line.
 """
 
 from __future__ import annotations
@@ -26,7 +33,8 @@ from anki.decks import DeckId
 from anki.errors import NotFoundError
 
 from ..deck_settings import DeckSettings, hints_enabled, standard_share
-from ..engine.types import DeckItem
+from ..difficulty import CardAdjustment, DifficultySettings, adjust_card
+from ..engine.types import DeckItem, ItemOverrides
 from ..prompts import HintEntry, compute_hints, find_conflicts
 from ..sources import SourceRef
 from .cards import NoteCache
@@ -46,6 +54,17 @@ class FlaggedHint:
     conflicts: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class DifficultyInputs:
+    """What the difficulty adjustment needs besides the card."""
+
+    settings: DifficultySettings
+    deck_reps: int
+    """The session's ``encodeReps`` (the deck's "Blind typings required")."""
+    deck_min_words: int
+    """The session's chunk threshold (``min_words_to_chunk``)."""
+
+
 @dataclass
 class BuildResult:
     deck_items: list[DeckItem]
@@ -55,6 +74,12 @@ class BuildResult:
     empty_answers: int = 0
     hint_pool: int = 0
     """Cards the conflict check looked at."""
+    adjustments: list[CardAdjustment] = field(default_factory=list[CardAdjustment])
+    """Parallel to ``deck_items`` when the build had :class:`DifficultyInputs`, else empty."""
+
+    def overrides(self) -> list[ItemOverrides]:
+        """The engine's per-item overrides, parallel to ``deck_items`` (empty: none)."""
+        return [a.overrides() for a in self.adjustments]
 
 
 @dataclass(frozen=True)
@@ -170,11 +195,13 @@ def build_session(
     hints: Mapping[str, str],
     notes: NoteCache | None = None,
     collisions: bool = True,
+    difficulty: DifficultyInputs | None = None,
 ) -> BuildResult:
     """Everything the session and the panel need from a selection.
 
     ``collisions``: look up each card's colliding answers (the conflict pool is
     read even with hints off). False skips the pool when hints are off too.
+    ``difficulty``: compute each card's adjustment (``BuildResult.adjustments``).
     """
     cache = notes if notes is not None else NoteCache(col)
     rows, empty = _rows(col, selection.picked, cache)
@@ -215,6 +242,7 @@ def build_session(
 
     deck_items: list[DeckItem] = []
     sources: list[SourceRef] = []
+    adjustments: list[CardAdjustment] = []
     for r in rows:
         hint = suffixes.get(r.key, "")
         item: DeckItem = {"front": r.front + hint, "back": r.answer}
@@ -222,6 +250,10 @@ def build_session(
             item["extra"] = r.extra
         deck_items.append(item)
         s = r.cand.snap
+        if difficulty is not None:
+            adjustments.append(
+                adjust_card(s, difficulty.deck_reps, difficulty.deck_min_words, difficulty.settings)
+            )
         sources.append(
             SourceRef(
                 cid=s.cid,
@@ -240,9 +272,11 @@ def build_session(
                 image_front=r.image_front,
                 hint=hint,
                 colliding_answers=colliding.get(r.key, ()),
+                fsrs_d=s.fsrs_d,
+                fsrs_s=s.fsrs_s,
             )
         )
-    return BuildResult(deck_items, sources, hints_on, flagged, empty, pool_size)
+    return BuildResult(deck_items, sources, hints_on, flagged, empty, pool_size, adjustments)
 
 
 @dataclass(frozen=True)

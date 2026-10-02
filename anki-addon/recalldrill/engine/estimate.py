@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal, TypedDict
 
-from .items import MIN_WORDS_TO_CHUNK, build_items, partition_into_batches
+from .items import MIN_WORDS_TO_CHUNK, build_items, partition_into_batches, reps_for
 from .jscompat import js_round, js_split_ws, js_trim, utf16_len
 from .types import DeckItem, DrillItem, LadderMode, SessionState
 
@@ -84,19 +84,22 @@ def compute_minimum_trials(
     """The minimum ``stats.attempts`` for a perfect learner (presentations excluded).
 
     ``ladder_mode`` None is TS ``undefined``, which takes the 'cumulative' default.
+    Add-on extension: a card's ``encodeRepsOverride`` replaces ``encode_reps``
+    for that card (:func:`.items.reps_for`).
     """
     total = 0
     for item in items:
+        reps = reps_for(item, encode_reps)
         chunks = item["chunks"]
         combine_seq = item["combineSeq"]
         if chunks is not None and combine_seq is not None:
             total += len(chunks)
             if ladder_mode is None or ladder_mode == "cumulative":
-                total += max(0, len(combine_seq) - 1) + encode_reps
+                total += max(0, len(combine_seq) - 1) + reps
             else:
-                total += len(combine_seq) * encode_reps
+                total += len(combine_seq) * reps
         else:
-            total += encode_reps
+            total += reps
         total += 2  # cycle: exactly 2 corrects to reach mastered
         if include_final_check:
             total += 1  # Phase 3: one Final-check answer

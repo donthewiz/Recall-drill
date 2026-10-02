@@ -4,7 +4,8 @@
 - The top-level helper modules (storage, prompts, deck_settings, sources,
   addon_config), the drill controller with its storage (controller, sessions,
   history_store) and its display and start-up (card_html, drill_view, launch),
-  and the measurement modules (holdout, measure, tuning) are pure the same way:
+  the measurement modules (holdout, measure, tuning) and the difficulty
+  mapping (card_state, difficulty) are pure the same way:
   no anki, no Qt. They may use engine/ and each other.
 - anki_io/ never touches Qt; from aqt it may use aqt.operations only.
 """
@@ -90,6 +91,8 @@ PURE_MODULES = (
     "holdout.py",
     "measure.py",
     "tuning.py",
+    "card_state.py",
+    "difficulty.py",
 )
 
 

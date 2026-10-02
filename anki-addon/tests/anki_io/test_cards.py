@@ -72,11 +72,41 @@ def test_classify_young_interval_and_flag_colour_are_settings() -> None:
     assert classify(snap(flags=1), flag=0) == "new"  # 0: no flag class
 
 
+STABLE = {**REVIEW, "ivl": 60, "fsrs_d": 4.0, "fsrs_s": 45.0}
+
+
+@pytest.mark.parametrize(
+    ("kw", "expected"),
+    [
+        (STABLE, "stable"),
+        ({**STABLE, "fsrs_s": 30.0, "fsrs_d": 5.0}, "stable"),  # both bounds inclusive
+        ({**STABLE, "fsrs_s": 29.9}, "mature"),  # not stable enough
+        ({**STABLE, "fsrs_d": 5.1}, "mature"),  # too hard
+        ({**STABLE, "fsrs_d": None, "fsrs_s": None}, "mature"),  # no FSRS: never stable
+        ({**STABLE, "tags": ("leech",)}, "leech"),  # leech comes first
+        ({**STABLE, "flags": 1}, "flagged"),
+        ({**STABLE, "ivl": 10}, "stable"),  # a young card FSRS calls stable
+        ({**STABLE, "lapses": 2}, "stable"),  # before lapsed
+        ({**STABLE, "queue": -1}, "stable"),  # before suspended_review
+    ],
+)
+def test_classify_stable(kw: dict[str, object], expected: CardClass) -> None:
+    assert classify(snap(**kw)) == expected
+
+
+def test_stable_thresholds_are_settings() -> None:
+    s = snap(**STABLE)
+    assert classify(s, skip_min_stability=50) == "mature"
+    assert classify(s, skip_max_difficulty=3) == "mature"
+    assert classify(s, skip_min_stability=45, skip_max_difficulty=4) == "stable"
+
+
 def test_every_class_is_reachable_and_defaults() -> None:
     assert set(CARD_CLASSES) == {
-        "in_filtered_deck", "buried", "flagged", "leech", "suspended_new",
+        "in_filtered_deck", "buried", "flagged", "leech", "stable", "suspended_new",
         "suspended_review", "lapsed", "learning", "new", "young", "mature",
     }  # fmt: skip
+    assert CARD_CLASSES.index("stable") == CARD_CLASSES.index("leech") + 1
     assert DEFAULT_ENABLED == {"flagged", "leech", "suspended_new", "lapsed", "new", "young"}
 
 

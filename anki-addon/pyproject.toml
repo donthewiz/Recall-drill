@@ -40,6 +40,8 @@ strict = [
     "recalldrill/holdout.py",
     "recalldrill/measure.py",
     "recalldrill/tuning.py",
+    "recalldrill/card_state.py",
+    "recalldrill/difficulty.py",
 ]
 
 [tool.pytest.ini_options]

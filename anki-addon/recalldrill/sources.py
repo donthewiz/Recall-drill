@@ -17,6 +17,7 @@ CardClass = Literal[
     "buried",
     "flagged",
     "leech",
+    "stable",
     "suspended_new",
     "suspended_review",
     "lapsed",
@@ -62,6 +63,10 @@ class SourceRef:
     """Answers of other cards whose fronts conflict with this one under the
     hint rule (same pool as the hints, computed even when hints are off). The
     controller's "other card's answer" catch checks typed text against them."""
+    fsrs_d: float | None = None
+    """FSRS difficulty (1-10) when the session was built, or None (no memory state)."""
+    fsrs_s: float | None = None
+    """FSRS stability in days when the session was built, or None."""
 
 
 _FIELDS = {f.name for f in dataclasses.fields(SourceRef)}

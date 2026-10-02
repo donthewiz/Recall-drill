@@ -19,6 +19,11 @@ config's ``holdout_pct`` is the default, 0 = off), a deck scope sets some
 eligible new cards aside as the measurement control; the panel says how many,
 updated as the % changes. Cards tagged ``rd::holdout`` are left out unless
 ``holdout_exclude`` is off.
+
+**Difficulty** (Phase 6): the card section says how many cards get one more
+or one fewer rep, or chunk earlier, from their FSRS difficulty (new cards have
+no FSRS data and are unchanged), and how many ``stable`` cards are skipped.
+The deck's "Adjust reps by difficulty" toggle is saved with its settings.
 """
 
 from __future__ import annotations
@@ -97,6 +102,17 @@ _EXPOSURE: list[tuple[ExposureLevel, str]] = [
 
 def _plural(n: int, one: str, many: str | None = None) -> str:
     return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
+def stable_text(skipped: int, min_stability: float, max_difficulty: float) -> str:
+    """The card section's ``stable`` line ("" when none is skipped)."""
+    if skipped <= 0:
+        return ""
+    return (
+        f"Stable: {_plural(skipped, 'card')} skipped (FSRS stability ≥ {min_stability:g} days, "
+        f"difficulty ≤ {max_difficulty:g}). Tick “stable” to drill "
+        f"{'it' if skipped == 1 else 'them'}."
+    )
 
 
 def holdout_text(held: int, pct: int = 1) -> str:
@@ -258,6 +274,9 @@ class SetupDialog(QDialog):
         self.sibling_label = QLabel()
         self.sibling_label.setWordWrap(True)
         cl.addWidget(self.sibling_label)
+        self.difficulty_label = QLabel()
+        self.difficulty_label.setWordWrap(True)
+        cl.addWidget(self.difficulty_label)
         srow = QHBoxLayout()
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
@@ -318,12 +337,21 @@ class SetupDialog(QDialog):
         self.strict = QCheckBox("Punctuation must match (strict)")
         self.stem = QCheckBox("Forgive minor word endings (e.g. plurals)")
         self.hints = QCheckBox("Disambiguation hints on prompts")
+        self.difficulty_adjust = QCheckBox(
+            "Adjust reps by difficulty (cards with review history only)"
+        )
+        self.difficulty_adjust.setToolTip(
+            "Cards Anki finds hard (FSRS difficulty ≥ 7, or many lapses without FSRS) get "
+            "one more blind typing and chunk earlier; easy ones (difficulty ≤ 3) one fewer. "
+            "New cards have no FSRS data and keep the deck's settings."
+        )
         sform.addRow("Cards per batch", self.batch_size)
         sform.addRow("Blind typings required", self.encode_reps)
         sform.addRow("Cycle review order", self.cycle_order)
         sform.addRow("", self.strict)
         sform.addRow("", self.stem)
         sform.addRow("", self.hints)
+        sform.addRow("", self.difficulty_adjust)
         stl.addLayout(sform)
         self.settings_note = QLabel()
         self.settings_note.setWordWrap(True)
@@ -338,6 +366,7 @@ class SetupDialog(QDialog):
         qconnect(self.strict.toggled, self._on_setting)
         qconnect(self.stem.toggled, self._on_setting)
         qconnect(self.hints.toggled, self._on_setting)
+        qconnect(self.difficulty_adjust.toggled, self._on_setting)
         self.body.addWidget(settings)
 
         # Hints
@@ -470,6 +499,8 @@ class SetupDialog(QDialog):
             holdout_pct=pct,
             holdout_salt=holdout.salt_for(self.ctx.storage(), pct),
             exclude_holdout_tag=cfg.holdout_exclude,
+            skip_min_stability=cfg.skip_min_stability,
+            skip_max_difficulty=cfg.skip_max_difficulty,
         )
 
     def _refresh(self) -> None:
@@ -584,6 +615,13 @@ class SetupDialog(QDialog):
             )
         self.holdout_row.setVisible(data.scope.deck_id is not None)
         self.holdout_label.setText(holdout_text(len(sel.holdout), sel.options.holdout_pct))
+        diff_lines = [data.difficulty.text()] if data.difficulty is not None else []
+        cfg = self.ctx.config()
+        stable = stable_text(data.stable_skipped, cfg.skip_min_stability, cfg.skip_max_difficulty)
+        if stable:
+            diff_lines.append(stable)
+        self.difficulty_label.setText("<br>".join(diff_lines))
+        self.difficulty_label.setVisible(bool(diff_lines))
         image_fronts = sum(1 for s in b.sources if s.image_front)
         if image_fronts:
             lines.append(f"{image_fronts} show an image on the front (no hints for them).")
@@ -600,6 +638,7 @@ class SetupDialog(QDialog):
         self.stem.setEnabled(not r["strictPunctuation"])
         self.hints.setChecked(data.build.hints_on)
         self.holdout_pct.setValue(r["holdoutPct"])
+        self.difficulty_adjust.setChecked(r["difficultyAdjust"])
         proposal = data.proposal
         self.proposal_row.setVisible(
             proposal is not None and any(self.draft.get(k) != v for k, v in proposal.items())
@@ -717,6 +756,7 @@ class SetupDialog(QDialog):
         d["strictPunctuation"] = self.strict.isChecked()
         d["stemTolerance"] = self.stem.isChecked()
         d["holdoutPct"] = self.holdout_pct.value()
+        d["difficultyAdjust"] = self.difficulty_adjust.isChecked()
         if self.data is None or self.hints.isChecked() != self.data.build.hints_on:
             d["hints"] = self.hints.isChecked()
         self.stem.setEnabled(not self.strict.isChecked())
@@ -819,6 +859,7 @@ class SetupDialog(QDialog):
             hints=data.build.hints_on,
             cfg=self.ctx.config(),
             holdout=data.holdout,
+            overrides=data.build.overrides(),
         )
         open_drill_window(self.ctx, ctrl, store)
         self.close()

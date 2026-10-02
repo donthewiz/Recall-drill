@@ -58,7 +58,10 @@ def test_resolve_fills_defaults() -> None:
         "cycleOrder": "shuffled",
         "card_ords": {},
         "holdoutPct": 0,
+        "difficultyAdjust": True,
     }
+    assert ds.resolve({"difficultyAdjust": False})["difficultyAdjust"] is False
+    assert ds.sanitize({"difficultyAdjust": "yes"}) == {}
     assert ds.resolve({"stemTolerance": False})["stemTolerance"] is False
     base: ds.ResolvedSettings = {**ds.DEFAULTS, "encodeReps": 5, "batchSize": 0}
     assert ds.resolve({"batchSize": 3}, base)["encodeReps"] == 5

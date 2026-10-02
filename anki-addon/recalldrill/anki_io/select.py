@@ -40,6 +40,7 @@ from typing import Any, Literal, cast
 from anki.collection import Collection, SearchNode
 from anki.decks import DeckId
 
+from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY
 from ..holdout import HOLDOUT_CLASSES, TAG_HOLDOUT, is_holdout
 from .cards import (
     CARD_CLASSES,
@@ -66,6 +67,7 @@ PRIORITY_RANK: tuple[CardClass, ...] = (
     "new",
     "young",
     # Off by default; ranked last when switched on.
+    "stable",
     "suspended_review",
     "learning",
     "mature",
@@ -133,6 +135,10 @@ class SelectOptions:
     holdout_pct: int = 0
     """Holdout percentage (0 = off). Applied to deck scopes only."""
     holdout_salt: str = ""
+    skip_min_stability: float = SKIP_MIN_STABILITY
+    """The ``stable`` class (``classify``): FSRS stability at least this ..."""
+    skip_max_difficulty: float = SKIP_MAX_DIFFICULTY
+    """... and difficulty at most this."""
 
 
 def scope_to_json(scope: Scope) -> dict[str, Any]:
@@ -158,6 +164,8 @@ def options_to_json(o: SelectOptions) -> dict[str, Any]:
         "exclude_holdout_tag": o.exclude_holdout_tag,
         "holdout_pct": o.holdout_pct,
         "holdout_salt": o.holdout_salt,
+        "skip_min_stability": o.skip_min_stability,
+        "skip_max_difficulty": o.skip_max_difficulty,
     }
 
 
@@ -177,6 +185,8 @@ def options_from_json(d: Mapping[str, Any]) -> SelectOptions:
         exclude_holdout_tag=bool(d.get("exclude_holdout_tag", False)),
         holdout_pct=int(d.get("holdout_pct") or 0),
         holdout_salt=str(d.get("holdout_salt") or ""),
+        skip_min_stability=float(d.get("skip_min_stability", SKIP_MIN_STABILITY)),
+        skip_max_difficulty=float(d.get("skip_max_difficulty", SKIP_MAX_DIFFICULTY)),
     )
 
 
@@ -351,7 +361,13 @@ def select_cards(
         if allowed is not None and mapping.template_ord not in allowed:
             template_excluded += 1
             continue
-        card_class = classify(snap, options.young_ivl, options.flag)
+        card_class = classify(
+            snap,
+            options.young_ivl,
+            options.flag,
+            options.skip_min_stability,
+            options.skip_max_difficulty,
+        )
         reason, answer = content_check(col, snap, mapping, cache)
         if reason is None:
             reason = state_reason(card_class, options.enabled)

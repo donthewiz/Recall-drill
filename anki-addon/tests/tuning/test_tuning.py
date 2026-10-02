@@ -144,7 +144,15 @@ def test_small_groups_say_n_too_small() -> None:
 def test_breakdowns() -> None:
     r = report()
     names = [title for title, _ in r.breakdowns]
-    assert names == ["answer words", "chunks", "encodeReps", "card class", "handoff mode", "deck"]
+    assert names == [
+        "answer words",
+        "chunks",
+        "encodeReps",
+        "adjustment (+1 / 0 / −1)",
+        "card class",
+        "handoff mode",
+        "deck",
+    ]
     words = {s.label: s for s in dict(r.breakdowns)["answer words"]}
     assert list(words) == ["1", "2–3", "4–8", "9–15"]
     assert (words["1"].n, words["1"].again) == (1, 1)
@@ -330,3 +338,33 @@ def test_tuning_line_and_confirmation() -> None:
     t = Suggestion("min_words_to_chunk", 8, 6, "v", ("e",), T_CAVEAT)
     assert "MIN_WORDS_TO_CHUNK from 8 to 6" in confirmation_text(t, None, [])
     assert T_CAVEAT in confirmation_text(t, None, [])
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: per-card encodeReps
+# ---------------------------------------------------------------------------
+
+
+def test_per_card_reps_drive_the_encode_reps_rows_and_adjustment() -> None:
+    """A Phase 6 line's per-card ``encodeReps`` wins over the session's; an older
+    line (no per-card value) falls back to the session's, with no adjustment."""
+    new = [Drilled(401, reps=4), Drilled(402, reps=3), Drilled(403, reps=2)]
+    old = [Drilled(404)]
+    lines = [
+        session_line("p6", ms(2026, 10, 1, 14), new),
+        handoff_line("p6", ms(2026, 10, 1, 15), new),
+        session_line("p5", ms(2026, 10, 1, 16), old),
+        handoff_line("p5", ms(2026, 10, 1, 17), old),
+    ]
+    revlog = [rating(c, ms(2026, 10, 2, 10), ease=3) for c in (401, 402, 403, 404)]
+    cards = {c: CH1 for c in (401, 402, 403, 404)}
+    r = build_report(lines, revlog, None, cards=cards, rollover=ROLLOVER, tz=UTC)
+    drilled = by_cid(r.group("drilled"))
+    assert [drilled[c].encode_reps for c in (401, 402, 403, 404)] == [4, 3, 2, 3]
+    assert [drilled[c].adjustment for c in (401, 402, 403, 404)] == [1, 0, -1, None]
+    reps = {s.label: s.n for s in dict(r.breakdowns)["encodeReps"]}
+    assert reps == {"2": 1, "3": 2, "4": 1}
+    adjust = {s.label: s.n for s in dict(r.breakdowns)["adjustment (+1 / 0 / −1)"]}
+    assert adjust == {"+1": 1, "0": 1, "−1": 1, "unknown": 1}
+    first = dict(zip(CSV_COLUMNS, list(csv.reader(io.StringIO(to_csv(r, UTC))))[1], strict=True))
+    assert (first["encode_reps"], first["adjustment"]) == ("4", "1")

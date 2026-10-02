@@ -5,7 +5,11 @@
 - ``type: "session"``: one per completed session (written here, at completion):
   ``sessionId``, the web app's ``buildHistoryEntry`` fields, an ``anki`` block
   (per card ``cid, nid, ord, did, card_class``, parallel to the entry's
-  ``cards``), the encode settings used, the scope, ``collisions`` and
+  ``cards``; Phase 6 adds ``d`` and ``s``, the card's FSRS difficulty and
+  stability when the session was built (None without FSRS), ``encodeReps`` and
+  ``minWordsToChunk``, the reps and chunk threshold the card was drilled with,
+  and ``adjust``, +1 / 0 / -1 against the session's ``encodeReps``), the
+  encode settings used, the scope, ``collisions`` and
   ``holdout`` (the cards held out as the measurement control, Phase 5).
 - ``type: "handoff"``: one per handoff (``anki_io/handoff.py``, ``handoff_line``),
   with the same ``sessionId``: mode, timestamp, the card ids per group, what
@@ -34,7 +38,7 @@ from .engine.estimate import (
     pick_cold_start_deck_shape,
 )
 from .engine.history import build_history_entry
-from .engine.items import MIN_WORDS_TO_CHUNK
+from .engine.items import MIN_WORDS_TO_CHUNK, min_words_for, reps_for
 from .engine.jscompat import js_iso_string
 from .engine.types import SessionState
 from .sources import SourceRef
@@ -47,6 +51,16 @@ class AnkiCardRef(TypedDict):
     ord: int
     did: int
     card_class: str
+    d: float | None
+    """FSRS difficulty (1-10) when the session was built, or None."""
+    s: float | None
+    """FSRS stability (days) when the session was built, or None."""
+    encodeReps: int
+    """The reps this card's ``encodeReps`` steps needed."""
+    minWordsToChunk: int
+    """The chunk threshold this card was built with."""
+    adjust: int
+    """+1 / 0 / -1: ``encodeReps`` against the session's."""
 
 
 class EncodeSettings(TypedDict):
@@ -103,11 +117,25 @@ def build_session_line(
     so it is parallel to the entry's ``cards`` (the add-on never reorders items,
     so that is item id order too)."""
     entry = build_history_entry(state, finished_at)
+    config = state["config"]
+    session_min_words = config.get("minWordsToChunk", MIN_WORDS_TO_CHUNK)
     anki: list[AnkiCardRef] = []
     for item in state["items"]:
         s = sources[item["id"]]
+        reps = reps_for(item, config)
         anki.append(
-            {"cid": s.cid, "nid": s.nid, "ord": s.ord, "did": s.did, "card_class": s.card_class}
+            {
+                "cid": s.cid,
+                "nid": s.nid,
+                "ord": s.ord,
+                "did": s.did,
+                "card_class": s.card_class,
+                "d": s.fsrs_d,
+                "s": s.fsrs_s,
+                "encodeReps": reps,
+                "minWordsToChunk": min_words_for(item, session_min_words),
+                "adjust": (reps > config["encodeReps"]) - (reps < config["encodeReps"]),
+            }
         )
     return {
         "type": "session",
