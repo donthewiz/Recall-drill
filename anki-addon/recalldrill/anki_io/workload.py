@@ -245,20 +245,20 @@ def anki_load(
     reason = ""
     req = simulator_request(col, did, new_limit=new_per_day, deck_size=deck_size, days=days)
     if req is None:
-        reason = "FSRS simulator not used: FSRS is off or the preset has no FSRS parameters."
+        reason = "The FSRS simulator wasn't used: FSRS is off or the preset has no FSRS parameters."
     else:
         learn, review = simulator_ratings(col, req.search)
         if learn < MIN_RATINGS or review < MIN_RATINGS:
             reason = (
-                "FSRS simulator not used: it would fall back on Anki's default answer times "
-                f"(you have {learn} learning and {review} review ratings here; "
-                f"it needs {MIN_RATINGS} of each)."
+                f"The FSRS simulator needs {MIN_RATINGS} learning and {MIN_RATINGS} review "
+                f"ratings of yours in this deck (you have {learn} and {review}); "
+                "with fewer it would use Anki's default answer times."
             )
         else:
             try:
                 sim = simulate(col, req)
             except Exception as exc:  # the panel must still open
-                reason = f"FSRS simulator failed ({exc})."
+                reason = f"The FSRS simulator failed: {exc}."
             else:
                 return AnkiLoad.from_days(
                     "simulator",

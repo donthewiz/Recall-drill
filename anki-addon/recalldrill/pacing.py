@@ -527,7 +527,7 @@ class AnkiLoad:
         )
 
 
-NO_ANKI_ESTIMATE = f"no estimate yet (fewer than {MIN_RATINGS} of your own ratings)"
+NO_ANKI_ESTIMATE = "no estimate yet"
 
 
 # ---------------------------------------------------------------------------
@@ -577,5 +577,7 @@ class PacingView:
         drill = f"Drill time: {self.drill_source}."
         anki = f"Anki time: {self.anki.note}."
         if self.anki.fallback_reason:
-            anki += f" ({self.anki.fallback_reason})"
+            anki += f" {self.anki.fallback_reason}"
+        elif self.anki.source == "none":
+            anki += f" Fewer than {MIN_RATINGS} of your own ratings in this deck so far."
         return f"{drill} {anki}"

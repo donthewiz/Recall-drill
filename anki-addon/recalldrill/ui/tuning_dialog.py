@@ -20,7 +20,6 @@ from aqt import mw
 from aqt.operations import QueryOp
 from aqt.qt import (
     QApplication,
-    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -48,6 +47,7 @@ from ..tuning import (
     tuning_line,
 )
 from .context import AddonContext
+from .widgets import ComboBox
 
 GEOM_KEY = "recalldrill_tuning"
 ALL_DECKS = "All decks"
@@ -94,7 +94,7 @@ class TuningDialog(QDialog):
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
         row.addWidget(QLabel("Deck"))
-        self.deck = QComboBox()
+        self.deck = ComboBox()
         self.deck.addItem(ALL_DECKS, None)
         qconnect(self.deck.currentIndexChanged, self._render)
         row.addWidget(self.deck, 1)
