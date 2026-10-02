@@ -11,10 +11,13 @@ from anki_fixtures import (
     AMC,
     AMC_SAMPLE,
     AMC_TAGS,
+    IOL_LABELS,
     add_amc_models,
     add_bqe_model,
     add_bqe_note,
     add_io_note,
+    add_iol_model,
+    add_iol_note,
     add_note,
     deck,
 )
@@ -89,6 +92,18 @@ def test_preview_of_a_cloze_deck_with_io(col: Collection, tmp_path: Path) -> Non
     assert "<td>image_occlusion</td><td>1</td>" in html
     assert "<td>cloze</td><td>Text</td><td>Extra</td>" in html
     assert "Image Occlusion: nothing to type" in html
+    assert "items show an image on the front" not in html
+
+
+def test_preview_counts_image_fronts(col: Collection, tmp_path: Path) -> None:
+    add_iol_model(col)
+    did = deck(col, "Lab 3")
+    for label in IOL_LABELS.values():
+        add_iol_note(col, did, label, extra="see text")
+    html = preview_html(build_preview(col, Storage(tmp_path, "p"), did))
+    assert "3 items show an image on the front: no hints for them." in html
+    assert "<td>Image Occlusion (anki-medical-cards)</td><td>Reveal (0)</td>" in html
+    assert "<td>standard</td><td>Answer</td><td>Extra</td>" in html
 
 
 def test_preview_dialog_renders_offscreen(

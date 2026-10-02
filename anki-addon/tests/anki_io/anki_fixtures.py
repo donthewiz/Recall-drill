@@ -166,3 +166,58 @@ def add_io_note(col: Collection, did: DeckId) -> Note:
             "Image": '<img src="bones.png">',
         },
     )
+
+
+# The anki-cards skill's Image Occlusion lookalike: a STANDARD note type. Its
+# Answer repeats the Question HTML (header, image, masks) and adds the label.
+IOL = "Image Occlusion (anki-medical-cards)"
+IOL_FIELDS = ["Question", "Answer", "Extra", "FullContext", "Source", "Notes"]
+IOL_FRONT = "{{Question}}"
+IOL_BACK = (
+    "{{Answer}}<hr id=answer>{{#Extra}}<div class='extra'>{{Extra}}</div>{{/Extra}}"
+    "{{#FullContext}}<details class='full-context'><summary>Show more</summary>"
+    "<div class='full-context-body'>{{FullContext}}</div></details>{{/FullContext}}"
+    "{{#Source}}<div class='source'>{{Source}}</div>{{/Source}}"
+)
+IOL_CSS = (
+    ".occ-mask { position: absolute; background: #e33; }\n.occ-mask.active { background: #fc0; }"
+)
+IOL_QUESTION = (
+    '<div class="occ-header">Figure 4.3 Cell and tissue structures</div>'
+    '<div class="occ-wrap"><img src="fig-4-3.png">'
+    '<div class="occ-mask active" style="left:12%;top:30%;width:20%;height:8%"></div>'
+    '<div class="occ-mask" style="left:52%;top:61%;width:25%;height:9%"></div></div>'
+)
+# The three label variants seen in Don's collection.
+IOL_LABELS = {
+    "Nucleus": '<div class="occ-caption">Nucleus</div>',
+    "Goblet cells": "<br><b>Goblet cells</b>",
+    "Hyaline (articular) cartilage": (
+        '<div style="margin-top:8px;font-weight:bold">Hyaline (articular) cartilage</div>'
+    ),
+}
+
+
+def add_iol_model(col: Collection) -> NotetypeDict:
+    m = _standard_model(col, IOL, IOL_FIELDS, [("Reveal", IOL_FRONT, IOL_BACK)])
+    m["css"] = IOL_CSS
+    col.models.update_dict(m)
+    return model(col, IOL)
+
+
+def add_iol_note(
+    col: Collection, did: DeckId, label_html: str, extra: str = "", question: str = IOL_QUESTION
+) -> Note:
+    return add_note(
+        col,
+        IOL,
+        did,
+        {
+            "Question": question,
+            "Answer": question + label_html,
+            "Extra": extra,
+            "FullContext": "Simple columnar epithelium lines the gut.",
+            "Source": "Lab 3, slide 12",
+        },
+        AMC_TAGS,
+    )

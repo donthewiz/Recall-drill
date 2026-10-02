@@ -185,13 +185,28 @@ How the add-on turns Anki cards into drill items (`recalldrill/anki_io/`). Execu
 
 **Front.** Always Anki's render of the question, never a mapped field. So cloze `[...]`/`[hint]`, images and template text come out right.
 
-**Kinds.** `image_occlusion` (by `originalStockKind` 6, a name containing "Image Occlusion", or `image-occlusion:` in a sampled note's cloze field), then `cloze` (`type == 1`), else `standard`. IO is ineligible. A cloze-kind note whose cloze field holds `image-occlusion:` is ineligible on its own too.
+**Kinds.** `image_occlusion` only by `originalStockKind` 6 (stock IO), then `cloze` (`type == 1`), else `standard`. The note type's **name plays no part**. Stock IO is ineligible. A single cloze note whose cloze field holds `image-occlusion:` is ineligible on its own (counted as image occlusion); the rest of its note type is drilled. Anything else goes through the mapping, and a card with no typeable text ends up as "empty answer".
+
+**Changed before merge (Don, 2026-10-02): no name rule for Image Occlusion.** Phase 2 first also treated any note type whose name contains "Image Occlusion" (meant for the IO Enhanced add-on), or whose sampled cloze notes held `image-occlusion:`, as IO. On Don's collection:
+- All 686 image-occlusion notes use the anki-cards lookalike "Image Occlusion (anki-medical-cards)"; there are 0 stock IO and 0 IO Enhanced notes.
+- The lookalike is a **standard** note type: fields `Question, Answer, Extra, FullContext, Source, Notes`, one template "Reveal" (front `{{Question}}`, back `{{Answer}}<hr id=answer>` then Extra / FullContext / Source).
+- Its `Answer` repeats the Question HTML (header, image, masks) and adds a typeable label.
+
+So the name rule only blocked drillable cards. The type-wide sampled-marker rule is gone for the same reason: it could block a whole cloze type over a few IO notes, which the per-note check already catches.
 
 **Default mapping** (per note type id and template ord; `notetypes.py`):
-- Standard: `{{type:F}}` on the front wins. Otherwise the answer-side fields the front doesn't show (after `<hr id=answer>`), in template order, minus media-looking names (`Audio|Sound|Image|Picture|Photo|Mask`) and TTS-only references. The first one with text in ≥ 50% of up to 50 sampled notes (evenly spread over the note ids) is the answer. None qualifies: unmapped.
+- Standard: `{{type:F}}` on the front wins. Otherwise the candidates are the fields the answer side shows after `<hr id=answer>` that the front doesn't, in template order, minus:
+  - **reference fields**, never an answer: `Extra`, `Back Extra`, `Notes`, `Remarks`, `FullContext`, `Source`, `Sources`, `Comments`, `Header`, `Footer` (case, spaces and `_` ignored);
+  - media-looking names (`Audio|Sound|Image|Picture|Photo|Mask`);
+  - TTS-only references.
+
+  **If nothing is left after the rule**, the fields *before* it that the front doesn't show. That's how the IO lookalike maps to `Answer`.
+
+  The first candidate with a non-empty answer in ≥ 50% of up to 50 sampled notes (evenly spread over the note ids) is the answer. None qualifies: unmapped.
+- **Answer delta** (standard): when the answer field's grading text starts with the grading text of the fields the front shows (in `qfmt`, minus `{{type:}}`/TTS references and the answer field itself, joined by a space), the answer is the rest, trimmed. The IO lookalike's Answer is "header + label", so it grades as the label (`Nucleus`, `Goblet cells`, `Hyaline (articular) cartilage`). Empty remainder: "empty answer". A match that ends mid-word doesn't count ("pain" isn't stripped from "painful").
 - Standard Extra: the first of `Extra`, `Back Extra`, `Notes`, `Remarks` that exists, isn't the answer, and has content (text or an image) in a sampled note.
 - Cloze: the field of the first `{{cloze:F}}` (or `{{type:cloze:F}}`) on the front; answer = `extract_cloze_for_typing(field, card.ord + 1)`; Extra = `Extra` or `Back Extra`. Never `FullContext` or `Source`.
-- Overrides in `mappings.json` win. `ineligible: false` lifts the IO rule (for a type that only *looks* IO); `ineligible: true` excludes the template ("marked ineligible"). An override naming a missing field leaves the template unmapped, so the panel shows it.
+- Overrides in `mappings.json` win, and may name any field (a reference field too). `ineligible: true` excludes the template ("marked ineligible"). No override makes stock IO drillable: it holds shapes, not text. An override naming a missing field leaves the template unmapped, so the panel shows it.
 
 **Classes** (`cards.py`, first match wins): `in_filtered_deck`, `buried`, `flagged` (red by default), `leech`, `suspended_new`, `suspended_review`, `lapsed`, `learning`, `new`, `young` (< 21 days), `mature`. Picked by default: flagged, leech, suspended_new, lapsed, new, young.
 
@@ -208,6 +223,10 @@ How the add-on turns Anki cards into drill items (`recalldrill/anki_io/`). Execu
 
 The front reads `meaning (N forms; hint)`, the skill's order. Default: on when the deck's strict punctuation is on and more than half the selected cards are standard note types; a saved `hints` wins.
 
+**Image fronts.** A card whose rendered front contains `<img>` gets no hint (auto or manual) and is kept out of the conflict pool. The cards of one figure share the same header text; the image is what tells them apart. `SourceRef.image_front` marks them so the later "that's another card's answer" catch skips them too.
+
+**What a source carries for display** (`build.py`, `SourceRef`): `front_html` (rendered question), `answer_html` (rendered answer, `render_output().answer_text`), `css` (the note type's CSS from `render_output()`; some lookalike cards draw their masks with CSS classes only), `extra_html` (raw Extra field), plus ids, class, flags, `answer_hash`, `has_audio`, `image_front` and the `hint` suffix.
+
 **Per-deck settings** (`deck_settings.py`, `deck_settings.json` by deck id): `strictPunctuation`, `stemTolerance`, `batchSize`, `hints`, `cycleOrder`, `card_ords`. With nothing saved, a deck where ≥ 80% of the selected answers have ≤ 3 words gets a **proposal** (`stemTolerance` off, `strictPunctuation` on, `hints` on). It is never saved by the add-on. The dev preview applies it and labels it "proposed".
 
 **Storage** (`storage.py`): `user_files/profiles/<profile>/…`, one folder per Anki profile (a name with unsafe characters gets a hash suffix). Files are `{"schemaVersion": 1, "data": …}`, written atomically; an unreadable file is renamed `*.corrupt-<timestamp>` and the default is used.
@@ -216,6 +235,7 @@ The front reads `meaning (N forms; hint)`, the skill's order. Default: on when t
 - A note type with several cloze fields is drilled on the first `{{cloze:F}}` of its front template only.
 - The template filter can't pick cloze numbers (c1 vs c2): a cloze note type has one template.
 - The front's `front_html` still holds `[anki:play:q:N]` and `[[type:F]]`; the display layer (Phase 3b) must handle them.
+- The answer delta can also fire on a reversed card whose answer happens to start with its prompt at a word boundary (front `Bone`, answer `Bone marrow` → `marrow`). A `mappings.json` override doesn't turn the delta off. Not seen in the fixtures; watch for it in the preview.
 
 ## Mid-session edit
 

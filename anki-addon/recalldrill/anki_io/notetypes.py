@@ -4,12 +4,14 @@ Three kinds, checked in this order (Phase 0 facts, docs/DECISIONS.md):
 
 1. ``image_occlusion``: ``originalStockKind`` is
    ``StockNotetype.OriginalStockKind.ORIGINAL_STOCK_KIND_IMAGE_OCCLUSION`` (6;
-   never ``StockNotetype.Kind.KIND_IMAGE_OCCLUSION``, which is 5 = cloze), or the
-   note type name contains "Image Occlusion" (the IO Enhanced add-on's types),
-   or a sampled note's cloze field holds ``image-occlusion:``. Ineligible:
-   there is nothing to type. The name rule can be overridden in mappings.json.
-2. ``cloze``: ``model["type"] == 1`` and not IO (stock IO is also type 1).
-3. ``standard``: everything else.
+   never ``StockNotetype.Kind.KIND_IMAGE_OCCLUSION``, which is 5 = cloze).
+   Ineligible: there is nothing to type.
+2. ``cloze``: ``model["type"] == 1`` and not IO (stock IO is also type 1). A
+   single note whose cloze field holds ``image-occlusion:`` is ineligible on its
+   own (:func:`is_io_note`); the rest of the type is drilled.
+3. ``standard``: everything else, whatever the name. The anki-cards
+   "Image Occlusion (anki-medical-cards)" lookalike is a standard type with a
+   typeable label, so it goes through the mapping like any other.
 
 The front is never mapped: it is always Anki's own render of the question
 (``card.render_output(reload=True).question_text``). A mapping only names the
@@ -19,10 +21,15 @@ Default mapping for a standard template (pure parts: :func:`field_refs`,
 :func:`answer_candidates`):
 
 - ``{{type:F}}`` in the front template: the answer is F.
-- Otherwise the candidates are the fields the answer side shows (after
-  ``<hr id=answer>``, or all of it) that the front doesn't, in template order,
-  minus names that look like media. The first candidate whose grading text is
-  non-empty in at least half of up to 50 sampled notes wins.
+- Otherwise the candidates are the fields the answer side shows after
+  ``<hr id=answer>`` (or all of it) that the front doesn't, in template order,
+  minus reference fields (:data:`REFERENCE_FIELDS`) and names that look like
+  media. If none is left there, the fields *before* the rule that the front
+  doesn't show. The first candidate with a non-empty answer in at least half
+  of up to 50 sampled notes wins.
+- The answer is the delta: when the answer field's text starts with the text
+  of the fields the front shows (an Answer that repeats the Question and then
+  adds the label), only the rest is graded (:func:`strip_front`).
 - Extra: the first of ``Extra``, ``Back Extra``, ``Notes``, ``Remarks`` that
   exists, isn't the answer, and has content in a sampled note.
 
@@ -50,15 +57,15 @@ from anki.consts import MODEL_CLOZE
 from anki.models import NotetypeDict, NotetypeId, StockNotetype
 from anki.notes import Note
 
+from ..engine.jscompat import js_trim
 from ..storage import MAPPINGS, Storage
-from .text import grading_text
+from .text import grading_text, tidy
 
 log = logging.getLogger(__name__)
 
 NoteKind = Literal["standard", "cloze", "image_occlusion"]
 
 IO_ORIGINAL_STOCK_KIND = int(StockNotetype.OriginalStockKind.ORIGINAL_STOCK_KIND_IMAGE_OCCLUSION)
-IO_NAME = "image occlusion"
 IO_MARKER = "image-occlusion:"
 
 SAMPLE_SIZE = 50
@@ -66,10 +73,24 @@ FILLED_SHARE = 0.5
 
 STANDARD_EXTRA_NAMES = ("Extra", "Back Extra", "Notes", "Remarks")
 CLOZE_EXTRA_NAMES = ("Extra", "Back Extra")
+REFERENCE_FIELDS = (
+    "Extra",
+    "Back Extra",
+    "Notes",
+    "Remarks",
+    "FullContext",
+    "Source",
+    "Sources",
+    "Comments",
+    "Header",
+    "Footer",
+)
+"""Never an answer: shown next to it for reference."""
 
 _MEDIA_NAME_RE = re.compile(r"audio|sound|image|picture|photo|mask", re.IGNORECASE)
 _REF_RE = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
 _ANSWER_HR_RE = re.compile(r"<hr\b[^>]*\bid\s*=\s*[\"']?answer\b[^>]*>", re.IGNORECASE)
+_FIELD_KEY_RE = re.compile(r"[\s_-]+")
 
 
 # ---------------------------------------------------------------------------
@@ -113,14 +134,31 @@ def field_refs(template: str) -> list[FieldRef]:
     return refs
 
 
+def split_answer_template(afmt: str) -> tuple[str, str]:
+    """(before, after) ``<hr id=answer>``; without the rule, ``("", afmt)``."""
+    m = _ANSWER_HR_RE.search(afmt)
+    return (afmt[: m.start()], afmt[m.end() :]) if m else ("", afmt)
+
+
 def answer_section(afmt: str) -> str:
     """The part of the answer template after ``<hr id=answer>``, or all of it."""
-    m = _ANSWER_HR_RE.search(afmt)
-    return afmt[m.end() :] if m else afmt
+    return split_answer_template(afmt)[1]
 
 
 def looks_like_media(field_name: str) -> bool:
     return _MEDIA_NAME_RE.search(field_name) is not None
+
+
+def _field_key(name: str) -> str:
+    return _FIELD_KEY_RE.sub("", name).casefold()
+
+
+_REFERENCE_KEYS = frozenset(_field_key(n) for n in REFERENCE_FIELDS)
+
+
+def is_reference_field(field_name: str) -> bool:
+    """Extra, Notes, FullContext, Source, ... (case, spaces and ``_`` ignored)."""
+    return _field_key(field_name) in _REFERENCE_KEYS
 
 
 def field_names(model: Mapping[str, Any]) -> list[str]:
@@ -136,18 +174,67 @@ def type_in_field(model: Mapping[str, Any], tmpl: Mapping[str, Any]) -> str | No
     return None
 
 
-def answer_candidates(model: Mapping[str, Any], tmpl: Mapping[str, Any]) -> list[str]:
-    """Fields the answer side shows and the front doesn't, in template order,
-    minus media-looking names and TTS-only references."""
-    names = set(field_names(model))
-    front = {ref.field for ref in field_refs(str(tmpl["qfmt"]))}
+def _candidates_in(section: str, names: set[str], front: set[str]) -> list[str]:
     out: list[str] = []
-    for ref in field_refs(answer_section(str(tmpl["afmt"]))):
+    for ref in field_refs(section):
         f = ref.field
-        if f not in names or f in front or f in out or ref.is_tts or looks_like_media(f):
+        if (
+            f not in names
+            or f in front
+            or f in out
+            or ref.is_tts
+            or looks_like_media(f)
+            or is_reference_field(f)
+        ):
             continue
         out.append(f)
     return out
+
+
+def answer_candidates_in_section(
+    model: Mapping[str, Any], tmpl: Mapping[str, Any]
+) -> tuple[list[str], bool]:
+    """(candidates, came from after ``<hr id=answer>``). See :func:`answer_candidates`."""
+    names = set(field_names(model))
+    front = {ref.field for ref in field_refs(str(tmpl["qfmt"]))}
+    before, after = split_answer_template(str(tmpl["afmt"]))
+    found = _candidates_in(after, names, front)
+    if found:
+        return found, True
+    return _candidates_in(before, names, front), False
+
+
+def answer_candidates(model: Mapping[str, Any], tmpl: Mapping[str, Any]) -> list[str]:
+    """Fields the answer side shows and the front doesn't, in template order,
+    minus reference fields, media-looking names and TTS-only references. After
+    ``<hr id=answer>`` first; if nothing is left there, before it."""
+    return answer_candidates_in_section(model, tmpl)[0]
+
+
+def front_fields(model: Mapping[str, Any], tmpl: Mapping[str, Any], answer: str) -> list[str]:
+    """Fields whose text the front shows, in template order: the prefix an
+    answer field may repeat. ``{{type:}}`` and TTS references show no text."""
+    names = set(field_names(model))
+    out: list[str] = []
+    for ref in field_refs(str(tmpl["qfmt"])):
+        f = ref.field
+        if f in names and f != answer and f not in out and not ref.is_type and not ref.is_tts:
+            out.append(f)
+    return out
+
+
+def strip_front(answer: str, front: str) -> str:
+    """``answer`` minus a leading copy of ``front`` (both grading text).
+
+    An answer that repeats the question and adds the label grades as the label.
+    A match that ends mid-word is not a copy ("pain" is not stripped from
+    "painful")."""
+    if not front or not answer.startswith(front):
+        return answer
+    rest = answer[len(front) :]
+    if rest and front[-1].isalnum() and rest[0].isalnum():
+        return answer
+    return js_trim(rest)
 
 
 def cloze_field(model: Mapping[str, Any]) -> str | None:
@@ -172,15 +259,11 @@ def first_named(names: Sequence[str], wanted: Iterable[str], exclude: str | None
     return None
 
 
-def kind_of(model: Mapping[str, Any], cloze_samples: Iterable[str] = ()) -> NoteKind:
-    """The note type's kind. ``cloze_samples``: cloze-field text of some notes."""
+def kind_of(model: Mapping[str, Any]) -> NoteKind:
+    """The note type's kind. The name plays no part."""
     if model.get("originalStockKind") == IO_ORIGINAL_STOCK_KIND:
         return "image_occlusion"
-    if IO_NAME in str(model.get("name", "")).casefold():
-        return "image_occlusion"
     if model.get("type") == MODEL_CLOZE:
-        if any(IO_MARKER in s for s in cloze_samples):
-            return "image_occlusion"
         return "cloze"
     return "standard"
 
@@ -295,6 +378,9 @@ class NoteMapping:
     why: str
     """One line for the preview / settings panel."""
     candidates: tuple[str, ...] = ()
+    front_fields: tuple[str, ...] = ()
+    """Standard kind: the fields the front shows, whose text is stripped from
+    the start of the answer (:func:`strip_front`)."""
 
 
 def template_ord_for(model: Mapping[str, Any], card_ord: int) -> int:
@@ -348,10 +434,7 @@ class MappingTable:
     def default_kind(self, ntid: int) -> NoteKind:
         k = self._kinds.get(ntid)
         if k is None:
-            model = self.model(ntid)
-            cf = cloze_field(model) if model.get("type") == MODEL_CLOZE else None
-            texts = [n[cf] for n in self.samples(ntid)] if cf else []
-            k = kind_of(model, texts)
+            k = kind_of(self.model(ntid))
             self._kinds[ntid] = k
         return k
 
@@ -393,6 +476,7 @@ class MappingTable:
             why: str,
             ineligible: bool = False,
             candidates: Sequence[str] = (),
+            front: Sequence[str] = (),
         ) -> NoteMapping:
             return NoteMapping(
                 ntid=ntid,
@@ -406,6 +490,7 @@ class MappingTable:
                 overridden=False,
                 why=why,
                 candidates=tuple(candidates),
+                front_fields=tuple(front),
             )
 
         if kind == "image_occlusion":
@@ -428,15 +513,17 @@ class MappingTable:
         if typed is not None:
             answer, why = typed, f"{{{{type:{typed}}}}} on the front"
         else:
-            candidates = answer_candidates(model, tmpl)
+            candidates, after_rule = answer_candidates_in_section(model, tmpl)
+            where = "answer-side field" if after_rule else "field before <hr id=answer>"
             answer, why = None, "no field shown only on the answer side"
             if candidates:
                 why = f"no candidate filled in {FILLED_SHARE:.0%} of {len(samples)} sampled notes"
             for cand in candidates:
-                filled = sum(1 for n in samples if grading_text(n[cand]))
+                front = front_fields(model, tmpl, cand)
+                filled = sum(1 for n in samples if standard_answer(n, cand, front))
                 if not samples or filled >= FILLED_SHARE * len(samples):
                     answer = cand
-                    why = f"first answer-side field filled in {filled}/{len(samples)} sampled notes"
+                    why = f"first {where} filled in {filled}/{len(samples)} sampled notes"
                     break
         extra = None
         for name in STANDARD_EXTRA_NAMES:
@@ -444,7 +531,8 @@ class MappingTable:
             if f is not None and any(has_content(n[f]) for n in samples):
                 extra = f
                 break
-        return make(answer, extra, why, candidates=candidates)
+        front = front_fields(model, tmpl, answer) if answer else []
+        return make(answer, extra, why, candidates=candidates, front=front)
 
     def _resolve(self, ntid: int, template_ord: int) -> NoteMapping:
         o = self.overrides.get((ntid, template_ord))
@@ -468,16 +556,19 @@ class MappingTable:
                 why="marked ineligible in mappings.json",
             )
         if kind == "image_occlusion":
-            # An explicit "eligible" override lifts the IO rule (e.g. a type
-            # whose name only happens to contain "Image Occlusion").
-            kind = "cloze" if model.get("type") == MODEL_CLOZE else "standard"
-        base = self._default(ntid, template_ord, kind)
+            # Stock IO holds shapes, not text: no override makes it typeable.
+            return self.default(ntid, template_ord)
+        base = self.default(ntid, template_ord)
         answer = o.answer_field or base.answer_field
         why = "mappings.json"
         if answer is not None and answer not in names:
             why = f"mappings.json names a missing field {answer!r}"
             answer = None
         extra = o.extra_field if o.extra_field in names else None
+        tmpls = model["tmpls"]
+        front: tuple[str, ...] = ()
+        if kind == "standard" and answer is not None and template_ord < len(tmpls):
+            front = tuple(front_fields(model, tmpls[template_ord], answer))
         return NoteMapping(
             ntid=ntid,
             template_ord=template_ord,
@@ -490,6 +581,7 @@ class MappingTable:
             overridden=True,
             why=why,
             candidates=base.candidates,
+            front_fields=front,
         )
 
 
@@ -498,15 +590,27 @@ class MappingTable:
 # ---------------------------------------------------------------------------
 
 
+def front_text(note: Note, fields: Sequence[str]) -> str:
+    """Grading text of the front's fields, joined the way the render joins
+    blocks (one space)."""
+    return tidy(" ".join(grading_text(note[f]) for f in fields))
+
+
+def standard_answer(note: Note, answer_field: str, front: Sequence[str]) -> str:
+    """Grading text of the answer field, minus a leading copy of the front."""
+    return strip_front(grading_text(note[answer_field]), front_text(note, front))
+
+
 def answer_text(col: Collection, note: Note, mapping: NoteMapping, card_ord: int) -> str:
-    """The graded answer for one card: grading text of the answer field, or of
-    the card's cloze deletion(s) (``card.ord + 1`` is the cloze number)."""
+    """The graded answer for one card: the answer field's grading text minus a
+    repeated front (standard), or the card's cloze deletion(s) (``card.ord + 1``
+    is the cloze number)."""
     if mapping.answer_field is None or mapping.ineligible:
         return ""
-    raw = note[mapping.answer_field]
     if mapping.kind == "cloze":
-        raw = col.extract_cloze_for_typing(raw, card_ord + 1)
-    return grading_text(raw)
+        raw = col.extract_cloze_for_typing(note[mapping.answer_field], card_ord + 1)
+        return grading_text(raw)
+    return standard_answer(note, mapping.answer_field, mapping.front_fields)
 
 
 def is_io_note(note: Note, mapping: NoteMapping) -> bool:

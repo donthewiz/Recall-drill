@@ -14,9 +14,15 @@ from anki_fixtures import (
     AMC_TAGS,
     AMC_TYPEIN,
     BQE,
+    IOL_CSS,
+    IOL_LABELS,
+    IOL_QUESTION,
     add_amc_models,
     add_bqe_model,
     add_bqe_note,
+    add_io_note,
+    add_iol_model,
+    add_iol_note,
     add_note,
     cards_by_ord,
     deck,
@@ -26,6 +32,7 @@ from anki_fixtures import (
 from recalldrill.anki_io.build import BuildResult, build_session, build_session_items, hint_key
 from recalldrill.anki_io.notetypes import MappingTable
 from recalldrill.anki_io.select import Scope, Selection, SelectOptions, select_cards
+from recalldrill.anki_io.text import grading_text
 from recalldrill.deck_settings import DeckSettings
 from recalldrill.engine.items import build_items
 from recalldrill.engine.types import DeckItem
@@ -89,6 +96,9 @@ def test_bqe_items_read_meaning_to_term(
     assert src.answer_hash == hashlib.sha1(b"ankyl/o").hexdigest()
     assert src.has_audio  # FrontAudio on the Reverse back
     assert src.hint == ""
+    assert src.answer_html.startswith("crooked, bent, stiff\n<hr id=answer>\nankyl/o")
+    assert src.css == model(col, BQE)["css"] and ".card" in src.css
+    assert not src.image_front
 
 
 def test_no_media_text_and_no_glued_words(
@@ -296,3 +306,68 @@ def test_answer_emptied_after_selection_is_dropped(col: Collection) -> None:
     assert res.empty_answers == 1
     assert res.deck_items == [{"front": "q2", "back": "a2"}]
     assert [s.nid for s in res.sources] == [sel.picked[1].snap.nid]
+
+
+# ---------------------------------------------------------------------------
+# Image Occlusion lookalike (anki-cards), a standard note type
+# ---------------------------------------------------------------------------
+
+
+def test_io_lookalike_cards_drill_their_label(col: Collection) -> None:
+    add_iol_model(col)
+    did = deck(col, "Human A&P::Lab 3::Figure 4.3")
+    for label in IOL_LABELS.values():
+        add_iol_note(col, did, label, extra="Lines the <i>gut</i>.")
+    add_io_note(col, did)  # stock IO (originalStockKind 6): still ineligible
+    sel, res = run(col, did, {"strictPunctuation": True, "hints": True})
+    header = "Figure 4.3 Cell and tissue structures"
+    assert res.deck_items == [
+        {"front": header, "back": label, "extra": "Lines the gut."} for label in IOL_LABELS
+    ]
+    assert [c.card_class for c in sel.picked] == ["new"] * 3
+    assert sel.ineligible["image_occlusion"] == 1
+    assert sum(sel.ineligible.values()) == 1
+    # No hints and no conflict-pool entries: the image tells these cards apart.
+    assert res.hints_on and res.hint_pool == 0 and res.flagged_hints == []
+    for src, label in zip(res.sources, IOL_LABELS, strict=True):
+        assert src.image_front and src.hint == ""
+        assert "<img" in src.front_html
+        assert label in grading_text(src.answer_html) and "<hr id=answer>" in src.answer_html
+        assert src.css == IOL_CSS  # masks drawn by CSS class need it
+        assert src.extra_html == "Lines the <i>gut</i>."
+        assert src.answer_hash == hashlib.sha1(label.encode()).hexdigest()
+
+
+def test_io_lookalike_with_no_label_is_an_empty_answer(col: Collection) -> None:
+    add_iol_model(col)
+    did = deck(col, "X")
+    add_iol_note(col, did, "")  # the Answer only repeats the Question
+    add_iol_note(col, did, IOL_LABELS["Nucleus"])
+    sel, res = run(col, did)
+    assert sel.ineligible["empty_answer"] == 1
+    assert [i["back"] for i in res.deck_items] == ["Nucleus"]
+
+
+def test_io_lookalike_without_header_text(col: Collection) -> None:
+    add_iol_model(col)
+    did = deck(col, "X")
+    image_only = IOL_QUESTION.split("</div>", 1)[1]  # no occ-header
+    add_iol_note(col, did, "<br><b>Goblet cells</b>", question=image_only)
+    _, res = run(col, did)
+    assert res.deck_items == [{"front": "", "back": "Goblet cells"}]
+    assert res.sources[0].image_front
+
+
+def test_image_fronts_stay_out_of_other_cards_conflict_pool(col: Collection) -> None:
+    ch1, ch2 = deck(col, "Med::Ch 1"), deck(col, "Med::Ch 2")
+    add_note(col, "Basic", ch1, {"Front": 'pain <img src="x.png">', "Back": "-dynia"})
+    add_note(col, "Basic", ch2, {"Front": "pain", "Back": "-algia"})
+    add_note(col, "Basic", ch2, {"Front": "tendon", "Back": "ten/o"})
+    _, res = run(col, ch2, STRICT)
+    assert res.hints_on
+    assert [i["front"] for i in res.deck_items] == ["pain", "tendon"]
+    assert res.hint_pool == 2  # the Ch 1 image card isn't in it
+    # With the image gone, the same card does conflict.
+    add_note(col, "Basic", ch1, {"Front": "pain", "Back": "-odynia"})
+    _, res = run(col, ch2, STRICT)
+    assert res.deck_items[0]["front"] == "pain (-a___)"

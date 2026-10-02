@@ -4,11 +4,17 @@
 the web app) and ``sources[i]`` says which card it came from and how to show
 it. A card whose answer turns out empty is dropped (counted, never passed to
 the engine).
+
+A card whose front shows an image (``<img>``) gets no disambiguation hint and
+stays out of the conflict pool: the cards of one figure share the same header
+text, and the image is what tells them apart. ``SourceRef.image_front`` marks
+them so later collision checks (another card's answer) skip them too.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -48,6 +54,13 @@ class SourceRef:
     """SHA-1 (hex) of the answer text, to notice later edits."""
     has_audio: bool
     """The answer side has sound or TTS (``card.answer_av_tags()``)."""
+    answer_html: str
+    """Anki's rendered answer side (``render_output().answer_text``), as-is."""
+    css: str
+    """The note type's CSS (``render_output().css``). Some cards draw their
+    masks with CSS classes only, so the display needs it."""
+    image_front: bool
+    """The front shows an image: no hint, no conflict/collision entry."""
     hint: str = ""
     """The disambiguation suffix appended to the front, e.g. ``" (-a___)"``."""
 
@@ -83,6 +96,9 @@ class _Row:
     extra_html: str
     extra: str
     has_audio: bool
+    answer_html: str
+    css: str
+    image_front: bool
 
     @property
     def key(self) -> str:
@@ -98,6 +114,13 @@ def answer_hash(answer: str) -> str:
     return hashlib.sha1(answer.encode("utf-8")).hexdigest()
 
 
+_IMG_RE = re.compile(r"<img\b", re.IGNORECASE)
+
+
+def has_image(html: str) -> bool:
+    return _IMG_RE.search(html) is not None
+
+
 def top_level_name(col: Collection, did: int) -> str:
     return col.decks.name(DeckId(did)).split("::")[0]
 
@@ -107,7 +130,8 @@ def _rows(col: Collection, picked: Sequence[Candidate], notes: NoteCache) -> tup
     empty = 0
     for cand in picked:
         card = col.get_card(CardId(cand.snap.cid))
-        front_html = card.render_output(reload=True).question_text
+        out = card.render_output(reload=True)
+        front_html = out.question_text
         note = notes.get(card.nid)
         answer = answer_text(col, note, cand.mapping, card.ord)
         if not answer:
@@ -123,6 +147,9 @@ def _rows(col: Collection, picked: Sequence[Candidate], notes: NoteCache) -> tup
                 x_html,
                 grading_text(x_html),
                 bool(card.answer_av_tags()),
+                out.answer_text,
+                out.css,
+                has_image(front_html),
             )
         )
     return rows, empty
@@ -133,10 +160,12 @@ def _hint_pool(
     top: str,
     mapping: NoteMapping,
     known: Mapping[str, HintEntry],
+    skip: set[str],
     mappings: MappingTable,
     notes: NoteCache,
 ) -> list[HintEntry]:
-    """Every eligible card of this (note type, template) under the top-level deck."""
+    """Every eligible card of this (note type, template) under the top-level
+    deck, except cards whose front shows an image."""
     search = col.build_search_string(
         SearchNode(deck=top), f"mid:{mapping.ntid}", f"card:{mapping.template_ord + 1}"
     )
@@ -144,6 +173,8 @@ def _hint_pool(
     for cid in col.find_cards(search):
         card = col.get_card(CardId(cid))
         key = hint_key(card.nid, card.ord)
+        if key in skip:
+            continue
         hit = known.get(key)
         if hit is not None:
             pool.append(hit)
@@ -154,8 +185,10 @@ def _hint_pool(
         term = answer_text(col, notes.get(card.nid), m, card.ord)
         if not term:
             continue
-        meaning = grading_text(card.render_output(reload=True).question_text)
-        pool.append(HintEntry(key, term, meaning))
+        front_html = card.render_output(reload=True).question_text
+        if has_image(front_html):
+            continue
+        pool.append(HintEntry(key, term, grading_text(front_html)))
     return pool
 
 
@@ -177,16 +210,17 @@ def build_session(
     pool_size = 0
     if hints_on:
         groups: dict[tuple[str, int, int], list[_Row]] = {}
+        image_keys = {r.key for r in rows if r.image_front}
         for r in rows:
             m = r.cand.mapping
-            if m.kind != "standard":
+            if m.kind != "standard" or r.image_front:
                 continue
             top = top_level_name(col, r.cand.snap.home_did)
             groups.setdefault((top, m.ntid, m.template_ord), []).append(r)
         for (top, _, _), group in groups.items():
             targets = [HintEntry(r.key, r.answer, r.front) for r in group]
             known = {t.key: t for t in targets}
-            pool = _hint_pool(col, top, group[0].cand.mapping, known, mappings, cache)
+            pool = _hint_pool(col, top, group[0].cand.mapping, known, image_keys, mappings, cache)
             pool_size += len(pool)
             result = compute_hints(targets, pool, hints)
             suffixes.update(result.suffixes)
@@ -218,6 +252,9 @@ def build_session(
                 extra_html=r.extra_html,
                 answer_hash=answer_hash(r.answer),
                 has_audio=r.has_audio,
+                answer_html=r.answer_html,
+                css=r.css,
+                image_front=r.image_front,
                 hint=hint,
             )
         )

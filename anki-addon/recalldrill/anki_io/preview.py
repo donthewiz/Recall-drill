@@ -86,6 +86,9 @@ def preview_html(p: Preview, max_items: int = PREVIEW_ITEMS) -> str:
         extras.append(f"{sel.template_excluded} cards left out by the template filter.")
     if res.empty_answers:
         extras.append(f"{res.empty_answers} picked cards dropped at build: empty answer.")
+    image_fronts = sum(1 for src in res.sources if src.image_front)
+    if image_fronts:
+        extras.append(f"{image_fronts} items show an image on the front: no hints for them.")
     if sel.sibling_cards:
         extras.append(
             f"<b>Siblings:</b> {sel.sibling_cards} picked cards share a note with another "
