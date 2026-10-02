@@ -1,0 +1,280 @@
+"""sessions.py: keys, the save's addon block, resume, completion, drill-again."""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+from typing import Any
+
+import pytest
+from controller_support import SHORT, Clock, config, source
+
+from recalldrill import history_store, sessions
+from recalldrill.controller import ControllerSettings, DrillController, SessionComplete
+from recalldrill.engine.session import select_trial
+from recalldrill.sessions import (
+    SessionStore,
+    again_key,
+    deck_key,
+    history_key,
+    open_saved,
+    save_status,
+    scope_json,
+    scope_key,
+    search_key,
+    start_drill_again,
+    start_session,
+)
+from recalldrill.storage import Storage
+
+OPTIONS = {"enabled": ["new"], "card_ords": {}, "max_cards": None, "order": "priority_first"}
+DECK_SETTINGS = {"strictPunctuation": True}
+
+
+@pytest.fixture
+def st(tmp_path: Path) -> Storage:
+    return Storage(tmp_path / "user_files", "User 1")
+
+
+def _start(st: Storage, deck: Any = SHORT, **cfg: Any) -> tuple[DrillController, SessionStore]:
+    return start_session(
+        st,
+        key=deck_key(42),
+        deck_items=deck,
+        sources=[source(i) for i in range(len(deck))],
+        config=config(**cfg),
+        scope=scope_json(deck_id=42),
+        select_options=OPTIONS,
+        deck_settings=DECK_SETTINGS,
+        hints=True,
+        settings=ControllerSettings(deck_name="Med Term"),
+        now_ms=Clock(),
+    )
+
+
+def _answer_correctly(ctrl: DrillController) -> list[Any]:
+    effects: list[Any] = []
+    if ctrl.state["phase"] == "batch-done":
+        return ctrl.next_batch()
+    if ctrl.view().buttons.continue_:
+        return ctrl.continue_()
+    trial = select_trial(ctrl.state)
+    assert trial is not None
+    effects += ctrl.submit(trial["target"])
+    if ctrl.processing:
+        effects += ctrl.dwell_elapsed()
+    return effects
+
+
+def _finish(ctrl: DrillController) -> list[Any]:
+    effects: list[Any] = []
+    for _ in range(500):
+        if ctrl.finished:
+            return effects
+        effects += _answer_correctly(ctrl)
+    raise AssertionError("didn't finish")
+
+
+# ---------------------------------------------------------------------------
+# Keys
+# ---------------------------------------------------------------------------
+
+
+def test_keys() -> None:
+    assert deck_key(1234) == "deck-1234"
+    q = 'deck:"Med Term" tag:rd::drill'
+    assert search_key(q) == "search-" + hashlib.sha1(q.encode()).hexdigest()[:12]
+    assert again_key("deck-1") == "again-deck-1"
+    assert scope_key(scope_json(deck_id=7)) == "deck-7"
+    assert scope_key(scope_json(search=q)) == search_key(q)
+    assert history_key(scope_json(deck_id=7)) == "7"
+    assert history_key(scope_json(search=q)) == search_key(q)
+    for bad in ({}, {"deck_id": 1, "search": "x"}):
+        with pytest.raises(ValueError):
+            scope_json(**bad)
+
+
+# ---------------------------------------------------------------------------
+# The save
+# ---------------------------------------------------------------------------
+
+
+def test_start_writes_the_save_with_the_addon_block(st: Storage) -> None:
+    ctrl, store = _start(st)
+    assert not st.exists("sessions/deck-42.json")
+    ctrl.start()
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    assert saved["deckName"] == "Med Term" and saved["phase"] == "encode"
+    addon = saved["addon"]
+    assert len(addon["sessionId"]) == 32 and int(addon["sessionId"], 16) >= 0
+    assert addon["sessionId"] == store.meta.session_id
+    assert addon["startedAt"] == saved["stats"]["startTime"]
+    assert addon["scope"] == {"deckId": 42, "search": None}
+    assert addon["selectOptions"] == OPTIONS and addon["deckSettings"] == DECK_SETTINGS
+    assert addon["hints"] is True and addon["drillAgainOf"] is None
+    assert addon["handoffPending"] is False and addon["historyWritten"] is False
+    assert addon["collisions"] == 0
+    assert [s["cid"] for s in addon["sources"]] == [1000, 1001, 1002]
+    assert sessions.list_keys(st) == ["deck-42"]
+    assert save_status(saved) == "resume"
+
+
+def test_every_answer_is_saved_and_resumes(st: Storage) -> None:
+    ctrl, _ = _start(st)
+    ctrl.start()
+    for typed in ("cardi", "nope"):
+        stamp = sessions.load(st, "deck-42")["timestamp"]  # type: ignore[index]
+        ctrl.submit(typed)
+        if ctrl.processing:
+            ctrl.dwell_elapsed()
+        saved = sessions.load(st, "deck-42")
+        assert saved is not None and saved["timestamp"] > stamp
+    ctrl.continue_()
+    view = ctrl.view()
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None and saved["stats"]["misses"] == 1
+    again, store = open_saved(st, "deck-42", saved, ctrl.settings, Clock())
+    assert again.view() == view
+    assert store.meta.session_id == saved["addon"]["sessionId"]
+
+
+def test_resume_keeps_the_collision_tally(st: Storage) -> None:
+    first, store = _start(st, [{"front": "vessel", "back": "artery"}])
+    ctrl = DrillController(
+        first.state,
+        [source(0, colliding_answers=("arteries",))],
+        first.settings,
+        store.persist,
+        Clock(),
+    )
+    ctrl.submit("arteries")
+    ctrl.submit("artery")
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None and saved["addon"]["collisions"] == 1
+    again, _ = open_saved(st, "deck-42", saved, ctrl.settings, Clock())
+    assert again.collisions == 1
+    assert again.sources[0].colliding_answers == ("arteries",)
+
+
+def test_load_rejects_what_isnt_a_session(st: Storage) -> None:
+    assert sessions.load(st, "deck-1") is None
+    st.write_json("sessions/deck-1.json", {"items": []})
+    assert sessions.load(st, "deck-1") is None
+    st.write_json("sessions/deck-1.json", [1, 2])
+    assert sessions.load(st, "deck-1") is None
+
+
+# ---------------------------------------------------------------------------
+# Stop and completion
+# ---------------------------------------------------------------------------
+
+
+def test_stop_keeps_the_save_and_records_the_estimate_once_a_batch_is_done(st: Storage) -> None:
+    ctrl, _ = _start(st, SHORT + [{"front": "lung", "back": "pneum"}], encodeReps=1, batchSize=2)
+    ctrl.start()
+    ctrl.save_and_stop()  # no batch done yet: nothing measured
+    assert history_store.get_cold_start_history(st, "deck-42") is None
+    assert sessions.load(st, "deck-42") is not None
+    ctrl, _ = _start(st, SHORT + [{"front": "lung", "back": "pneum"}], encodeReps=1, batchSize=2)
+    while ctrl.state["phase"] != "batch-done":
+        _answer_correctly(ctrl)
+    ctrl.save_and_stop()
+    est = history_store.get_cold_start_history(st, "deck-42")
+    assert est is not None and est["multiplier"] == 1 and est["deckShape"] == "full"
+    assert est["measuredAt"].endswith("Z")
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None and saved["phase"] == "batch-done"
+    assert history_store.read_all(st, "42") == []
+
+
+def test_completion_writes_history_once_and_waits_for_the_handoff(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT[:2], encodeReps=1)
+    ctrl.start()
+    effects = _finish(ctrl)
+    assert effects.count(SessionComplete()) == 1
+    (line,) = history_store.read_all(st, "42")
+    assert line["type"] == "session" and line["sessionId"] == store.meta.session_id
+    assert line["finishedAt"].endswith("Z") and line["startedAt"].endswith("Z")
+    assert line["stats"]["attempts"] > 0
+    assert [c["front"] for c in line["cards"]] == ["heart", "liver"]
+    assert line["anki"] == [
+        {"cid": 1000, "nid": 2000, "ord": 0, "card_class": "new"},
+        {"cid": 1001, "nid": 2001, "ord": 0, "card_class": "new"},
+    ]
+    assert line["encode"] == {
+        "encodeReps": 1,
+        "chunkDifficulty": 100,
+        "MIN_WORDS_TO_CHUNK": 8,
+        "ladderMode": "cumulative",
+        "batchSize": 0,
+        "strictPunctuation": False,
+        "stemTolerance": True,
+        "hints": True,
+    }
+    assert line["scope"] == {"deckId": 42, "search": None}
+    assert line["collisions"] == 0 and line["holdout"] == []
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    assert saved["addon"]["historyWritten"] is True and saved["addon"]["handoffPending"] is True
+    assert save_status(saved) == "handoff"
+    with pytest.raises(ValueError, match="handoff"):
+        open_saved(st, "deck-42", saved, ctrl.settings, Clock())
+    assert history_store.get_cold_start_history(st, "deck-42") is not None
+    # A second finish (e.g. a crash before historyWritten was saved) adds nothing.
+    store.meta.history_written = False
+    store.finish(ctrl, True)
+    assert len(history_store.read_all(st, "42")) == 1
+    # "Don't hand off" deletes the save.
+    assert sessions.discard(st, "deck-42") and sessions.load(st, "deck-42") is None
+
+
+def test_a_handoff_line_keeps_the_session_line(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT[:1], encodeReps=1)
+    _finish(ctrl)
+    st.append_jsonl(
+        history_store.history_name("42"), {"type": "handoff", "sessionId": store.meta.session_id}
+    )
+    assert [x["type"] for x in history_store.read_all(st, "42")] == ["session", "handoff"]
+    assert [x["type"] for x in history_store.read_recent(st, "42", 5)] == ["session"]
+    assert history_store.read_recent(st, "42", 0) == []
+
+
+# ---------------------------------------------------------------------------
+# Drill again
+# ---------------------------------------------------------------------------
+
+
+def test_drill_again_is_session_only(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT, encodeReps=1)
+    while not (ctrl.state["phase"] == "final" and not ctrl.view().buttons.continue_):
+        _answer_correctly(ctrl)
+    ctrl.submit("nope")  # one miss in the Final check
+    _finish(ctrl)
+    assert ctrl.done_summary().drill_again
+    again, again_store = start_drill_again(
+        st,
+        ctrl,
+        store,
+        ControllerSettings(deck_name="Med Term (missed cards)", source_deck_editable=False),
+        Clock(),
+    )
+    assert again_store.meta.key == "again-deck-42"
+    assert again_store.meta.drill_again_of == "deck-42"
+    assert again_store.meta.session_id != store.meta.session_id
+    assert len(again.state["items"]) == 1
+    again.start()
+    saved = sessions.load(st, "again-deck-42")
+    assert saved is not None and saved["sourceDeckEditable"] is False
+    assert saved["addon"]["drillAgainOf"] == "deck-42"
+    _finish(again)
+    assert sessions.load(st, "again-deck-42") is None  # deleted on completion
+    assert len(history_store.read_all(st, "42")) == 1  # only the parent's
+    assert sessions.load(st, "deck-42") is not None  # the parent waits for its handoff
+
+
+def test_drill_again_needs_final_misses(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT[:1], encodeReps=1)
+    _finish(ctrl)
+    with pytest.raises(ValueError, match="no Final-check misses"):
+        start_drill_again(st, ctrl, store, ControllerSettings(), Clock())

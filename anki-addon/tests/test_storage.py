@@ -65,10 +65,16 @@ def test_file_names_used_in_phase_2() -> None:
     assert (MAPPINGS, DECK_SETTINGS, HINTS) == ("mappings.json", "deck_settings.json", "hints.json")
 
 
-@pytest.mark.parametrize("name", ["../x.json", "a/b.json", "", ".hidden", "a\\b"])
+@pytest.mark.parametrize(
+    "name", ["../x.json", "a/b/c.json", "a/../b.json", "/a.json", "a/", "", ".hidden", "a\\b"]
+)
 def test_rejects_paths_as_names(st: Storage, name: str) -> None:
     with pytest.raises(ValueError):
         st.path(name)
+
+
+def test_one_folder_level_is_allowed(st: Storage) -> None:
+    assert st.path("sessions/deck-1.json") == st.dir / "sessions" / "deck-1.json"
 
 
 # ---------------------------------------------------------------------------
@@ -197,3 +203,50 @@ def test_unreadable_path_returns_default_without_renaming(st: Storage) -> None:
     assert st.read_json(HINTS, {"d": 1}) == {"d": 1}
     assert st.path(HINTS).is_dir()
     assert list(st.dir.glob("hints.json.corrupt-*")) == []
+
+
+# ---------------------------------------------------------------------------
+# Folders, delete, JSONL (Phase 3a: sessions/ and history/)
+# ---------------------------------------------------------------------------
+
+
+def test_write_read_delete_in_a_folder(st: Storage) -> None:
+    assert st.list_names("sessions", ".json") == []
+    st.write_json("sessions/deck-1.json", {"a": 1})
+    st.write_json("sessions/search-abc.json", {"b": 2})
+    st.path("sessions/notes.txt").write_text("x", encoding="utf-8")
+    assert st.exists("sessions/deck-1.json")
+    assert st.read_json("sessions/deck-1.json", None) == {"a": 1}
+    assert st.list_names("sessions", ".json") == [
+        "sessions/deck-1.json",
+        "sessions/search-abc.json",
+    ]
+    assert st.delete("sessions/deck-1.json") is True
+    assert st.delete("sessions/deck-1.json") is False
+    assert not st.exists("sessions/deck-1.json")
+
+
+def test_jsonl_appends_and_reads_in_order(st: Storage) -> None:
+    assert st.read_jsonl("history/1.jsonl") == []
+    st.append_jsonl("history/1.jsonl", {"n": 1, "text": "café   line"})
+    st.append_jsonl("history/1.jsonl", {"n": 2})
+    assert st.read_jsonl("history/1.jsonl") == [{"n": 1, "text": "café   line"}, {"n": 2}]
+    raw = st.path("history/1.jsonl").read_bytes()
+    assert raw.count(b"\n") == 2 and raw.endswith(b"\n")
+
+
+def test_jsonl_skips_a_torn_line_and_appends_on_a_fresh_line(
+    st: Storage, caplog: pytest.LogCaptureFixture
+) -> None:
+    st.append_jsonl("history/1.jsonl", {"n": 1})
+    with open(st.path("history/1.jsonl"), "ab") as f:
+        f.write(b'{"n": 2, "tor')  # a crash mid-append
+    st.append_jsonl("history/1.jsonl", {"n": 3})
+    with caplog.at_level(logging.WARNING, logger="recalldrill.storage"):
+        assert st.read_jsonl("history/1.jsonl") == [{"n": 1}, {"n": 3}]
+    assert "line 2 is not JSON" in caplog.text
+
+
+def test_jsonl_unreadable_path_reads_empty(st: Storage) -> None:
+    st.path("history/1.jsonl").mkdir(parents=True)
+    assert st.read_jsonl("history/1.jsonl") == []

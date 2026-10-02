@@ -4,5 +4,7 @@
   "batch_size": 5,
   "stem_tolerance": true,
   "ladder_mode": "cumulative",
-  "cycle_order": "shuffled"
+  "cycle_order": "shuffled",
+  "collision_catch": true,
+  "play_audio_on_feedback": true
 }

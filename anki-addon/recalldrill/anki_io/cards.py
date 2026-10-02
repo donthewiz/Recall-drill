@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
 
 # anki.collection must load before anki.cards (circular import).
 import anki.collection  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -26,19 +25,8 @@ from anki.consts import (
 )
 from anki.notes import Note, NoteId
 
-CardClass = Literal[
-    "in_filtered_deck",
-    "buried",
-    "flagged",
-    "leech",
-    "suspended_new",
-    "suspended_review",
-    "lapsed",
-    "learning",
-    "new",
-    "young",
-    "mature",
-]
+# Defined in the pure sources module (SourceRef carries it); re-exported here.
+from ..sources import CardClass as CardClass
 
 CARD_CLASSES: tuple[CardClass, ...] = (
     "in_filtered_deck",
