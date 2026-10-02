@@ -33,3 +33,10 @@ def test_about_menu_registration_is_a_no_op_without_main_window() -> None:
 
     assert about.MENU_LABEL == "Recall Drill (dev)"
     about.register_menu()  # aqt.mw is None outside Anki
+
+
+def test_preview_menu_registration_is_a_no_op_without_main_window(tmp_path: Path) -> None:
+    from recalldrill.ui import preview
+
+    assert preview.MENU_LABEL == "Recall Drill (dev): preview current deck"
+    preview.register_preview_menu(str(tmp_path))  # aqt.mw is None outside Anki

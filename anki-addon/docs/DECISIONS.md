@@ -39,7 +39,7 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
 
 - **Type checker:** pyright 1.1.414.
   - `standard` everywhere.
-  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/` and `recalldrill/anki_io/`.
+  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure helper modules `recalldrill/storage.py`, `prompts.py` and `deck_settings.py`.
   - `ui/` stays at standard because PyQt6's stubs leave signals partially `Unknown`, which strict rejects on every `qconnect`.
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
@@ -91,6 +91,11 @@ Executable: [`tests/anki_io/test_api_facts.py`](../tests/anki_io/test_api_facts.
 | `answer_av_tags()` on Basic | — | The front's `[sound:]` is **not** repeated in the answer's AV tags, even though the template includes `{{FrontSide}}`. |
 | Undo merge | as spec | As spec. Label is `"Recall Drill handoff"`, one `col.undo()` restores tags, queue and due, and **removes the manual revlog rows**. The previous step (`"Suspend"`) is next on the stack. |
 | `strip_html` | glues block words | As spec: `"a<br>b<div>c</div>"` → `"abc"`, `[sound:…]` survives. The add-on must turn block tags into spaces first. |
+| Rendered side text (Phase 2) | front = `card.render_output(reload=True).question_text` | Exists (`TemplateRenderOutput`). On a **rendered** side, `[sound:…]` and TTS are already swapped for **`[anki:play:q:N]`** (`[anki:play:a:N]` on the answer), and `{{type:F}}` renders as **`[[type:F]]`** (the reviewer replaces it with the input box). `grading_text` strips both, besides `[sound:]` and `[anki:tts]…[/anki:tts]` in raw fields. |
+| Rendered cloze (Phase 2) | — | The active deletion is `<span class="cloze" data-cloze="…">[...]</span>` (or `[hint]`); the other numbers show as plain text. Nested deletions render the same way, and the `data-cloze` attribute (escaped HTML) disappears with the tag. |
+| `extract_cloze_for_typing` wrapper | — | `col.extract_cloze_for_typing(text, n)` is the public wrapper (no `_backend`). Nested clozes are flattened: `{{c1::outer {{c2::inner}} text}}` → c1 `"outer inner text"`, c2 `"inner"`. |
+| Searches the add-on builds (Phase 2) | — | `mid:<note type id> card:<template ord + 1>` finds one template's cards. `col.build_search_string(SearchNode(deck=…))` / `SearchNode(tag=…)` escape `_`, `*` and `"`, so deck names and tags are matched literally. |
+| Flags, filtered new cards (Phase 2) | — | `card.user_flag()` is `flags & 7` (red = 1, `flag:1`). A new card moved into a filtered deck keeps its new-queue position in `odue`. |
 
 Everything else in §6 behaved as the spec says (state codes `-1`/`0`/`-3`, revlog columns and types, tags, unsuspend, reposition/bury, deck limits, rollover/today, AV tag types).
 
@@ -104,6 +109,7 @@ Everything else in §6 behaved as the spec says (state codes `-1`/`0`/`-3`, revl
 | `profile_will_close` | Exists. `() -> None` |
 | `webview_did_receive_js_message` | Exists. **Filter** `(handled: tuple[bool, Any], message: str, context: Any) -> tuple[bool, Any]` |
 | `operation_did_execute` | Exists. `(changes: OpChanges, handler: object \| None) -> None` |
+| `aqt.operations.QueryOp` | Exists: `QueryOp(parent, op, success)`, `.with_progress()`, `.failure()`, `.run_in_background()`. The Phase 2 dev preview reads cards with it, off the main thread |
 | `aqt.operations.CollectionOp` | Exists, with `.success()`, `.failure()`, `.with_backend_progress()`, `.run_in_background(initiator=None)`. Constructor: `CollectionOp(parent: QWidget, op: Callable[[Collection], ResultWithChanges])` |
 | Tools-menu entry and About box | **Don's manual check** (below) |
 
@@ -170,6 +176,46 @@ Notes for the phase that builds this (not decisions):
 - **On by default** only for **non-cloze** note types (cloze = `type == 1` and not IO; see API facts), on decks with **strict punctuation** on.
 - The auto-hint rules are a port of the medterm skill's rules. The Phase 2 prompt includes the reference code.
 - Manual per-card hint overrides live in `user_files/hints.json` (local, does not sync).
+
+## Reading cards (Phase 2)
+
+How the add-on turns Anki cards into drill items (`recalldrill/anki_io/`). Executable in `tests/anki_io/`.
+
+**Text.** Every graded string goes through `grading_text` (`anki_io/text.py`): drop `[sound:]`, `[anki:tts]…[/anki:tts]`, `[anki:play:…]` and `[[type:…]]`; turn `<br>`, `<hr>` and block-element tags (opening and closing: `div`, `p`, `li`, `ul`/`ol`, table cells, headings, …) into spaces; `strip_html`; NBSP → space; collapse JS whitespace; trim. Inline tags (`<b>os</b>seous`) stay glued. Display keeps the HTML.
+
+**Front.** Always Anki's render of the question, never a mapped field. So cloze `[...]`/`[hint]`, images and template text come out right.
+
+**Kinds.** `image_occlusion` (by `originalStockKind` 6, a name containing "Image Occlusion", or `image-occlusion:` in a sampled note's cloze field), then `cloze` (`type == 1`), else `standard`. IO is ineligible. A cloze-kind note whose cloze field holds `image-occlusion:` is ineligible on its own too.
+
+**Default mapping** (per note type id and template ord; `notetypes.py`):
+- Standard: `{{type:F}}` on the front wins. Otherwise the answer-side fields the front doesn't show (after `<hr id=answer>`), in template order, minus media-looking names (`Audio|Sound|Image|Picture|Photo|Mask`) and TTS-only references. The first one with text in ≥ 50% of up to 50 sampled notes (evenly spread over the note ids) is the answer. None qualifies: unmapped.
+- Standard Extra: the first of `Extra`, `Back Extra`, `Notes`, `Remarks` that exists, isn't the answer, and has content (text or an image) in a sampled note.
+- Cloze: the field of the first `{{cloze:F}}` (or `{{type:cloze:F}}`) on the front; answer = `extract_cloze_for_typing(field, card.ord + 1)`; Extra = `Extra` or `Back Extra`. Never `FullContext` or `Source`.
+- Overrides in `mappings.json` win. `ineligible: false` lifts the IO rule (for a type that only *looks* IO); `ineligible: true` excludes the template ("marked ineligible"). An override naming a missing field leaves the template unmapped, so the panel shows it.
+
+**Classes** (`cards.py`, first match wins): `in_filtered_deck`, `buried`, `flagged` (red by default), `leech`, `suspended_new`, `suspended_review`, `lapsed`, `learning`, `new`, `young` (< 21 days), `mature`. Picked by default: flagged, leech, suspended_new, lapsed, new, young.
+
+**Selection** (`select.py`):
+- Ineligible, counted by reason, first match wins: image occlusion, marked ineligible, unmapped, empty answer, then (unless that class is switched on) filtered deck and buried. Content reasons come first because they don't go away by themselves.
+- Deck order: new cards by new-queue position (`odue` while in a filtered deck), then all other cards by `(note id, ord)`. Priority first: class rank `flagged, leech, lapsed, suspended_new, new, young`, then the classes that are off by default, then deck order. New cards are never re-sorted by note id, so `Layer::1 → 4` positions survive.
+- Template filter (`card_ords`, saved per deck) works on the template index, which is 0 for every card of a cloze note type.
+- `apply_holdout(selection)` is the Phase 5 hook (no-op).
+
+**Hints** (`prompts.py`, standard note types only). A port of the medterm skill's rules, with three adaptations for whole decks instead of one day's list:
+1. Conflicts are looked up in a **pool**: every content-eligible card (any state) of the same note type and template under the selection's top-level deck. Hints are only made for the session's cards.
+2. Keys are cards (`"<note id>:<ord>"`, as in `hints.json`), not terms. **Two cards with the same answer never conflict:** typing that answer is right for both prompts. (The skill deduplicated within a day and never met this; across chapters, repeated word parts would otherwise all be flagged.)
+3. No card is dropped (the skill skipped a repeated front/term pair).
+
+The front reads `meaning (N forms; hint)`, the skill's order. Default: on when the deck's strict punctuation is on and more than half the selected cards are standard note types; a saved `hints` wins.
+
+**Per-deck settings** (`deck_settings.py`, `deck_settings.json` by deck id): `strictPunctuation`, `stemTolerance`, `batchSize`, `hints`, `cycleOrder`, `card_ords`. With nothing saved, a deck where ≥ 80% of the selected answers have ≤ 3 words gets a **proposal** (`stemTolerance` off, `strictPunctuation` on, `hints` on). It is never saved by the add-on. The dev preview applies it and labels it "proposed".
+
+**Storage** (`storage.py`): `user_files/profiles/<profile>/…`, one folder per Anki profile (a name with unsafe characters gets a hash suffix). Files are `{"schemaVersion": 1, "data": …}`, written atomically; an unreadable file is renamed `*.corrupt-<timestamp>` and the default is used.
+
+**Known limitations:**
+- A note type with several cloze fields is drilled on the first `{{cloze:F}}` of its front template only.
+- The template filter can't pick cloze numbers (c1 vs c2): a cloze note type has one template.
+- The front's `front_html` still holds `[anki:play:q:N]` and `[[type:F]]`; the display layer (Phase 3b) must handle them.
 
 ## Mid-session edit
 
