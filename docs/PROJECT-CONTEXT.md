@@ -1,6 +1,6 @@
-# Recall Drill: project context (as of 2026-10-01)
+# Recall Drill: project context (as of 2026-10-02)
 
-Upload this to the Claude project as current context. It replaces older summaries. `docs/V2-HANDOFF.md` is the design history: why things are the way they are.
+Upload this to the Claude project as current context. It replaces older summaries. `docs/V2-HANDOFF.md` is the design history: why things are the way they are (its last section is the Anki add-on).
 
 - Repo: https://github.com/donthewiz/Recall-drill
 - Branch: `main` only. Local `v2` and `ai-studio-sandbox` (also on origin) have nothing that isn't already on `main`.
@@ -37,8 +37,13 @@ Recall Drill is a **session-only typed-recall drill** for prose and terminology 
 | `npm test` | 275 tests, about 3–4s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
 | `npm run build` | Production build |
 | `npm run simulate` | Trial-count scoreboard (`test/simulate*.ts`): 50 seeded runs × 3 decks × 3 learner models, mean ± SD. Deterministic. **Any engine change must report this before and after.** `docs/BASELINE.md` keeps the history. |
+| `anki-addon/.venv/bin/python -m pytest anki-addon/tests -q` | The add-on's tests (Windows: `anki-addon\.venv\Scripts\python`). Needs the venv (`anki-addon/requirements-dev.txt`, Python 3.13). Qt tests run on the offscreen platform and skip without `aqt`/a display. |
+| `cd anki-addon && .venv/bin/ruff check . && .venv/bin/pyright` | Lint and type check for the add-on |
+| `anki-addon/.venv/bin/python anki-addon/tools/simulate.py` | The same "Current engine" scoreboard from the Python engine; must be **byte-identical** to `npm run simulate`'s first section. `--difficulty-overrides` adds a Python-only section (per-card reps and chunk threshold) |
+| `npx tsx anki-addon/tools/export_golden.ts` | Regenerates the golden traces in `anki-addon/tests/golden/` from the TS engine; CI fails if they change (`git diff --exit-code anki-addon/tests/golden`). `--full <deck>:<learner>[:<run>]` writes one run's full state for diffing |
+| `anki-addon/.venv/bin/python anki-addon/build.py` | Packages `anki-addon/dist/recall_drill-<version>.ankiaddon` (clean git tree and passing `tests/engine` required; `--allow-dirty`, `--skip-tests` for tests) |
 
-- **CI:** `.github/workflows/ci.yml` runs lint, test and build on pushes to `main` and on PRs. First run passed on 2026-09-30.
+- **CI:** `.github/workflows/ci.yml` runs lint, test and build on pushes to `main` and on PRs (job `check`), plus `addon-engine` (ruff, engine and layering and build tests, the golden drift guard) and `addon-anki` (the add-on's Anki I/O, controller, storage, tuning, difficulty and pacing tests, with `anki` installed).
 - The `gh` CLI is **not installed** on Don's machine. Open PRs via the GitHub web page.
 
 ## 3. Code map
@@ -171,3 +176,21 @@ Backups (`schemaVersion` 1) contain folders plus each deck's items, saved sessio
   - New saved-state fields are optional and migrated in `normalizeItem` or on resume.
 - **Docs:** `V2-HANDOFF.md` records "as shipped" notes wherever behavior differs from the spec. `BASELINE.md` is the scoreboard. `SMOKE.md` is the manual release checklist.
 - Don works on Windows. The repo uses LF (`.gitattributes`).
+
+## 10. Anki add-on (`anki-addon/`, built 2026-10)
+
+A desktop Anki add-on that drills the user's own Anki cards with the same engine, then hands them to Anki. Local `.ankiaddon`, not on AnkiWeb. Desktop only; the web app stays the phone tool. Details: `anki-addon/README.md` (user), `anki-addon/docs/DECISIONS.md` (decisions and checked Anki facts), `anki-addon/config.md` (the 27 config keys), `docs/V2-HANDOFF.md` ("Anki add-on (2026-10)"), `docs/SMOKE.md` §11 (manual checks).
+
+- **Folder:** `anki-addon/` (`__init__.py`, `manifest.json`, `config.json`, `build.py`, `recalldrill/`, `tests/`, `tools/`, `user_files/`). Target: Anki 26.08.1+ (`min_point_version` 260801), Python 3.13. Version in `recalldrill/__init__.py` (`VERSION`, 0.1.0).
+- **Layers** (`tests/test_layering.py`):
+  - `engine/`: pure Python port of `src/utils/`, pinned to it by goldens and CI.
+  - pure helpers (controller, sessions, storage, prompts, holdout, measure, tuning, difficulty, pacing): no `anki`, no Qt.
+  - `anki_io/`: `anki` allowed, no Qt; the handoff is the only collection write.
+  - `ui/`: Qt only here. Spin boxes, combo boxes and date fields come from `ui/widgets.py` and ignore the wheel until focused.
+- **Parity:** the Python engine equals the TS engine run for run (goldens, simulate scoreboard). Change engine behavior in one commit: TS change, regenerate goldens, Python port, both suites green. Python-only extensions (absent means identical): `minWordsToChunk`, `encodeRepsOverride`, `minWordsToChunkOverride`.
+- **Method of use:** pick cards by class/template/tag, drill, **Hand off** to Anki (one undo step; mode B by default: cards stay new, go to the front of the queue and are buried until tomorrow, so the FSRS optimizer keeps them; mode A would exclude them from training), pace a deck to a target date.
+- **Data**, in the collection: the tags. Local in `anki-addon/user_files/profiles/<profile>/` (never syncs, not on the phone, one folder per Anki profile): `sessions/`, `history/*.jsonl`, `deck_settings.json`, `hints.json`, `mappings.json`, `pacing.json`, `holdout.json`, `estimates.json` (unused). Config lives in Anki's add-on config.
+- **Tags:** `rd::drilled` (handed off), `rd::hard` (misses + reveals + final misses ≥ 3), `rd::final-miss`, `rd::holdout` (only with Holdout % on; default 0 = off), `rd::long` (off by default). The `anki-cards` skill's `rd::drill::*` tags are a different family: search exact tags, never `tag:rd::*`.
+- **Settled decisions:** handoff B; siblings go with their drilled cards; edits go through Anki's editor (the drill never writes fields); hints on for standard note types; holdout off by default; handed-off cards wait for Anki before being drilled again; time figures only from the user's own data ("no estimate yet" otherwise), no time budget; no AnkiWeb publishing.
+- **Open web-app issues found while porting** (not fixed; see `docs/V2-HANDOFF.md`): a minus sign after a space is dropped in grading; an inserted word in a long answer grades as near; "Count as correct" leaves Continue showing in SessionView (one-line fix); plus four minor ones.
+- **Overlaps:** the `medical-terminology-recall-drill` skill and `anki-cards` Recall Drill export aren't needed for this path; `medterm-daily-drill`'s daily unsuspend and pacing are replaced for decks drilled in the add-on.

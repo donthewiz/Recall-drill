@@ -3,7 +3,7 @@
 Phase 0 (2026-10-01). The design spec is the Claude-project doc
 `recall-drill-anki-addon-handoff.md` and its index
 `recall-drill-anki-addon-prompts-index.md`. This file records what is actually
-true on Don's Anki, and the decisions taken (or pending) on top of the spec.
+true on Don's Anki, and the decisions taken on top of the spec. As of Phase 7 every item is resolved except the ones listed under "Status and deferred items" at the end.
 
 ## Scope
 
@@ -44,7 +44,7 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
 - **CI** (`.github/workflows/ci.yml`):
-  - `addon-engine` runs the engine tests with no anki installed.
+  - `addon-engine` runs the engine tests, the layering tests and `tests/test_build.py` (Phase 7) with no anki installed.
   - `addon-anki` (Phase 3a) runs `tests/anki_io`, `tests/controller` and `tests/storage` with `anki` and `pytest` only. Tests that import `aqt` skip there (`needs_aqt` in `tests/anki_io/anki_fixtures.py`) and run locally. Phase 5 added the measurement tests (`tests/tuning`, `tests/test_measure.py`, `tests/test_holdout.py`) to it.
   - `tests/ui` (Phase 3b) needs `aqt`, so it runs locally only: every `ui/` module imports, and the drill window runs on Qt's offscreen platform with a stand-in web view (QtWebEngine can't start offscreen: the process exits with 127).
 - **Commands** (from the repo root):
@@ -52,7 +52,9 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
   anki-addon\.venv\Scripts\python -m pytest anki-addon/tests -q
   cd anki-addon && .venv\Scripts\ruff check . && .venv\Scripts\pyright
   anki-addon\.venv\Scripts\python anki-addon/tools/fsrs_handoff_experiment.py
+  anki-addon\.venv\Scripts\python anki-addon/build.py
   ```
+  (On Linux the interpreter is `anki-addon/.venv/bin/python`.)
 - **Venv setup:**
   ```
   <python3.13> -m venv anki-addon\.venv
@@ -301,7 +303,7 @@ Implementation note (checked in the installed `aqt` 26.08.1 source):
 - There is **no `browser_will_close` / `browser_did_close` hook**.
 - `Browser.closeEvent` saves the note via `editor.call_after_note_saved`, then `_closeWindow` tears down.
 - The Browser is a singleton (`aqt.dialogs.open("Browser", mw, …)`) and may already be open.
-- Candidate signals for "closed / edited": the Browser window's Qt `destroyed`/`finished` signal, or `operation_did_execute` with `changes.note_text` for the card's note. To be settled in the phase that builds it.
+- Candidate signals for "closed / edited": the Browser window's Qt `destroyed`/`finished` signal, or `operation_did_execute` with `changes.note_text` for the card's note. Settled in Phase 3b (below).
 
 **Settled in Phase 3b.**
 - Ctrl+E / Edit in Anki: `controller.begin_edit()` (so a still-unanswered card counts as revealed when the edit keeps progress), then `aqt.dialogs.open("Browser", mw, card=…, search=("cid:<id>",))`. `card=` selects the row, so the editor shows the card in a new or a reused Browser.
@@ -576,6 +578,16 @@ Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port
 
 A TS change alone fails the drift guard. Regenerated goldens without the Python change fail the parity tests. To chase a mismatch in a seeded `simulate()` run, `npx tsx anki-addon/tools/export_golden.ts --full <deck>:<learner>[:<run>]` and `python anki-addon/tools/simulate.py --full <same>` write that run's full state after every step to the gitignored `tests/golden/_debug/`, one line per step; diff the two files. A behavior the add-on adds on top of the TS engine goes under "Engine extensions" above, with its own tests, not into the goldens.
 
+## Packaging (Phase 7)
+
+A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addon/build.py` writes `anki-addon/dist/recall_drill-<human_version>.ankiaddon` (`dist/` is gitignored), a zip of the add-on folder's **contents**, no top-level folder.
+
+- **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
+- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.1.0), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
+- **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
+- **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
+- **Known wrinkle:** `ui/about.py` hard-codes "(dev)" in the Tools menu entry ("Recall Drill (dev)") and the About text, so a packaged install shows it too. Left alone in Phase 7 (no behavior changes outside the setup panel polish); see the deferred list.
+
 ## Dev install (Windows)
 
 Not run by Claude Code. Don runs it by hand:
@@ -595,3 +607,12 @@ cmd /c mklink /J "%APPDATA%\Anki2\addons21\recall_drill_dev" "C:\Users\donth\Doc
 3. Tools → Add-ons lists it, and the Debug Console shows no traceback.
 4. Answered 2026-10-01 (see the decisions above).
 5. Optional, for the bury question: in a throwaway deck, bury a card by hand (Browse → Toggle Bury), and check the next day (after Anki's next-day rollover, Preferences → Review) that it's back.
+
+## Status and deferred items (Phase 7, 2026-10-02)
+
+Every decision above is resolved: handoff B, siblings, hints, mid-session edit, new/day, holdout off by default, difficulty adjustment, pacing, measured time only. Nothing is marked pending except what Don deferred or left open on purpose:
+
+- **Web-app issues found while porting** (each is a TS change, a golden regeneration and a Python port, in one commit; see `docs/V2-HANDOFF.md`): a minus sign after a space is dropped in grading; an inserted word in a long answer grades as near; SessionView leaves Continue showing after "Count as correct" auto-advances (fixed in the add-on's controller only); and the minor ones (the `-e` light-stem miss, a standalone dash blocking the stopword tier, `grade("", "")`, losing the answer when a session ends during an Extra pause).
+- **"(dev)" in the Tools menu and About text** of a packaged install (`ui/about.py`). Not decided: rename it, or drop the suffix when the folder isn't `recall_drill_dev`.
+- **Not planned:** stock Image Occlusion cards, a cloze note type's second cloze field, picking cloze numbers with the template filter, publishing to AnkiWeb, a phone version.
+- **Optional check not recorded:** the real-time confirmation that a manually buried card returns after Anki's rollover (Phase 0 manual check, step 5). The source reading and the simulated rollover test back it.

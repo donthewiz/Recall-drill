@@ -2,7 +2,7 @@
 
 Runs headless on Qt's offscreen platform. Skipped where aqt isn't installed
 (CI's addon-anki job installs anki only) or Qt can't start without a display.
-The windows themselves are checked by hand (docs/SMOKE.md).
+The windows themselves are checked by hand (the repo's docs/SMOKE.md, "Anki add-on").
 """
 
 from __future__ import annotations

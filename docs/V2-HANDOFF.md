@@ -707,3 +707,68 @@ The engine side is `editCurrentItem(state, { front, back })` in
   "Saved for this session only." After a write-back, App refreshes
   `editorDeckItems` (`onDeckCardEdited`) so SetupView doesn't reseed stale
   cards and revert the fix on its next Save.
+
+---
+
+## Anki add-on (2026-10)
+
+The desktop add-on lives in `anki-addon/` (user docs: `anki-addon/README.md`; decisions and checked Anki facts: `anki-addon/docs/DECISIONS.md`; config keys: `anki-addon/config.md`). It is a local `.ankiaddon` (`python anki-addon/build.py`), not published to AnkiWeb.
+
+### Goal
+
+Drill Don's own Anki cards, not a pasted copy of them: pick cards by state from a deck or a search, run the web app's session engine on them, then hand them back to Anki with tags and queue positions so Anki's scheduler owns the long-term review. The web app stays the phone tool.
+
+### Layer rules
+
+`anki-addon/recalldrill/`, enforced by `tests/test_layering.py` (static `ast` checks):
+- `engine/`: pure Python, a step-for-step port of `src/utils/`. No `anki`, `aqt` or Qt, and nothing from the other layers.
+- Pure helpers (storage, prompts, deck settings, the drill controller and its saves and history, card HTML, drill view, launch, holdout, measure, tuning, card state, difficulty, pacing): no `anki`, no Qt. They may use `engine/` and each other.
+- `anki_io/`: may import `anki` and `aqt.operations`, never Qt. Reads cards, selects, builds, and does the handoff (its **only** collection write).
+- `ui/`: the only layer with Qt.
+
+Nothing shown to the user imports `engine/estimate.py` (the cold-start estimate stays for the parity tests only).
+
+### The parity guarantee
+
+The Python engine matches the TS engine run for run. `anki-addon/tools/export_golden.ts` writes golden traces from the TS engine (`anki-addon/tests/golden/`); the Python tests replay them (grading, items, scripted session scenarios, the seeded `simulate()` runs, with the same PRNG). The `addon-engine` CI job regenerates the goldens and fails on `git diff --exit-code`, so a TS behavior change that doesn't regenerate the goldens and port to Python can't merge. `anki-addon/tools/simulate.py` prints the "Current engine" scoreboard byte-identical to `npm run simulate` (`docs/BASELINE.md`, "Python port"). To change engine behavior: change TS and its specs, regenerate the goldens, port to Python, get `npm test` and `pytest anki-addon/tests` green in one commit (`anki-addon/docs/DECISIONS.md`, "Changing the engine now").
+
+### The handoff decision, and why
+
+A finished session is handed to Anki in one undoable step (`Edit → Undo "Recall Drill handoff"`). Two modes were tested on Anki 26.08.1 with FSRS on (`anki-addon/tools/fsrs_handoff_experiment.py`):
+- **A:** unsuspend and `set_due_date("1")`: the card becomes a review due tomorrow, with no learning steps. **Finding:** FSRS optimizer training ignores cards without learning steps (`reviews_for_fsrs`, "we ignore cards that don't have any learning steps"), so **A-handed-off cards are permanently excluded from training (0 items per 40 cards)**.
+- **B (chosen, the default):** unsuspend, reposition to the front of the new queue, bury (manual) until tomorrow. The card stays new and comes back as the first new card, so Anki's learning steps run and the optimizer keeps it (120 items per 40 cards). The cost: handed-off cards use the deck's new/day on the next day.
+
+Siblings (the same notes' suspended new cards) are handed off with them.
+
+### As-shipped differences from the web app
+
+- **Collision catch.** Typing the exact answer of *another* card whose prompt conflicts with this one says so, clears the input, and counts nothing (config `collision_catch`).
+- **Hints.** Disambiguation hints (the medterm skill's rules) are made for standard note types, from a pool of every eligible card of the same note type and template under the deck, with manual overrides in `hints.json`. Two cards with the same answer never conflict.
+- **Edit via Anki's editor.** "Edit in Anki" (Ctrl+E) opens the Browser on the card; the drill never writes note fields. When the Browser closes (or on Done editing) the card is re-read and the edit applied by `edit_current_item`, so the web app's restart-or-keep rule is unchanged.
+- **Selection by card state, not a pasted deck.** Cards are classed (flagged, leech, stable, suspended new, suspended review, lapsed, learning, new, young, mature, plus filtered and buried) and picked by class, template, tag and order, not by import.
+- **Struggle tags.** At handoff the note gets `rd::drilled`, plus `rd::hard` (misses + reveals + Final-check misses ≥ 3), `rd::final-miss`, and (off by default) `rd::long`; `rd::holdout` marks the measurement control.
+- **Handed-off cards wait for Anki.** They are left out of new sessions until Anki has a counted rating for them since the handoff, unless an undo re-suspended them (config `exclude_handed_off_new`).
+- **No paste import.** Cards come from the collection; there is no deck editor.
+- **No cold-start estimate.** The setup panel shows only measured time: drill minutes from the user's own timed sessions (idle gaps over 120 s don't count) and Anki minutes from the FSRS simulator or the revlog, otherwise "no estimate yet". No daily time budget.
+- **"Count as correct" no longer leaves Continue up** after it auto-advances (see the open issue below; the web app still has it).
+
+### Python-only engine extensions
+
+Optional keys the web app never sets, so absent means identical to TS (goldens and the scoreboard are unchanged):
+- `SessionConfig["minWordsToChunk"]`: the session's own chunk threshold, set from config `min_words_to_chunk`, so a tuning-report suggestion can apply mid-session.
+- `DrillItem["encodeRepsOverride"]` and `DrillItem["minWordsToChunkOverride"]`: a card's own reps and chunk threshold, set from FSRS difficulty (`difficulty.py`). `tools/simulate.py --difficulty-overrides` prints a Python-only scoreboard section (`docs/BASELINE.md`).
+
+### Open web-app issues found while porting
+
+Not fixed. Each is a TS change, a golden regeneration and a Python port, in one commit.
+
+Worth fixing:
+1. **A minus sign after a space is dropped:** `"temperature -5"` grades equal to `"temperature 5"`.
+2. **An inserted word in a long answer grades as near** (similarity ≥ 0.9 forgives it): `"heart does not pump"` against `"heart does pump"` is wrong, but `"the heart does not pump blood to every part of the body each day"` against the same sentence without `not` (13 words) is `near`, and a negation slips through.
+3. **After "Count as correct" auto-advances, SessionView leaves the Continue button showing**, and pressing it in the cycle runs `applyNext` and skips a card. A one-line fix: `setShowNextBtn(false)` in `handleOverride`'s dwell callback. The Python controller already does this.
+
+Minor:
+- the light-stem tier misses `-e` words (`tissue` / `tissues`);
+- a standalone dash blocks the stopword tier;
+- `grade("", "")`;
+- ending a session while an Extra holds the screen loses that answer (kept on purpose in the add-on, as in the app).
