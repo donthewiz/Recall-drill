@@ -60,7 +60,8 @@ def test_config_defaults_match_web_app() -> None:
 def test_about_menu_registration_is_a_no_op_without_main_window() -> None:
     from recalldrill.ui import about
 
-    assert about.MENU_LABEL == "Recall Drill (dev)"
+    # Outside Anki the package is `recalldrill`, not the dev folder.
+    assert about.display_name() == "Recall Drill"
     about.register_menu()  # aqt.mw is None outside Anki
 
 
@@ -70,3 +71,15 @@ def test_entry_registration_is_a_no_op_without_main_window(tmp_path: Path) -> No
     assert entry.TOOLS_LABEL == "Recall Drill…"
     entry.register("recall_drill", str(tmp_path))  # aqt.mw is None outside Anki
     assert entry._ctx is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_dev_label_only_for_the_dev_folder() -> None:
+    from recalldrill.ui import about
+
+    assert about.addon_folder("recall_drill_dev.recalldrill.ui.about") == "recall_drill_dev"
+    assert about.addon_folder("recall_drill.recalldrill.ui.about") == "recall_drill"
+    assert about.display_name("recall_drill_dev") == "Recall Drill (dev)"
+    assert about.display_name("recall_drill") == "Recall Drill"
+    assert about.display_name(about.addon_folder("recall_drill.recalldrill.ui.about")) == (
+        "Recall Drill"
+    )

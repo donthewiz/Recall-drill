@@ -586,7 +586,7 @@ A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addo
 - **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.1.0), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
 - **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
 - **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
-- **Known wrinkle:** `ui/about.py` hard-codes "(dev)" in the Tools menu entry ("Recall Drill (dev)") and the About text, so a packaged install shows it too. Left alone in Phase 7 (no behavior changes outside the setup panel polish); see the deferred list.
+- **The "(dev)" label** (Tools menu entry and About text) shows only when the add-on's folder is `recall_drill_dev` (`ui/about.py`, `display_name`, decided from the module's first name part); an installed package shows plain "Recall Drill".
 
 ## Dev install (Windows)
 
@@ -603,7 +603,7 @@ cmd /c mklink /J "%APPDATA%\Anki2\addons21\recall_drill_dev" "C:\Users\donth\Doc
 ### Don's manual check (Phase 0)
 
 1. Create the junction above and restart Anki.
-2. Tools menu shows **Recall Drill (dev)**, and its About box shows `Recall Drill 0.0.0 (dev)` and the Anki version. Nothing else changed, and no error pop-up.
+2. Tools menu shows **Recall Drill (dev)**, and its About box shows `Recall Drill 0.0.0 (dev)` (Phase 0; since Phase 7 the "(dev)" depends on the folder name) and the Anki version. Nothing else changed, and no error pop-up.
 3. Tools → Add-ons lists it, and the Debug Console shows no traceback.
 4. Answered 2026-10-01 (see the decisions above).
 5. Optional, for the bury question: in a throwaway deck, bury a card by hand (Browse → Toggle Bury), and check the next day (after Anki's next-day rollover, Preferences → Review) that it's back.
@@ -613,6 +613,5 @@ cmd /c mklink /J "%APPDATA%\Anki2\addons21\recall_drill_dev" "C:\Users\donth\Doc
 Every decision above is resolved: handoff B, siblings, hints, mid-session edit, new/day, holdout off by default, difficulty adjustment, pacing, measured time only. Nothing is marked pending except what Don deferred or left open on purpose:
 
 - **Web-app issues found while porting** (each is a TS change, a golden regeneration and a Python port, in one commit; see `docs/V2-HANDOFF.md`): a minus sign after a space is dropped in grading; an inserted word in a long answer grades as near; SessionView leaves Continue showing after "Count as correct" auto-advances (fixed in the add-on's controller only); and the minor ones (the `-e` light-stem miss, a standalone dash blocking the stopword tier, `grade("", "")`, losing the answer when a session ends during an Extra pause).
-- **"(dev)" in the Tools menu and About text** of a packaged install (`ui/about.py`). Not decided: rename it, or drop the suffix when the folder isn't `recall_drill_dev`.
 - **Not planned:** stock Image Occlusion cards, a cloze note type's second cloze field, picking cloze numbers with the template filter, publishing to AnkiWeb, a phone version.
 - **Optional check not recorded:** the real-time confirmation that a manually buried card returns after Anki's rollover (Phase 0 manual check, step 5). The source reading and the simulated rollover test back it.

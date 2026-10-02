@@ -9,12 +9,25 @@ from aqt.utils import showInfo
 
 from .. import __version__
 
-MENU_LABEL = "Recall Drill (dev)"
+DEV_FOLDER = "recall_drill_dev"
+"""The dev junction's folder name (docs/DECISIONS.md, "Dev install")."""
+
+
+def addon_folder(module: str = __name__) -> str:
+    """The add-on's folder name: the first part of its module name."""
+    return module.split(".")[0]
+
+
+def display_name(folder: str | None = None) -> str:
+    """"Recall Drill (dev)" when running from the dev folder, else "Recall Drill".
+    Used by the Tools menu entry and the About text."""
+    folder = addon_folder() if folder is None else folder
+    return "Recall Drill (dev)" if folder == DEV_FOLDER else "Recall Drill"
 
 
 def show_about() -> None:
     showInfo(
-        f"Recall Drill {__version__} (dev)\n\nAnki {version_with_build()}",
+        f"{display_name()} {__version__}\n\nAnki {version_with_build()}",
         title="About Recall Drill",
     )
 
@@ -24,6 +37,6 @@ def register_menu() -> None:
     # (and always None under pytest).
     if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
         return
-    action = QAction(MENU_LABEL, mw)
+    action = QAction(display_name(), mw)
     qconnect(action.triggered, show_about)
     mw.form.menuTools.addAction(action)

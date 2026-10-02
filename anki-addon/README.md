@@ -41,7 +41,7 @@ Build the package yourself: `python anki-addon/build.py` (clean git tree require
 cmd /c mklink /J "%APPDATA%\Anki2\addons21\recall_drill_dev" "C:\path\to\Recall-drill\anki-addon"
 ```
 
-The link name `recall_drill_dev` must differ from the package name `recall_drill`.
+The link name `recall_drill_dev` must differ from the package name `recall_drill`. The Tools menu entry and About box say "Recall Drill (dev)" only when running from that folder; an installed package shows plain "Recall Drill".
 
 > **Never "Install from file" while the junction exists.** Anki empties the target folder on install, and through a junction that deletes the repo's files. Remove the junction first with `rmdir "%APPDATA%\Anki2\addons21\recall_drill_dev"`, and never `del /s` (it follows the junction into the repo).
 
