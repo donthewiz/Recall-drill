@@ -4,8 +4,8 @@
 - The top-level helper modules (storage, prompts, deck_settings, sources,
   addon_config), the drill controller with its storage (controller, sessions,
   history_store) and its display and start-up (card_html, drill_view, launch),
-  the measurement modules (holdout, measure, tuning) and the difficulty
-  mapping (card_state, difficulty) are pure the same way:
+  the measurement modules (holdout, measure, tuning), the difficulty mapping
+  (card_state, difficulty) and pacing are pure the same way:
   no anki, no Qt. They may use engine/ and each other.
 - anki_io/ never touches Qt; from aqt it may use aqt.operations only.
 """
@@ -93,6 +93,7 @@ PURE_MODULES = (
     "tuning.py",
     "card_state.py",
     "difficulty.py",
+    "pacing.py",
 )
 
 
@@ -190,3 +191,15 @@ def test_checker_flags_anki_io_violation(source: str) -> None:
 def test_checker_allows_anki_io_imports(source: str) -> None:
     names = imported_modules(source, "recalldrill.anki_io.handoff", is_package=False)
     assert not any(anki_io_violations(n) for n in names), source
+
+
+# Phase 6: the web app's cold-start estimate (fixed multipliers, the exposure
+# picker) isn't based on Don's data, so nothing the add-on shows calls it.
+# engine/estimate.py stays, for the parity tests (and history_store, which
+# still records the multiplier, unread).
+SHOWN = ("ui", "anki_io", "controller.py", "drill_view.py", "launch.py", "sessions.py", "pacing.py")
+
+
+@pytest.mark.parametrize("layer", SHOWN)
+def test_nothing_shown_calls_the_cold_start_estimate(layer: str) -> None:
+    assert _violations(layer, lambda name: _is(name, "recalldrill.engine.estimate")) == []

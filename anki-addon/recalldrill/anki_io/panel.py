@@ -1,4 +1,8 @@
-"""The setup panel's data: selection, build, settings, estimate and the saved session.
+"""The setup panel's data: selection, build, settings, drill time and the saved session.
+
+The drill time is measured (``workload.drill_estimate``: Don's own active time
+per card, Phase 6), never the web app's cold-start estimate, which the panel
+no longer calls (``engine/estimate.py`` stays, for the parity tests).
 
 No Qt: ``ui/setup_dialog.py`` calls these off the main thread (``QueryOp``) and
 renders the result. Nothing here writes to the collection, and nothing here
@@ -22,15 +26,9 @@ from .. import deck_settings, sessions
 from ..addon_config import AddonConfig
 from ..deck_settings import DeckSettings
 from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY, DifficultySummary, summarize
-from ..engine.estimate import (
-    ColdStartEstimate,
-    ExposureLevel,
-    compute_cold_start_estimate,
-    format_cold_start_range,
-)
-from ..engine.items import MIN_WORDS_TO_CHUNK
-from ..history_store import get_cold_start_history, hard_cards
+from ..history_store import hard_cards
 from ..launch import resolved, session_config
+from ..pacing import DrillSpeed, minutes_text
 from ..prompts import parse_hint_overrides
 from ..sessions import SaveStatus
 from ..storage import HINTS, Storage
@@ -47,6 +45,7 @@ from .select import (
     scope_to_json,
     select_cards,
 )
+from .workload import drill_estimate, shapes, speed_for, top_level
 
 
 @dataclass(frozen=True)
@@ -92,8 +91,13 @@ class PanelData:
     build: BuildResult
     note_types: list[NoteTypeTemplates]
     hint_rows: list[HintRow]
-    estimate: ColdStartEstimate | None
-    personal_history: bool
+    drill_seconds: float | None = None
+    """Measured drill time for the drillable cards, or None (no estimate yet)."""
+    drill_source: str = ""
+    """Where :attr:`drill_seconds` comes from (or why there is none)."""
+    speed: DrillSpeed | None = None
+    card_shapes: list[bool] = field(default_factory=list[bool])
+    """Per drillable card: chunked (True) or whole, as the session builds it."""
     seconds: float = 0.0
     select_options: dict[str, Any] = field(default_factory=dict[str, Any])
     holdout: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
@@ -116,11 +120,10 @@ class PanelData:
         return sum(self.selection.ineligible.values()) + self.build.empty_answers
 
     def estimate_text(self) -> str:
-        """ "about 4–6 min" (``formatColdStartRange`` without its "~")."""
-        if self.estimate is None:
-            return ""
-        r = format_cold_start_range(self.estimate["floorSeconds"], self.estimate["ceilingSeconds"])
-        return "about " + r.removeprefix("~")
+        """ "about 7 min" from Don's own pace, or "no estimate yet (…)"."""
+        if self.drill_seconds is None:
+            return self.drill_source
+        return minutes_text(self.drill_seconds)
 
 
 def scope_label(col: Collection, scope: Scope) -> str:
@@ -195,7 +198,6 @@ def read_panel(
     settings: DeckSettings,
     settings_did: int | None,
     cfg: AddonConfig,
-    exposure: ExposureLevel = "fresh",
 ) -> PanelData:
     """Everything the panel shows for one set of choices.
 
@@ -228,18 +230,14 @@ def read_panel(
         difficulty=difficulty,
     )
     key = scope_key(scope)
-    history = get_cold_start_history(storage, key)
-    estimate = None
-    if build.deck_items:
-        c = session_config(settings, cfg)
-        estimate = compute_cold_start_estimate(
-            build.deck_items,
-            c["encodeReps"],
-            c["chunkDifficulty"],
-            c["ladderMode"],
-            history["multiplier"] if history is not None else exposure,
-            c.get("minWordsToChunk", MIN_WORDS_TO_CHUNK),
-        )
+    c = session_config(settings, cfg)
+    card_shapes = shapes(
+        build.deck_items, build.overrides(), c["chunkDifficulty"], cfg.min_words_to_chunk
+    )
+    home = scope.deck_id if scope.deck_id is not None else settings_did
+    top = top_level(col, home) if home is not None else None
+    speed = speed_for(col, storage, top[1] if top is not None else None)
+    est = drill_estimate(speed, card_shapes, len(build.deck_items))
     return PanelData(
         scope=scope,
         label=scope_label(col, scope),
@@ -252,8 +250,10 @@ def read_panel(
         build=build,
         note_types=_note_types(table, selection),
         hint_rows=_hint_rows(build, overrides),
-        estimate=estimate,
-        personal_history=history is not None,
+        drill_seconds=est.seconds,
+        drill_source=est.source,
+        speed=speed,
+        card_shapes=card_shapes,
         seconds=time.perf_counter() - started,
         select_options=options_to_json(options),
         holdout=holdout_refs(selection),

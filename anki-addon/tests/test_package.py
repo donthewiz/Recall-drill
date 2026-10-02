@@ -50,6 +50,8 @@ def test_config_defaults_match_web_app() -> None:
         "hard_chunk_shift": 2,
         "skip_min_stability": 30,
         "skip_max_difficulty": 5,
+        # Add-on only (Phase 6): active drill time for the measured estimates.
+        "idle_cap_seconds": 120,
     }
 
 

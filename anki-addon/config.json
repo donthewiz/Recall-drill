@@ -23,5 +23,6 @@
   "min_encode_reps": 2,
   "hard_chunk_shift": 2,
   "skip_min_stability": 30,
-  "skip_max_difficulty": 5
+  "skip_max_difficulty": 5,
+  "idle_cap_seconds": 120
 }

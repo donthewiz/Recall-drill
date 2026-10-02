@@ -8,7 +8,9 @@
   ``cards``; Phase 6 adds ``d`` and ``s``, the card's FSRS difficulty and
   stability when the session was built (None without FSRS), ``encodeReps`` and
   ``minWordsToChunk``, the reps and chunk threshold the card was drilled with,
-  and ``adjust``, +1 / 0 / -1 against the session's ``encodeReps``), the
+  and ``adjust``, +1 / 0 / -1 against the session's ``encodeReps``, and
+  ``activeMs``, the card's share of the active drill time), ``activeMs`` (the
+  session's active drill time; lines before Phase 6 have none), the
   encode settings used, the scope, ``collisions`` and
   ``holdout`` (the cards held out as the measurement control, Phase 5).
 - ``type: "handoff"``: one per handoff (``anki_io/handoff.py``, ``handoff_line``),
@@ -61,6 +63,8 @@ class AnkiCardRef(TypedDict):
     """The chunk threshold this card was built with."""
     adjust: int
     """+1 / 0 / -1: ``encodeReps`` against the session's."""
+    activeMs: int
+    """The card's share of the session's active drill time."""
 
 
 class EncodeSettings(TypedDict):
@@ -112,6 +116,8 @@ def build_session_line(
     collisions: int,
     hints: bool,
     holdout: Sequence[Mapping[str, Any]] = (),
+    active_ms: int = 0,
+    active_ms_by_item: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
     """One ``type: "session"`` history line. ``anki`` follows ``state["items"]``,
     so it is parallel to the entry's ``cards`` (the add-on never reorders items,
@@ -135,6 +141,7 @@ def build_session_line(
                 "encodeReps": reps,
                 "minWordsToChunk": min_words_for(item, session_min_words),
                 "adjust": (reps > config["encodeReps"]) - (reps < config["encodeReps"]),
+                "activeMs": (active_ms_by_item or {}).get(item["id"], 0),
             }
         )
     return {
@@ -146,6 +153,7 @@ def build_session_line(
         "scope": dict(scope),
         "collisions": collisions,
         "holdout": [dict(h) for h in holdout],
+        "activeMs": active_ms,
     }
 
 

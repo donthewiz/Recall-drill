@@ -315,6 +315,8 @@ class SessionStore:
                     collisions=ctrl.collisions,
                     hints=self.meta.hints,
                     holdout=self.meta.holdout,
+                    active_ms=ctrl.active_ms,
+                    active_ms_by_item=ctrl.active_ms_by_item,
                 ),
             )
             self.meta.history_written = True
@@ -526,5 +528,15 @@ def open_saved(
         now_ms,
         on_finish=store.finish,
         collisions=int(addon.get("collisions") or 0),
+        active_ms=_int(addon.get("activeMs")),
+        active_ms_by_item={
+            int(k): _int(v)
+            for k, v in cast(Mapping[str, Any], addon.get("activeMsByItem") or {}).items()
+            if str(k).isdigit()
+        },
     )
     return ctrl, store
+
+
+def _int(v: object) -> int:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else 0

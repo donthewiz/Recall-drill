@@ -75,6 +75,13 @@ These handoffs are **real**: the cards show up in your Anki reviews tomorrow. Ed
 - [ ] 22. Groups under 30 say "n too small", and no Apply button shows. That's expected for weeks. **Copy as CSV** pastes one row per card.
 - [ ] 23. The card section says "Holdout: off" with **Holdout %** at 0 (the default). Set it to 15: K appears and changes as you change the %. Start a new Med Term session; reopening the panel shows 15 again (saved for the deck). The panel said "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." After the handoff, `tag:rd::holdout` finds them: unsuspended, buried until tomorrow, queued right after the drilled cards, and absent from the next session's selection (the panel counts them as left out).
 
+## Phase 6: difficulty and pacing
+
+- [ ] 24. Open the panel on a deck with reviewed cards (a Human A&P lecture deck). The card section shows "Difficulty-adjusted: X cards +1 rep, Y cards −1 rep, Z cards chunk earlier. New cards (N): no FSRS data, unchanged." and, if any, "Stable: K cards skipped". On Med Term (all new) X, Y and Z are 0.
+- [ ] 25. Drill 3 lapsed or leech cards: a `+1` card needs one more correct full answer than "Blind typings required" ("1 of 4 streaks" at 3).
+- [ ] 26. Med Term Ch 3, **Pacing**: tick **Pace to a target date**, pick the exam date, Mon–Fri. "Today: N cards" ≈ remaining ÷ weekdays left. Drill time says **no estimate yet** until 3 timed sessions in the deck, then your pace. Anki minutes come from the **FSRS simulator** with a peak day once the deck has 50 learning and 50 review ratings of yours (else the small print says why). No "about N–M min" cold-start figure and no "How familiar…" picker anywhere. **Use N as max cards** fills it in.
+- [ ] 27. Compare the panel's Anki minutes for tomorrow with the deck options → FSRS → **Simulator** for the same deck: same ballpark.
+
 ## Also worth a look
 
 - [ ] Night mode (Preferences → Theme → Dark) while a drill window is open: the card and the diff colors follow.

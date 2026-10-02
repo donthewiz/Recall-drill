@@ -68,6 +68,7 @@ def controller_settings(
         play_audio_on_feedback=cfg.play_audio_on_feedback,
         source_deck_editable=not drill_again,
         autoplay_question_audio=cfg.autoplay_question_audio,
+        idle_cap_ms=cfg.idle_cap_seconds * 1000,
     )
 
 

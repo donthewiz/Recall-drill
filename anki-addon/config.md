@@ -34,3 +34,7 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `hard_chunk_shift` (2): a hard card's chunk threshold is `min_words_to_chunk` minus this, never under 4.
 - Without FSRS data, a reviewed card with 3+ lapses, an ease under 200% or the `leech` tag gets one more blind typing.
 - `skip_min_stability` (30) and `skip_max_difficulty` (5): a card with FSRS stability at least 30 days and difficulty at most 5 (and not a leech) is **stable**, a class that is off by default: the panel counts the stable cards it skips.
+
+**Pacing** (Recall Drill panel → Pacing; target date and drill weekdays are saved per deck in `pacing.json`):
+
+- `idle_cap_seconds` (120): active drill time counts the time between your actions in the drill window, but at most this much per gap, so a break doesn't count. The panel's drill-time figures come from that measured time.

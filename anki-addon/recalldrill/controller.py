@@ -25,7 +25,14 @@ What the add-on adds on top of SessionView (none of it reaches the engine):
   Extra: it is shown and it holds the pause like a text Extra;
 - editing happens in Anki's Browser (``begin_edit`` / ``apply_card_edit`` /
   ``cancel_edit``), so the web app's write-back to a saved deck and its
-  "Saved for this session only." notice don't apply.
+  "Saved for this session only." notice don't apply;
+- **active drill time** (Phase 6): the time between consecutive actions
+  (submit, reveal, continue, override, next batch), each gap capped at
+  ``ControllerSettings.idle_cap_ms`` so a break doesn't count, is added to
+  :attr:`DrillController.active_ms` and to the answered card's share
+  (:attr:`DrillController.active_ms_by_item`). The clock starts at
+  :meth:`DrillController.start` and stops at Save and stop, so a gap across a
+  saved or closed session never counts. Both are saved in the ``addon`` block.
 
 Where this deliberately differs from SessionView:
 
@@ -50,8 +57,6 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .card_html import answer_side
-from .engine.estimate import compute_cumulative_cold_start_multiplier, format_cold_start_range
-from .engine.estimate import compute_remaining_cold_start_range as _remaining_range
 from .engine.grading import exact_match
 from .engine.history import rank_hardest_cards
 from .engine.items import item_overrides, partition_into_batches
@@ -78,6 +83,7 @@ from .engine.types import (
     Verdict,
     WordDiffResult,
 )
+from .pacing import minutes_text
 from .sources import SourceRef, source_to_json
 
 log = logging.getLogger(__name__)
@@ -215,6 +221,8 @@ class ControllerSettings:
     """``SavedSessionState.sourceDeckEditable``: False for a drill-again session."""
     autoplay_question_audio: bool = False
     """Play a card's question audio when it comes up (config ``autoplay_question_audio``)."""
+    idle_cap_ms: int = 120_000
+    """Active time: the most one gap between actions counts (config ``idle_cap_seconds``)."""
 
 
 Mode = Literal["trial", "feedback", "batch_done", "done"]
@@ -291,7 +299,8 @@ class BatchDoneView:
     trials_spent: int
     accuracy_percent: int
     remaining: str | None
-    """``"Remaining time, recalibrated from this session: ~4–6 min"`` or None."""
+    """``"Remaining time at your pace in this session: about 5 min"`` or None
+    (no active time measured yet)."""
 
 
 @dataclass(frozen=True)
@@ -433,6 +442,8 @@ class DrillController:
         *,
         on_finish: Callable[[DrillController, bool], None] | None = None,
         collisions: int = 0,
+        active_ms: int = 0,
+        active_ms_by_item: dict[int, int] | None = None,
     ) -> None:
         """``state`` comes from ``init_session`` (a new or resumed session).
 
@@ -456,6 +467,9 @@ class DrillController:
         self._now_ms = now_ms
         self._on_finish = on_finish
         self.collisions = collisions
+        self._active_ms = active_ms
+        self._active_by_item: dict[int, int] = dict(active_ms_by_item or {})
+        self._last_action_ms: int | None = None  # None: the clock isn't running
 
         # SessionView's useState / useRef fields.
         self._revealed = False  # userRevealedAnswer
@@ -499,6 +513,30 @@ class DrillController:
     @property
     def finished(self) -> Literal["complete", "stopped"] | None:
         return self._finished
+
+    @property
+    def active_ms(self) -> int:
+        """Active drill time so far (resumed sessions included), in ms."""
+        return self._active_ms
+
+    @property
+    def active_ms_by_item(self) -> dict[int, int]:
+        """Each card's share of :attr:`active_ms`, by item id (cards with none left out)."""
+        return dict(self._active_by_item)
+
+    def _tick(self, item_id: int | None) -> None:
+        """An action: add the capped gap since the last one, to ``item_id``'s share too."""
+        now = self._now_ms()
+        if self._last_action_ms is not None:
+            gap = max(0, min(now - self._last_action_ms, self.settings.idle_cap_ms))
+            self._active_ms += gap
+            if item_id is not None and gap:
+                self._active_by_item[item_id] = self._active_by_item.get(item_id, 0) + gap
+        self._last_action_ms = now
+
+    def _trial_item_id(self) -> int | None:
+        trial = self._trial()
+        return trial["itemId"] if trial is not None else None
 
     # -- derived values (SessionView's render-time consts) ------------------
 
@@ -592,6 +630,8 @@ class DrillController:
         out["addon"] = {
             "sources": [source_to_json(src) for src in self._sources],
             "collisions": self.collisions,
+            "activeMs": self._active_ms,
+            "activeMsByItem": {str(k): v for k, v in sorted(self._active_by_item.items())},
         }
         return out
 
@@ -670,6 +710,7 @@ class DrillController:
         that is already complete)."""
         effects: list[Effect] = []
         if self._finished is None:
+            self._last_action_ms = self._now_ms()  # the window is up: the clock runs
             self._persist(self._state, effects)
             self._check_complete(effects)
             self._track_trial(effects)
@@ -686,6 +727,7 @@ class DrillController:
             or self._is_presentation()
         ):
             return []
+        self._tick(self._trial_item_id())
         self._revealed = True
         self._notice = None
         return []
@@ -695,6 +737,7 @@ class DrillController:
         trial = self._trial()
         if self._blocked() or self._editing or self._show_next or trial is None:
             return []
+        self._tick(trial["itemId"])
         effects: list[Effect] = []
         # C8b: the input is read-only on a presentation beat, so nothing was typed.
         if self._is_presentation():
@@ -780,6 +823,7 @@ class DrillController:
         pre_trial = select_trial(pre)
         if pre_trial is None:
             return []
+        self._tick(pre_trial["itemId"])
         effects: list[Effect] = []
         self._processing = True
         self._pre_wrong_state = None
@@ -797,6 +841,7 @@ class DrillController:
         # handleNext (B5: guarded against a double Enter)
         if self._blocked() or self._editing or not self._show_next:
             return []
+        self._tick(self._trial_item_id())
         effects: list[Effect] = []
         self._processing = True
         self._show_next = False
@@ -821,6 +866,7 @@ class DrillController:
         # handleNextBatch
         if self._blocked() or self._state["phase"] != "batch-done":
             return []
+        self._tick(None)
         effects: list[Effect] = []
         self._show_next = False
         self._notice = None
@@ -833,6 +879,7 @@ class DrillController:
         # then App.handleFinishSession's save of the state as it stands.
         if self._blocked():
             return []
+        self._last_action_ms = None  # a gap across Save and stop never counts
         effects: list[Effect] = []
         self._persist(self._state, effects)
         self._finished = "stopped"
@@ -1018,14 +1065,7 @@ class DrillController:
 
         batch_done = None
         if s["phase"] == "batch-done":
-            remaining = None
-            multiplier = compute_cumulative_cold_start_multiplier(s)
-            if multiplier is not None:
-                r = _remaining_range(s, multiplier)
-                if r["floorTrials"] > 0:
-                    remaining = "Remaining time, recalibrated from this session: " + (
-                        format_cold_start_range(r["floorSeconds"], r["ceilingSeconds"])
-                    )
+            remaining = self._remaining_text()
             batch_done = BatchDoneView(
                 batch["batchNumber"],
                 batch["totalBatches"],
@@ -1084,6 +1124,21 @@ class DrillController:
                 for it in items
             ),
         )
+
+    def _remaining_text(self) -> str | None:
+        """The interstitial's remaining time, from this session's own pace: active
+        time per card in the batches done so far, times the cards in the batches
+        after this one (Phase 6; no fixed typing-speed constants)."""
+        s = self._state
+        items = s["items"]
+        size = s["config"].get("batchSize")
+        batches = partition_into_batches(items, len(items) if size is None else size)
+        done = sum(len(b) for b in batches[: s["batchIndex"] + 1])
+        later = sum(len(b) for b in batches[s["batchIndex"] + 1 :])
+        if self._active_ms <= 0 or done <= 0 or later <= 0:
+            return None
+        seconds = self._active_ms / 1000 / done * later
+        return f"Remaining time at your pace in this session: {minutes_text(seconds)}"
 
     def _stats_line(self) -> StatsLine:
         st = self._state["stats"]
