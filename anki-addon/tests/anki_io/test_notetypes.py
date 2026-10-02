@@ -13,10 +13,15 @@ from anki_fixtures import (
     AMC_TAGS,
     AMC_TYPEIN,
     BQE,
+    IOL,
+    IOL_CSS,
+    IOL_LABELS,
     add_amc_models,
     add_bqe_model,
     add_bqe_note,
     add_io_note,
+    add_iol_model,
+    add_iol_note,
     add_note,
     deck,
     model,
@@ -30,12 +35,16 @@ from recalldrill.anki_io.notetypes import (
     answer_candidates,
     answer_section,
     field_refs,
+    front_fields,
+    is_reference_field,
     kind_of,
     load_overrides,
     looks_like_media,
     parse_overrides,
     sample_nids,
     save_override,
+    split_answer_template,
+    strip_front,
 )
 from recalldrill.storage import MAPPINGS, Storage
 
@@ -119,19 +128,69 @@ def test_answer_candidates_without_rule_drop_front_fields() -> None:
     assert answer_candidates(m, m["tmpls"][0]) == ["A"]  # type: ignore[index]
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["Extra", "back extra", "Notes", "Remarks", "FullContext", "Full Context", "Source",
+     "Sources", "Comments", "Header", "Footer", "full_context"],
+)  # fmt: skip
+def test_reference_fields_are_never_answers(name: str) -> None:
+    assert is_reference_field(name)
+    m = _model(["Q", name, "A"], "{{Q}}", f"{{{{Q}}}}<hr id=answer>{{{{{name}}}}} {{{{A}}}}")
+    assert answer_candidates(m, m["tmpls"][0]) == ["A"]  # type: ignore[index]
+
+
+@pytest.mark.parametrize("name", ["Answer", "Back", "Meaning", "Definition"])
+def test_ordinary_fields_are_not_reference_fields(name: str) -> None:
+    assert not is_reference_field(name)
+
+
+def test_candidates_before_the_rule_when_nothing_is_left_after_it() -> None:
+    fields = ["Question", "Answer", "Extra", "FullContext", "Source", "Notes"]
+    afmt = "{{Answer}}<hr id=answer>{{#Extra}}{{Extra}}{{/Extra}}{{FullContext}}{{Source}}"
+    m = _model(fields, "{{Question}}", afmt)
+    assert split_answer_template(afmt)[0] == "{{Answer}}"
+    assert answer_candidates(m, m["tmpls"][0]) == ["Answer"]  # type: ignore[index]
+    # Something left after the rule wins over anything before it.
+    m = _model(["Q", "Shown", "A"], "{{Q}}", "{{Shown}}<hr id=answer>{{A}}")
+    assert answer_candidates(m, m["tmpls"][0]) == ["A"]  # type: ignore[index]
+
+
+def test_front_fields() -> None:
+    m = _model(
+        ["Header", "Q", "Back", "Spoken"],
+        "{{Header}} {{Q}} {{type:Back}} {{tts en:Spoken}} {{Q}} {{Missing}}",
+        "",
+    )
+    assert front_fields(m, m["tmpls"][0], "Back") == ["Header", "Q"]  # type: ignore[index]
+    assert front_fields(m, m["tmpls"][0], "Q") == ["Header"]  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("answer", "front", "expected"),
+    [
+        ("Figure 4.3 Cell structures Nucleus", "Figure 4.3 Cell structures", "Nucleus"),
+        ("Figure 4.3 Nucleus", "Figure 4.3", "Nucleus"),
+        ("Figure 4.3", "Figure 4.3", ""),  # nothing added: empty answer
+        ("Nucleus", "", "Nucleus"),  # image-only front
+        ("Nucleus", "Figure 4.3", "Nucleus"),  # doesn't start with the front
+        ("painful", "pain", "painful"),  # mid-word: not a copy
+        ("pain: severe", "pain", ": severe"),
+    ],
+)
+def test_strip_front(answer: str, front: str, expected: str) -> None:
+    assert strip_front(answer, front) == expected
+
+
 def test_kind_of_pure() -> None:
     assert kind_of(_model(["F"], "", "")) == "standard"
     assert kind_of(_model(["Text"], "{{cloze:Text}}", "", type=MODEL_CLOZE)) == "cloze"
     assert kind_of(_model(["Text"], "", "", type=MODEL_CLOZE, originalStockKind=6)) == (
         "image_occlusion"
     )
-    # The IO Enhanced add-on's types, by name (standard or cloze type).
-    assert kind_of({**_model(["F"], "", ""), "name": "Image Occlusion Enhanced+"}) == (
-        "image_occlusion"
-    )
-    # A cloze type whose notes hold IO shapes.
-    io_text = "{{c1::image-occlusion:rect:left=.1}}"
-    assert kind_of(_model(["T"], "", "", type=MODEL_CLOZE), [io_text]) == "image_occlusion"
+    # The name plays no part: the anki-cards lookalike is a drillable standard type.
+    named = {**_model(["F"], "", ""), "name": "Image Occlusion (anki-medical-cards)"}
+    assert kind_of(named) == "standard"
+    assert kind_of({**named, "type": MODEL_CLOZE, "name": "Image Occlusion Enhanced+"}) == "cloze"
     # Cloze's own originalStockKind (5) is Kind.KIND_IMAGE_OCCLUSION: not IO.
     assert kind_of(_model(["T"], "", "", type=MODEL_CLOZE, originalStockKind=5)) == "cloze"
 
@@ -309,18 +368,43 @@ def test_override_naming_a_missing_field_is_unmapped(col: Collection) -> None:
     assert "missing field 'Gone'" in m.why
 
 
-def test_override_lifts_the_io_name_rule(col: Collection) -> None:
+def test_io_lookalike_maps_to_the_answer_field(col: Collection) -> None:
+    add_iol_model(col)
+    did = deck(col, "Human A&P::Lab 3")
+    for label in IOL_LABELS.values():
+        add_iol_note(col, did, label, extra="Simple columnar")
+    m = _mapping(col, IOL)
+    assert (m.template_name, m.kind, m.ineligible) == ("Reveal", "standard", False)
+    assert (m.answer_field, m.extra_field) == ("Answer", "Extra")
+    assert m.candidates == ("Answer",)  # Extra, FullContext, Source are reference fields
+    assert m.front_fields == ("Question",)
+    assert m.why == "first field before <hr id=answer> filled in 3/3 sampled notes"
+    assert model(col, IOL)["css"] == IOL_CSS
+
+
+def test_a_name_with_image_occlusion_is_not_io(col: Collection) -> None:
     mm = col.models
     m = mm.copy(model(col, "Cloze"), add=False)
-    m["name"] = "Image Occlusion-ish notes"
+    m["name"] = "Image Occlusion Enhanced+"
     mm.add(m)
     did = deck(col, "X")
     add_note(col, m["name"], did, {"Text": "{{c1::femur}} is a bone"})
     ntid = int(model(col, m["name"])["id"])
-    assert MappingTable(col).get(ntid, 0).kind == "image_occlusion"
-    lifted = MappingTable(col, {(ntid, 0): MappingOverride(None, None, False)}).get(ntid, 0)
-    assert _fields(lifted) == ("cloze", "Text", None)
-    assert not lifted.ineligible
+    assert _fields(MappingTable(col).get(ntid, 0)) == ("cloze", "Text", "Back Extra")
+
+
+def test_no_override_makes_stock_io_drillable(col: Collection) -> None:
+    add_io_note(col, deck(col, "X"))
+    ntid = int(model(col, "Image Occlusion")["id"])
+    m = MappingTable(col, {(ntid, 0): MappingOverride("Occlusion", None, False)}).get(ntid, 0)
+    assert m.kind == "image_occlusion" and m.ineligible
+
+
+def test_override_answer_field_gets_its_own_front_fields(col: Collection) -> None:
+    add_iol_model(col)
+    ntid = int(model(col, IOL)["id"])
+    m = MappingTable(col, {(ntid, 0): MappingOverride("Notes", "Extra", False)}).get(ntid, 0)
+    assert (m.answer_field, m.extra_field, m.front_fields) == ("Notes", "Extra", ("Question",))
 
 
 def test_cloze_cards_share_template_zero(col: Collection) -> None:

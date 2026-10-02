@@ -281,3 +281,14 @@ def test_search_scope_is_grouped_before_the_tag(col: Collection) -> None:
     assert sorted(fronts(col, select(col, scope))) == ["one", "two"]
     assert fronts(col, select(col, scope, extra_tag="keep")) == ["two"]
     assert "keep" in scope.to_search(col, "keep") and scope.deck_name(col) is None
+
+
+def test_io_marker_rules_out_single_cloze_notes_only(col: Collection) -> None:
+    did = deck(col, "X")
+    io_text = "{{c1::image-occlusion:rect:left=.1:top=.1:width=.2:height=.2}}"
+    add_note(col, "Cloze", did, {"Text": io_text})
+    add_note(col, "Cloze", did, {"Text": "The {{c1::femur}} is a bone."})
+    sel = select(col, Scope(deck_id=did))
+    assert sel.ineligible["image_occlusion"] == 1
+    assert [c.answer for c in sel.picked] == ["femur"]
+    assert {m.kind for m in sel.mappings.values()} == {"cloze"}
