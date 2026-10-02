@@ -703,3 +703,48 @@ sessions changes. The golden traces that did move are the four scripted
 `inOrder` scenarios with a cycle miss or reveal (their later shuffles now
 draw different numbers), the empty-deck scenario, and the `startTime` 0
 history case.
+
+## Python-only: difficulty overrides (Anki add-on, Phase 6, 2026-10-02)
+
+The scoreboard above ("Python port") is the parity check and is unchanged: the
+Phase 6 fields never appear in it, so `anki-addon/tools/simulate.py` still
+prints the TS "Current engine" section byte for byte, and the goldens
+regenerate with no diff. Phase 6 added two **Python-only**, optional per-card
+fields to the engine, `encodeRepsOverride` and `minWordsToChunkOverride`
+(`anki-addon/docs/DECISIONS.md`, "Engine extensions beyond the TS engine"). The
+add-on sets them from a reviewed card's FSRS difficulty
+(`recalldrill/difficulty.py`). There is no TS counterpart, so nothing here is a
+parity check; it only shows what the overrides cost on the same seeded decks and
+learners.
+
+```
+anki-addon/.venv/bin/python anki-addon/tools/simulate.py --difficulty-overrides
+```
+
+The pattern: cards 0-3 are hard (+1 rep, chunk threshold T - 2, never under 4),
+cards 4-7 are unchanged, cards 8-11 are easy (-1 rep, never under 2 or the
+deck's own if lower). 50 seeded runs per config, mean ± SD:
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 72.0 ± 0.0 | 443.0 ± 0.0 | 206.4 ± 0.0 | full:36 cycle:24 final:12 |
+| shortDeck | realistic | 109.5 ± 6.9 | 672.8 ± 49.3 | 313.7 ± 20.4 | full:50 cycle:36 final:17 |
+| shortDeck | struggling | 175.2 ± 12.3 | 1082.2 ± 99.9 | 503.4 ± 39.1 | full:86 cycle:62 final:36 |
+| proseDeck | perfect | 156.0 ± 0.0 | 11242.0 ± 0.0 | 2732.2 ± 0.0 | chunks:72 combine:48 cycle:24 final:12 |
+| proseDeck | realistic | 270.3 ± 29.3 | 18357.2 ± 1509.6 | 4484.9 ± 376.4 | chunks:90 remediate:73 combine:72 cycle:44 final:15 |
+| proseDeck | struggling | 768.5 ± 98.8 | 39637.9 ± 3617.3 | 9961.2 ± 937.7 | remediate:415 chunks:134 combine:117 cycle:59 final:30 |
+| mediumDeck | perfect | 79.0 ± 0.0 | 2956.0 ± 0.0 | 775.4 ± 0.0 | full:32 cycle:24 final:12 chunks:6 combine:5 |
+| mediumDeck | realistic | 128.6 ± 12.4 | 4661.2 ± 322.3 | 1228.7 ± 86.8 | full:61 cycle:40 final:21 chunks:8 combine:5 |
+| mediumDeck | struggling | 229.5 ± 33.5 | 7593.6 ± 630.6 | 2031.7 ± 183.3 | full:74 cycle:71 remediate:37 final:37 chunks:10 combine:9 |
+
+Against the "Current engine" table above: for a perfect learner the +1 and -1
+cards cancel on `shortDeck` (72 trials, same as before) and `proseDeck` (156),
+and keystrokes move by a few percent. Realistic and struggling learners finish
+slightly cheaper on `shortDeck` (110.5 → 109.5 and 177.2 → 175.2) and
+`proseDeck` struggling (794.9 → 768.5). `mediumDeck` costs more (perfect 72 → 79,
+struggling 182.4 → 229.5): the lower threshold on a hard card chunks answers
+that sit between T - 2 and T words, which the unchanged engine drills whole
+(`chunks:6 combine:5` in the perfect run). Whether extra reps on hard cards lower
+the next-day Again rate is the tuning report's question
+(`anki-addon/docs/DECISIONS.md`, "The tuning report"), not this harness's: its
+learner has no forgetting.
