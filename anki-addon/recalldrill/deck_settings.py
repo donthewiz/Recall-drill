@@ -1,8 +1,11 @@
 """Per-deck drill settings (pure, plus storage in ``deck_settings.json``).
 
-Keyed by deck id. A deck without saved settings uses :data:`DEFAULTS`; for a
-terminology-looking deck, :func:`propose_terminology_settings` suggests
-better ones, which the Phase 3b panel shows and only saves when Don says so.
+Keyed by deck id. Keys: ``strictPunctuation``, ``stemTolerance``,
+``batchSize``, ``encodeReps``, ``hints``, ``cycleOrder``, ``card_ords``. A
+deck without saved settings uses :data:`DEFAULTS` (or the add-on config's, via
+``resolve``'s ``base``); for a terminology-looking deck,
+:func:`propose_terminology_settings` suggests better ones, which the setup
+panel offers as one click and only saves on Start or Save.
 
 ``hints`` has no fixed default: unless saved, it is on when strict punctuation
 is on and most of the selected cards are standard (non-cloze) note types
@@ -24,6 +27,7 @@ class DeckSettings(TypedDict):
     strictPunctuation: NotRequired[bool]
     stemTolerance: NotRequired[bool]
     batchSize: NotRequired[int]
+    encodeReps: NotRequired[int]
     hints: NotRequired[bool]
     cycleOrder: NotRequired[CycleOrder]
     card_ords: NotRequired[dict[str, list[int]]]
@@ -34,6 +38,7 @@ class ResolvedSettings(TypedDict):
     strictPunctuation: bool
     stemTolerance: bool
     batchSize: int
+    encodeReps: int
     cycleOrder: CycleOrder
     card_ords: dict[str, list[int]]
 
@@ -43,6 +48,7 @@ DEFAULTS: ResolvedSettings = {
     "strictPunctuation": False,
     "stemTolerance": True,
     "batchSize": 5,
+    "encodeReps": 3,
     "cycleOrder": "shuffled",
     "card_ords": {},
 }
@@ -66,6 +72,9 @@ def sanitize(raw: object) -> DeckSettings:
     batch = d.get("batchSize")
     if isinstance(batch, int) and not isinstance(batch, bool) and batch >= 0:
         out["batchSize"] = batch
+    reps = d.get("encodeReps")
+    if isinstance(reps, int) and not isinstance(reps, bool) and 1 <= reps <= 10:
+        out["encodeReps"] = reps
     if d.get("cycleOrder") in ("shuffled", "inOrder"):
         out["cycleOrder"] = d["cycleOrder"]
     ords = d.get("card_ords")
@@ -102,14 +111,16 @@ def save(storage: Storage, did: int, settings: DeckSettings) -> None:
     storage.write_json(DECK_SETTINGS, all_settings)
 
 
-def resolve(settings: DeckSettings | None) -> ResolvedSettings:
+def resolve(settings: DeckSettings | None, base: ResolvedSettings = DEFAULTS) -> ResolvedSettings:
+    """``settings`` over ``base`` (the defaults, or the add-on config's)."""
     s = settings or {}
     return {
-        "strictPunctuation": s.get("strictPunctuation", DEFAULTS["strictPunctuation"]),
-        "stemTolerance": s.get("stemTolerance", DEFAULTS["stemTolerance"]),
-        "batchSize": s.get("batchSize", DEFAULTS["batchSize"]),
-        "cycleOrder": s.get("cycleOrder", DEFAULTS["cycleOrder"]),
-        "card_ords": dict(s.get("card_ords", {})),
+        "strictPunctuation": s.get("strictPunctuation", base["strictPunctuation"]),
+        "stemTolerance": s.get("stemTolerance", base["stemTolerance"]),
+        "batchSize": s.get("batchSize", base["batchSize"]),
+        "encodeReps": s.get("encodeReps", base["encodeReps"]),
+        "cycleOrder": s.get("cycleOrder", base["cycleOrder"]),
+        "card_ords": dict(s.get("card_ords", base["card_ords"])),
     }
 
 

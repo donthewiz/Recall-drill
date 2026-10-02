@@ -33,6 +33,10 @@ strict = [
     "recalldrill/controller.py",
     "recalldrill/sessions.py",
     "recalldrill/history_store.py",
+    "recalldrill/addon_config.py",
+    "recalldrill/card_html.py",
+    "recalldrill/drill_view.py",
+    "recalldrill/launch.py",
 ]
 
 [tool.pytest.ini_options]

@@ -16,13 +16,14 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # anki.collection must load before anki.cards (circular import).
 import anki.collection  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from anki.cards import CardId
 from anki.collection import Collection, SearchNode
 from anki.decks import DeckId
+from anki.errors import NotFoundError
 
 from ..deck_settings import DeckSettings, hints_enabled, standard_share
 from ..engine.types import DeckItem
@@ -242,6 +243,46 @@ def build_session(
             )
         )
     return BuildResult(deck_items, sources, hints_on, flagged, empty, pool_size)
+
+
+@dataclass(frozen=True)
+class RebuiltCard:
+    """One card as ``build`` reads it now (after an edit in Anki's Browser)."""
+
+    front: str
+    """Grading text of the rendered front, plus the session's hint suffix."""
+    back: str
+    extra: str
+    source: SourceRef
+
+
+def rebuild_card(col: Collection, src: SourceRef, mappings: MappingTable) -> RebuiltCard | None:
+    """Re-read one session card the way :func:`build_session` read it. The hint
+    and the colliding answers are the session's (they depend on the whole
+    pool). None when the card is gone or its answer is now empty."""
+    try:
+        card = col.get_card(CardId(src.cid))
+    except NotFoundError:
+        return None
+    note = card.note()
+    mapping = mappings.for_card(note.mid, card.ord)
+    answer = answer_text(col, note, mapping, card.ord)
+    if not answer:
+        return None
+    out = card.render_output(reload=True)
+    x_html = extra_html(note, mapping)
+    front_html = out.question_text
+    source = replace(
+        src,
+        front_html=front_html,
+        extra_html=x_html,
+        answer_hash=answer_hash(answer),
+        has_audio=bool(card.answer_av_tags()),
+        answer_html=out.answer_text,
+        css=out.css,
+        image_front=has_image(front_html),
+    )
+    return RebuiltCard(grading_text(front_html) + src.hint, answer, grading_text(x_html), source)
 
 
 def build_session_items(

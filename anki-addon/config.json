@@ -6,5 +6,6 @@
   "ladder_mode": "cumulative",
   "cycle_order": "shuffled",
   "collision_catch": true,
-  "play_audio_on_feedback": true
+  "play_audio_on_feedback": true,
+  "autoplay_question_audio": false
 }

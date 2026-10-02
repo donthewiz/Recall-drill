@@ -39,13 +39,14 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
 
 - **Type checker:** pyright 1.1.414.
   - `standard` everywhere.
-  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py` and `history_store.py`.
+  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py`, `history_store.py`, `addon_config.py`, `card_html.py`, `drill_view.py` and `launch.py`.
   - `ui/` stays at standard because PyQt6's stubs leave signals partially `Unknown`, which strict rejects on every `qconnect`.
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
 - **CI** (`.github/workflows/ci.yml`):
   - `addon-engine` runs the engine tests with no anki installed.
   - `addon-anki` (Phase 3a) runs `tests/anki_io`, `tests/controller` and `tests/storage` with `anki` and `pytest` only. Tests that import `aqt` skip there (`needs_aqt` in `tests/anki_io/anki_fixtures.py`) and run locally.
+  - `tests/ui` (Phase 3b) needs `aqt`, so it runs locally only: every `ui/` module imports, and the drill window runs on Qt's offscreen platform with a stand-in web view (QtWebEngine can't start offscreen: the process exits with 127).
 - **Commands** (from the repo root):
   ```
   anki-addon\.venv\Scripts\python -m pytest anki-addon/tests -q
@@ -112,7 +113,7 @@ Everything else in §6 behaved as the spec says (state codes `-1`/`0`/`-3`, revl
 | `profile_will_close` | Exists. `() -> None` |
 | `webview_did_receive_js_message` | Exists. **Filter** `(handled: tuple[bool, Any], message: str, context: Any) -> tuple[bool, Any]` |
 | `operation_did_execute` | Exists. `(changes: OpChanges, handler: object \| None) -> None` |
-| `aqt.operations.QueryOp` | Exists: `QueryOp(parent, op, success)`, `.with_progress()`, `.failure()`, `.run_in_background()`. The Phase 2 dev preview reads cards with it, off the main thread |
+| `aqt.operations.QueryOp` | Exists: `QueryOp(parent, op, success)`, `.with_progress()`, `.failure()`, `.run_in_background()`. The setup panel reads cards with it, off the main thread |
 | `aqt.operations.CollectionOp` | Exists, with `.success()`, `.failure()`, `.with_backend_progress()`, `.run_in_background(initiator=None)`. Constructor: `CollectionOp(parent: QWidget, op: Callable[[Collection], ResultWithChanges])` |
 | Tools-menu entry and About box | **Don's manual check** (below) |
 
@@ -233,14 +234,14 @@ The front reads `meaning (N forms; hint)`, the skill's order. Default: on when t
 
 **What a source carries for display** (`build.py`, `SourceRef`): `front_html` (rendered question), `answer_html` (rendered answer, `render_output().answer_text`), `css` (the note type's CSS from `render_output()`; some lookalike cards draw their masks with CSS classes only), `extra_html` (raw Extra field), plus ids, class, flags, `answer_hash`, `has_audio`, `image_front` and the `hint` suffix.
 
-**Per-deck settings** (`deck_settings.py`, `deck_settings.json` by deck id): `strictPunctuation`, `stemTolerance`, `batchSize`, `hints`, `cycleOrder`, `card_ords`. With nothing saved, a deck where ≥ 80% of the selected answers have ≤ 3 words gets a **proposal** (`stemTolerance` off, `strictPunctuation` on, `hints` on). It is never saved by the add-on. The dev preview applies it and labels it "proposed".
+**Per-deck settings** (`deck_settings.py`, `deck_settings.json` by deck id): `strictPunctuation`, `stemTolerance`, `batchSize`, `hints`, `cycleOrder`, `card_ords`. With nothing saved, a deck where ≥ 80% of the selected answers have ≤ 3 words gets a **proposal** (`stemTolerance` off, `strictPunctuation` on, `hints` on). It is never saved by the add-on by itself: the setup panel offers it as one click, and saves the deck's settings only on Start or Save. Phase 3b added `encodeReps`.
 
 **Storage** (`storage.py`): `user_files/profiles/<profile>/…`, one folder per Anki profile (a name with unsafe characters gets a hash suffix). Files are `{"schemaVersion": 1, "data": …}`, written atomically; an unreadable file is renamed `*.corrupt-<timestamp>` and the default is used.
 
 **Known limitations:**
 - A note type with several cloze fields is drilled on the first `{{cloze:F}}` of its front template only.
 - The template filter can't pick cloze numbers (c1 vs c2): a cloze note type has one template.
-- The front's `front_html` still holds `[anki:play:q:N]` and `[[type:F]]`; the display layer (Phase 3b) must handle them.
+- The front's `front_html` still holds `[anki:play:q:N]` and `[[type:F]]`; the drill window handles them (see "UI tech").
 
 ## Drill controller and session storage (Phase 3a)
 
@@ -296,11 +297,67 @@ Implementation note (checked in the installed `aqt` 26.08.1 source):
 - The Browser is a singleton (`aqt.dialogs.open("Browser", mw, …)`) and may already be open.
 - Candidate signals for "closed / edited": the Browser window's Qt `destroyed`/`finished` signal, or `operation_did_execute` with `changes.note_text` for the card's note. To be settled in the phase that builds it.
 
+**Settled in Phase 3b.**
+- Ctrl+E / Edit in Anki: `controller.begin_edit()` (so a still-unanswered card counts as revealed when the edit keeps progress), then `aqt.dialogs.open("Browser", mw, card=…, search=("cid:<id>",))`. `card=` selects the row, so the editor shows the card in a new or a reused Browser.
+- **When the Browser closes** (Qt's `destroyed`, which fires after `closeEvent` saved the note), or on **Done editing** in the drill window (after `editor.call_after_note_saved`), `build.rebuild_card` re-reads that one card the way `build` did (front render, answer, Extra, answer side, CSS; the session's hint and colliding answers are kept) and calls `apply_card_edit`. A card that is gone, or whose answer is now empty, cancels the edit.
+- **`operation_did_execute` is not used for this.** The Browser's editor saves the note while you type (an `update_note` op with `note_text` per save), so applying on the first such op would end the edit after one keystroke. Done editing covers a Browser that was already open and that Don wants to keep open.
+- The drill never writes fields: edits are Anki's own, formatting intact.
+
 Controller side (Phase 3a): `begin_edit()` returns the card to open (or None when SessionView's Edit button would be disabled), and the Browser closing calls `apply_card_edit(front, back, extra, source)` with the card as `build` reads it now, or `cancel_edit()`. The engine's `edit_current_item` decides restart vs kept progress, as in the web app. The web app's write-back to a saved deck and its "Saved for this session only." notice don't apply.
 
-## UI tech
+## UI tech (Phase 3b)
 
-Pending Phase 3b.
+**Decision: an `AnkiWebView` for the card area, native Qt for everything you type into or press.**
+- **Web view** (`ui/drill_window.py`, HTML from `drill_view.py`): the stage pill and cue badge, Anki's rendered front (media, ▶ buttons, the hint), the cue or revealed target, the feedback with the colored word diff, an image card's answer side, the Extra. Also the batch interstitial and the Done screen. The page is loaded once with `stdHtml` (with `css/reviewer.css` and MathJax, as the reviewer); every render is one `rdRender(payload)` eval, so there's no reload and no focus theft.
+- **Native**: the answer box is a `QLineEdit` (no JS focus or IME trouble, no `pycmd` per keystroke); the buttons, progress bars, stats line and status dots are Qt widgets.
+- **`pycmd`** is used only for the ▶ buttons in the card HTML (`play:q:N` / `play:a:N` → `play_clicked_audio`), plus a key fallback (`rd:enter`, `rd:ctrl-enter`, `rd:edit`, `rd:replay`) for when a click leaves focus in the page. AnkiWebView's own Esc message (`close`) reveals.
+- **No logic in Qt.** The window renders `DrillController.view()` and runs effects. Decisions the window needed were moved into the controller, with tests (`tests/controller/test_display.py`): `Flash(ok)` (SessionView's `triggerFlash`), `StopAudio` and `PlayQuestionAudio`, `ViewModel.answer_html`, `hint`, `card_ord` and `audio_side`. The HTML is built by pure `drill_view.py` / `card_html.py`, also tested.
+
+**Rendering the card like the reviewer.**
+- The body gets `theme_manager.body_classes_for_card_ord(ord)` (`card cardN` plus the night-mode classes), and the note type's CSS (`SourceRef.css`) goes into a `<style>` on every render. That is what makes the image-occlusion lookalike's CSS-only masks (`.ob`, `.ob.a`, `.occ-wrap`) visible. Night mode follows `theme_manager.night_mode` (body classes per render, and AnkiWebView's own `theme_did_change` handler).
+- `[[type:F]]` is removed from the front (the drill's own input replaces Anki's type-in box). `[anki:play:…]` becomes ▶ via `mw.prepare_card_text_for_display`, which also escapes media file names. `[sound:]` in the raw Extra field is dropped (a field isn't rendered by the template pass).
+- The hint (`SourceRef.hint`) is appended to the displayed front.
+- Extra is shown from `extra_html` (formatting and images kept) whenever the view says Extra is visible.
+- **Image cards show the answer side** on feedback that shows the full back (`ViewModel.answer_html`, via `card_html.answer_side`). The rendered answer is split at `<hr id=answer>`: when the part before it is the front again (`{{FrontSide}}`) or empty, the part after it is shown; otherwise the part before it is the answer (the IO lookalike's `{{Answer}}`: image with the region revealed, plus its label), and the Extra after the rule stays in its own section, so it isn't shown twice.
+- Diff colors are the web app's tokens, light and night: matched words plain, missed words red, underlined, on a red tint; feedback text green / red / blue for success / danger / info. The card flashes green or red for 400 ms, as SessionView.
+- Card templates' `<script>` tags don't run (the HTML is set with `innerHTML`). MathJax is typeset after each render.
+
+**Media loading: no rewrite needed.** `stdHtml` puts `mw.baseHTML()` (`<base href="{mw.serverURL()}">`) in the head, and Anki's media server answers any path that isn't `_anki/…` or an add-on export from the collection's media folder. So a card's `<img src="x.png">` loads as in the reviewer, once `prepare_card_text_for_display` has escaped the file name. Checked in the installed source (`test_phase_3b_display_apis`); confirm by eye in the manual check.
+
+**Timers and audio.**
+- `StartDwell(ms)` starts a single-shot `QTimer` → `dwell_elapsed()`. The controller ignores every action during a dwell (busy guard), so nothing can cancel it from the keyboard; closing the window, End session and profile close **flush** it first (`dwell_elapsed()` now), so the answer's state is committed before saving.
+- `PlayAnswerAudio(cid)` → `av_player.play_tags(card.answer_av_tags())`.
+- **Stop audio when the next trial shows another card** (`StopAudio`), not between trials of the same card. Stopping on every trial would cut a term's answer audio after the 500 ms dwell, before it's heard.
+- Config `autoplay_question_audio` (default off): `PlayQuestionAudio` when a card comes up (once per card, not per trial).
+- Ctrl+R replays the question's audio, or the answer's once the feedback shows the full back (`ViewModel.audio_side`).
+
+**The drill window.** A top-level, non-modal `QDialog` (no parent, so Anki stays usable and can be in front), placed over the main window and then restored from `saveGeom`/`restoreGeom` (`recalldrill_drill`). Esc reveals (`keyPressEvent` and `reject()` both). The window's X asks **Save / Discard / Cancel**: Save is Save and stop; Discard deletes the session's save. A drill-again window asks Discard / Cancel (it's session-only). A finished session closes without asking. Two windows never drive the same save: opening a deck whose session window is open brings that window to the front.
+
+**Keys.** Enter: submit, continue, or Next batch on the interstitial. Ctrl+Enter: Count as correct (only when offered). Esc: reveal. Ctrl+E: Edit in Anki. Ctrl+R: replay audio (a bare R would type into the answer box).
+
+## Entry points (Phase 3b, checked on 26.08.1)
+
+| Entry | How | Status |
+|---|---|---|
+| Tools → **Recall Drill…** | `mw.form.menuTools` action, current deck | works |
+| Deck gear → **Recall Drill this deck** | `deck_browser_will_show_options_menu(menu, deck_id)` | works |
+| Overview → **Recall Drill** button | `overview_will_render_bottom(link_handler, links)`: the button is added to `links`, and the returned handler answers its `pycmd` | works. **`webview_did_receive_js_message` isn't needed**: the overview's bottom bar sends its messages to the handler this filter returns. |
+| Profile close | `profile_will_close`: each open drill window flushes its dwell, saves and stops, and closes; setup panels close | works |
+
+"Works" is from the installed source and headless tests; Don's manual check confirms it in Anki. The Phase 2 dev preview (`Recall Drill (dev): preview current deck`) is gone; its content is the setup panel's. The About box stays.
+
+## Setup panel (Phase 3b)
+
+`ui/setup_dialog.py`, reading through `anki_io/panel.py` with `QueryOp` (off the main thread, 300 ms after the last change).
+- **Scope**: the deck (with subdecks), or a **Search…** over the whole collection. A search's settings belong to the deck holding most of what it finds (`deck_settings.settings_deck`, every template counted).
+- **Saved session** for the scope's key: a pending handoff offers **Hand off finished session** (disabled until Phase 4) / **Discard**; a resumable save offers **Resume** / **Start fresh**; a save with missing or changed cards (`check_resume`) lists them and offers **Start fresh (recommended)** / **Resume with saved text**. Start with a save present asks before replacing it.
+- **Cards**: class toggles with eligible counts (Phase 2 defaults), max cards (0 = all), an exact tag, order. **Templates**: one checkbox per template of each multi-template standard note type, saved as the deck's `card_ords`; the sibling count is shown. **Ineligible** reasons are summed, with **Edit mapping…** (`ui/mapping_dialog.py`: answer field, Extra field or ineligible per (note type, template), saved to `mappings.json`).
+- **Settings for this deck**: batch size (0 = whole deck), blind typings (`encodeReps`, now a per-deck setting; the config's `encode_reps` is the default), cycle order, strict punctuation, word-ending tolerance (disabled while strict, as the app), hints. While nothing is saved for the deck, the terminology proposal is offered as **Use terminology settings** (one click; it changes the draft, it isn't saved). Settings are saved only by **Save** or **Start**.
+- **Hints**: the flagged prompts, and prompts that already have a manual hint, with the hint editable in place (`hints.json`; an emptied cell removes the hint).
+- **Estimate**: `compute_cold_start_estimate` over the built items with the deck's `encodeReps` and the config's chunk difficulty and ladder; the multiplier is `estimates.json`'s for the scope's key when there is one, else the exposure picker (fresh / once / familiar). Shown as "about N–M min".
+- **Start** goes through `launch.start`: saves the deck's settings, then `sessions.start_session` (`build_items(…, shuffle_within_batch=False)`). Disabled with 0 drillable cards, saying why.
+
+Global config gained `autoplay_question_audio` (default false); `addon_config.parse_config` gives every missing or mistyped key its default.
 
 ## Engine extensions beyond the TS engine
 

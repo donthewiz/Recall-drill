@@ -28,6 +28,8 @@ def test_config_defaults_match_web_app() -> None:
         # Add-on only (Phase 3a): the drill controller's settings.
         "collision_catch": True,
         "play_audio_on_feedback": True,
+        # Add-on only (Phase 3b).
+        "autoplay_question_audio": False,
     }
 
 
@@ -38,8 +40,9 @@ def test_about_menu_registration_is_a_no_op_without_main_window() -> None:
     about.register_menu()  # aqt.mw is None outside Anki
 
 
-def test_preview_menu_registration_is_a_no_op_without_main_window(tmp_path: Path) -> None:
-    from recalldrill.ui import preview
+def test_entry_registration_is_a_no_op_without_main_window(tmp_path: Path) -> None:
+    from recalldrill.ui import entry
 
-    assert preview.MENU_LABEL == "Recall Drill (dev): preview current deck"
-    preview.register_preview_menu(str(tmp_path))  # aqt.mw is None outside Anki
+    assert entry.TOOLS_LABEL == "Recall Drill…"
+    entry.register("recall_drill", str(tmp_path))  # aqt.mw is None outside Anki
+    assert entry._ctx is None  # pyright: ignore[reportPrivateUsage]

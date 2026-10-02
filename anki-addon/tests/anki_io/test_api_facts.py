@@ -592,7 +592,7 @@ def test_collection_op_api() -> None:
 
 @needs_aqt
 def test_query_op_api() -> None:
-    """The Phase 2 dev preview reads cards off the main thread with QueryOp."""
+    """The setup panel reads cards off the main thread with QueryOp."""
     import inspect
 
     from aqt.operations import QueryOp
@@ -600,3 +600,59 @@ def test_query_op_api() -> None:
     for name in ("with_progress", "failure", "run_in_background"):
         assert callable(getattr(QueryOp, name))
     assert list(inspect.signature(QueryOp.__init__).parameters)[1:] == ["parent", "op", "success"]
+
+
+@needs_aqt
+def test_phase_3b_display_apis() -> None:
+    """What the drill window relies on (Phase 3b), checked on 26.08.1."""
+    import inspect
+
+    from aqt import gui_hooks
+    from aqt.main import AnkiQt
+    from aqt.sound import av_player, play_clicked_audio
+    from aqt.theme import theme_manager
+    from aqt.utils import restoreGeom, saveGeom
+    from aqt.webview import AnkiWebView
+
+    # Media: stdHtml puts <base href="{serverURL}"> in the head, and the media
+    # server serves the collection's media folder for any other path.
+    assert "<base href=" in inspect.getsource(AnkiQt.baseHTML)
+    assert "mw.baseHTML()" in inspect.getsource(AnkiWebView.stdHtml)
+    # Escapes media file names, then [anki:play:q:N] -> a ▶ that sends pycmd('play:q:N').
+    src = inspect.getsource(AnkiQt.prepare_card_text_for_display)
+    assert "escape_media_filenames" in src and "_add_play_buttons" in src
+    assert list(inspect.signature(play_clicked_audio).parameters) == ["pycmd", "card"]
+    for name in ("play_tags", "stop_and_clear_queue"):
+        assert callable(getattr(av_player, name))
+    assert callable(saveGeom) and callable(restoreGeom)
+    body_classes = inspect.getsource(theme_manager.body_classes_for_card_ord)
+    assert 'f"card card{card_ord + 1} ' in body_classes
+    for name in ("stdHtml", "eval", "set_bridge_command", "cleanup"):
+        assert callable(getattr(AnkiWebView, name))
+    # The overview's bottom-bar filter returns the link handler: no
+    # webview_did_receive_js_message needed for a button there.
+    from aqt.overview import Overview
+
+    render_bottom = inspect.getsource(Overview._renderBottom)
+    assert "link_handler = gui_hooks.overview_will_render_bottom(" in render_bottom
+    assert callable(gui_hooks.deck_browser_will_show_options_menu.append)
+
+
+@needs_aqt
+def test_browser_close_and_reopen() -> None:
+    """No browser-close hook on 26.08.1: the Browser saves the note, then
+    deleteLater()s itself (so Qt's ``destroyed`` fires after the save); an open
+    Browser is reused through ``reopen(search=...)``."""
+    import inspect
+
+    from aqt import gui_hooks
+    from aqt.browser.browser import Browser
+    from aqt.main import AnkiQt
+
+    close = inspect.getsource(Browser.closeEvent)
+    assert "call_after_note_saved(self._closeWindow)" in close
+    assert "deferred_delete_and_garbage_collect(self)" in inspect.getsource(Browser._closeWindow)
+    assert "deleteLater()" in inspect.getsource(AnkiQt.deferred_delete_and_garbage_collect)
+    assert "search" in inspect.signature(Browser.reopen).parameters
+    hooks = dir(gui_hooks)
+    assert "browser_will_close" not in hooks and "browser_did_close" not in hooks

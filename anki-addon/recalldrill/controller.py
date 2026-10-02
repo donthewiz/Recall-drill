@@ -15,7 +15,12 @@ never changed here.
 What the add-on adds on top of SessionView (none of it reaches the engine):
 
 - the "other card's answer" catch (:data:`COLLISION_MESSAGE`);
-- :class:`PlayAnswerAudio` when the feedback shows the full back;
+- :class:`PlayAnswerAudio` when the feedback shows the full back,
+  :class:`StopAudio` when the next trial shows another card, and (config
+  ``autoplay_question_audio``) :class:`PlayQuestionAudio` when a card comes up;
+- :class:`Flash`, SessionView's ``triggerFlash``, as an effect;
+- on an image card, the feedback for the full answer also shows Anki's
+  rendered answer side (``ViewModel.answer_html``);
 - an Extra that is only an image (the web app's Extra is text) counts as an
   Extra: it is shown and it holds the pause like a text Extra;
 - editing happens in Anki's Browser (``begin_edit`` / ``apply_card_edit`` /
@@ -44,6 +49,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .card_html import answer_side
 from .engine.estimate import compute_cumulative_cold_start_multiplier, format_cold_start_range
 from .engine.estimate import compute_remaining_cold_start_range as _remaining_range
 from .engine.grading import exact_match
@@ -150,9 +156,37 @@ class ClearInput:
     """Empty the answer box (SessionView's ``setTypedValue('')``)."""
 
 
+@dataclass(frozen=True)
+class StopAudio:
+    """The trial now on screen is another card's: stop whatever is playing.
+
+    Not emitted between trials of the same card, so a term's answer audio
+    isn't cut off by a 500 ms dwell."""
+
+
+@dataclass(frozen=True)
+class PlayQuestionAudio:
+    """A card came up (config ``autoplay_question_audio``): play its question audio."""
+
+    cid: int
+
+
+@dataclass(frozen=True)
+class Flash:
+    """SessionView's ``triggerFlash``: tint the card green (``ok``) or red for
+    :data:`FLASH_MS`."""
+
+    ok: bool
+
+
+FLASH_MS = 400
+
 Effect = (
     StartDwell
     | PlayAnswerAudio
+    | PlayQuestionAudio
+    | StopAudio
+    | Flash
     | Persisted
     | PersistFailed
     | SessionComplete
@@ -178,6 +212,8 @@ class ControllerSettings:
     (config ``play_audio_on_feedback``)."""
     source_deck_editable: bool = True
     """``SavedSessionState.sourceDeckEditable``: False for a drill-again session."""
+    autoplay_question_audio: bool = False
+    """Play a card's question audio when it comes up (config ``autoplay_question_audio``)."""
 
 
 Mode = Literal["trial", "feedback", "batch_done", "done"]
@@ -273,7 +309,11 @@ class ViewModel:
     prompt: str
     """The trial's prompt (engine text, hint suffix included)."""
     front_html: str
-    """Anki's rendered question for display."""
+    """Anki's rendered question for display (``SourceRef.front_html``)."""
+    hint: str
+    """``SourceRef.hint``: the display appends it to ``front_html``."""
+    card_ord: int
+    """The card's ord, for Anki's ``card cardN`` body class (the note type CSS)."""
     css: str
     label: str
     """The stage pill, e.g. ``Chunk Practice • 1/3``."""
@@ -294,6 +334,11 @@ class ViewModel:
     shows_full_back: bool
     extra: str | None
     extra_html: str | None
+    answer_html: str | None
+    """An image card's rendered answer side (``card_html.answer_side``), shown
+    below the diff while the feedback shows the full back; else None."""
+    audio_side: Literal["q", "a"]
+    """What "Replay audio" plays: the answer once the feedback shows the full back."""
     notice: str | None
     editing: bool
     processing: bool
@@ -423,6 +468,7 @@ class DrillController:
         self._notice: str | None = None
         self._finished: Literal["complete", "stopped"] | None = None
         self._last_persisted: SessionState | None = None
+        self._shown_item: int | None = None  # the card of the last trial on screen
 
     # -- read-only accessors ------------------------------------------------
 
@@ -561,6 +607,22 @@ class DrillController:
         if state is not self._last_persisted:
             self._persist(state, effects)
         self._check_complete(effects)
+        self._track_trial(effects)
+
+    def _track_trial(self, effects: list[Effect]) -> None:
+        """StopAudio / PlayQuestionAudio when the trial on screen is another card's."""
+        trial = self._trial()
+        if trial is None or self._finished is not None:
+            return
+        item = trial["itemId"]
+        if item == self._shown_item:
+            return
+        first = self._shown_item is None
+        self._shown_item = item
+        if not first:
+            effects.append(StopAudio())
+        if self.settings.autoplay_question_audio:
+            effects.append(PlayQuestionAudio(self._sources[item].cid))
 
     def _check_complete(self, effects: list[Effect]) -> None:
         # The useEffect on [currentId, phase]: SESSION_COMPLETE_ID outside the
@@ -605,6 +667,7 @@ class DrillController:
         if self._finished is None:
             self._persist(self._state, effects)
             self._check_complete(effects)
+            self._track_trial(effects)
         return effects
 
     def reveal(self) -> list[Effect]:
@@ -648,6 +711,9 @@ class DrillController:
         self._pre_wrong_state = pre if result["verdict"] == "wrong" else None
         self._feedback = result["feedback"]
         self._last_verdict = result["verdict"]
+        # C8b: acknowledging a presentation is neither a success nor a failure.
+        if result["verdict"] != "presented":
+            effects.append(Flash(result["verdict"] in ("exact", "near")))
         self._persist(result["state"], effects)
         self._after_answer(result["state"], result["advance"], pause_for_extra, effects)
         return effects
@@ -717,6 +783,7 @@ class DrillController:
         result = apply_answer(pre, pre_trial["target"], revealed=False, override=True)
         self._feedback = result["feedback"]
         self._last_verdict = result["verdict"]
+        effects.append(Flash(True))
         self._persist(result["state"], effects)
         self._after_answer(result["state"], result["advance"], pause_for_extra, effects)
         return effects
@@ -891,6 +958,9 @@ class DrillController:
             assert item is not None and src is not None
             extra = item.get("extra", "")
             extra_html = src.extra_html
+        answer_html: str | None = None
+        if self._feedback is not None and shows_full_back and src is not None and src.image_front:
+            answer_html = answer_side(src.front_html, src.answer_html)
 
         feedback = None
         if self._feedback is not None:
@@ -967,6 +1037,8 @@ class DrillController:
             cid=src.cid if src is not None else None,
             prompt=trial["prompt"] if trial is not None else "",
             front_html=src.front_html if src is not None else "",
+            hint=src.hint if src is not None else "",
+            card_ord=src.ord if src is not None else 0,
             css=src.css if src is not None else "",
             label=trial["label"] if trial is not None else "",
             detail=detail,
@@ -987,6 +1059,8 @@ class DrillController:
             shows_full_back=shows_full_back,
             extra=extra,
             extra_html=extra_html,
+            answer_html=answer_html,
+            audio_side="a" if self._feedback is not None and shows_full_back else "q",
             notice=self._notice,
             editing=self._editing,
             processing=self._processing,

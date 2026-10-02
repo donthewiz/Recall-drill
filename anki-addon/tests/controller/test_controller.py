@@ -15,6 +15,7 @@ from recalldrill.controller import (
     CollisionNotice,
     ControllerSettings,
     DrillController,
+    Flash,
     Persisted,
     PersistFailed,
     PlayAnswerAudio,
@@ -122,7 +123,7 @@ def test_correct_answer_dwells_with_its_key_then_commits() -> None:
     h = make()
     before = h.ctrl.state
     out = h.ctrl.submit("cardi")
-    assert out == [Persisted(), StartDwell(DWELL_MS["full-streak-progress"])]
+    assert out == [Flash(True), Persisted(), StartDwell(DWELL_MS["full-streak-progress"])]
     # During the dwell the answered trial stays on screen.
     assert h.ctrl.state is before
     v = h.ctrl.view()
@@ -201,7 +202,7 @@ def test_wrong_in_encode_waits_for_continue_without_apply_next(
     monkeypatch.setattr(controller_module, "apply_next", lambda s: pytest.fail("applyNext"))
     h = make()
     out = h.ctrl.submit("nope")
-    assert out == [Persisted()]  # no dwell: a wrong verdict is a manual advance
+    assert out == [Flash(False), Persisted()]  # no dwell: a wrong verdict is a manual advance
     v = h.ctrl.view()
     assert v.mode == "feedback" and v.feedback is not None
     assert v.feedback.type == "danger" and v.feedback.diff
@@ -219,7 +220,7 @@ def test_wrong_then_override_counts_as_correct() -> None:
     h.ctrl.submit("nope")
     assert h.ctrl.state["stats"]["misses"] == 1
     out = h.ctrl.override()
-    assert out[0] == Persisted()
+    assert out[:2] == [Flash(True), Persisted()]
     assert StartDwell(DWELL_MS["full-streak-progress"]) in out
     h.do(h.ctrl.dwell_elapsed())
     # As if the pre-answer state had been answered correctly, minus the attempt.
@@ -257,7 +258,7 @@ def test_override_in_the_cycle_waits_for_continue() -> None:
     h = make(state=phase_state(SHORT, "cycle"))
     h.ctrl.submit("nope")
     out = h.ctrl.override()
-    assert out == [Persisted()]  # the cycle is always a manual advance
+    assert out == [Flash(True), Persisted()]  # the cycle is always a manual advance
     v = h.ctrl.view()
     assert v.feedback is not None and v.feedback.verdict == "exact"
     assert v.buttons.continue_ and not v.buttons.override
@@ -312,7 +313,7 @@ def test_final_wrong_needs_continue_and_calls_apply_next(monkeypatch: pytest.Mon
     real = controller_module.apply_next
     monkeypatch.setattr(controller_module, "apply_next", lambda s: calls.append(s) or real(s))
     out = h.ctrl.submit("nope")
-    assert out == [Persisted()]
+    assert out == [Flash(False), Persisted()]
     h.ctrl.continue_()
     assert len(calls) == 1
 
@@ -331,7 +332,7 @@ def test_extra_pause_holds_the_advanced_state_until_continue() -> None:
     h = make(WITH_EXTRA, sources=[source(0, extra_html="as in <i>cardiology</i>"), source(1)])
     shown = h.ctrl.state
     out = h.ctrl.submit("cardi")
-    assert out == [Persisted()]  # no dwell: the Extra holds it
+    assert out == [Flash(True), Persisted()]  # no dwell: the Extra holds it
     assert h.ctrl.state is shown
     held = h.ctrl.pending_advance_state
     assert held is not None and held["stats"]["attempts"] == 1
@@ -373,7 +374,7 @@ def test_no_extra_pause_on_a_chunk() -> None:
 def test_answer_audio_plays_when_feedback_shows_the_full_back() -> None:
     h = make(sources=[source(0, has_audio=True), source(1), source(2)])
     out = h.ctrl.submit("cardi")
-    assert out == [Persisted(), PlayAnswerAudio(1000), StartDwell(500)]
+    assert out == [Flash(True), Persisted(), PlayAnswerAudio(1000), StartDwell(500)]
 
 
 def test_answer_audio_setting_off() -> None:

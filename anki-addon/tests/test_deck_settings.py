@@ -21,6 +21,7 @@ def test_sanitize_keeps_known_valid_keys_only() -> None:
         "strictPunctuation": True,
         "stemTolerance": "no",
         "batchSize": 8,
+        "encodeReps": 4,
         "hints": False,
         "cycleOrder": "inOrder",
         "card_ords": {"123": [1, 1, 0, -1, True, "2"], "abc": [0], "456": "x"},
@@ -29,11 +30,13 @@ def test_sanitize_keeps_known_valid_keys_only() -> None:
     assert ds.sanitize(raw) == {
         "strictPunctuation": True,
         "batchSize": 8,
+        "encodeReps": 4,
         "hints": False,
         "cycleOrder": "inOrder",
         "card_ords": {"123": [0, 1]},
     }
     assert ds.sanitize({"batchSize": True, "cycleOrder": "random"}) == {}
+    assert ds.sanitize({"encodeReps": 0}) == {} and ds.sanitize({"encodeReps": 11}) == {}
     assert ds.sanitize(None) == {}
 
 
@@ -51,10 +54,14 @@ def test_resolve_fills_defaults() -> None:
         "strictPunctuation": False,
         "stemTolerance": True,
         "batchSize": 5,
+        "encodeReps": 3,
         "cycleOrder": "shuffled",
         "card_ords": {},
     }
     assert ds.resolve({"stemTolerance": False})["stemTolerance"] is False
+    base: ds.ResolvedSettings = {**ds.DEFAULTS, "encodeReps": 5, "batchSize": 0}
+    assert ds.resolve({"batchSize": 3}, base)["encodeReps"] == 5
+    assert ds.resolve({"batchSize": 3}, base)["batchSize"] == 3
 
 
 def test_card_ords_option() -> None:
