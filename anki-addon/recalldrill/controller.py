@@ -19,8 +19,8 @@ What the add-on adds on top of SessionView (none of it reaches the engine):
   :class:`StopAudio` when the next trial shows another card, and (config
   ``autoplay_question_audio``) :class:`PlayQuestionAudio` when a card comes up;
 - :class:`Flash`, SessionView's ``triggerFlash``, as an effect;
-- on an image card, the feedback for the full answer also shows Anki's
-  rendered answer side (``ViewModel.answer_html``);
+- on an image card, the feedback for the full answer shows Anki's rendered
+  answer side in place of the front (``ViewModel.answer_html``);
 - an Extra that is only an image (the web app's Extra is text) counts as an
   Extra: it is shown and it holds the pause like a text Extra;
 - editing happens in Anki's Browser (``begin_edit`` / ``apply_card_edit`` /
@@ -334,9 +334,11 @@ class ViewModel:
     shows_full_back: bool
     extra: str | None
     extra_html: str | None
+    image_front: bool
+    """``SourceRef.image_front``: the front shows an image (fit to the window)."""
     answer_html: str | None
-    """An image card's rendered answer side (``card_html.answer_side``), shown
-    below the diff while the feedback shows the full back; else None."""
+    """An image card's rendered answer side (``card_html.answer_side``): while
+    the feedback shows the full back it replaces the front; else None."""
     audio_side: Literal["q", "a"]
     """What "Replay audio" plays: the answer once the feedback shows the full back."""
     notice: str | None
@@ -1059,6 +1061,7 @@ class DrillController:
             shows_full_back=shows_full_back,
             extra=extra,
             extra_html=extra_html,
+            image_front=src.image_front if src is not None else False,
             answer_html=answer_html,
             audio_side="a" if self._feedback is not None and shows_full_back else "q",
             notice=self._notice,

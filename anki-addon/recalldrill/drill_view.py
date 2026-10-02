@@ -79,7 +79,14 @@ body { margin: 12px 16px; }
 .rd-miss { color: var(--rd-danger); font-weight: 700; text-decoration: underline;
   text-decoration-thickness: 2px; text-underline-offset: 4px; background: var(--rd-danger-bg);
   border: 1px solid var(--rd-danger); border-radius: 4px; padding: 0 5px; }
-.rd-answer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rd-border); }
+.rd-answer { margin-top: 12px; }
+/* Image cards fit the window: header + whole figure + cue without scrolling.
+   !important beats the notes' inline max-height:none. The occlusion wrapper is
+   an inline-block (.occ-wrap or an inline style), so it shrinks with the image
+   and the %-positioned boxes stay on it. */
+.rd-img-card .rd-front img, .rd-img-card .rd-answer img {
+  max-height: IMG_VH !important; max-width: 100% !important;
+  width: auto !important; height: auto !important; }
 .rd-extra { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rd-border);
   color: var(--rd-text-2); font-size: 16px; }
 .rd-extra-label { font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
@@ -114,6 +121,7 @@ function rdRender(p) {
   document.body.className = p.bodyClass;
   var root = document.getElementById("rd-root");
   root.innerHTML = p.html;
+  window.scrollTo(0, 0);
   if (window.MathJax && MathJax.typesetPromise) {
     MathJax.typesetPromise([root]).catch(function() {});
   }
@@ -139,11 +147,20 @@ document.addEventListener("keydown", function(e) {
 """
 
 
+IMAGE_MAX_HEIGHT = "60vh"
+"""How tall a card image may be: the header, the whole figure and the cue
+fit in the card area at Anki's normal window size."""
+
+
+def shell_css() -> str:
+    return SHELL_CSS.replace("IMG_VH", IMAGE_MAX_HEIGHT)
+
+
 def shell_body(flash_ms: int) -> str:
     """The page loaded once; Escape is AnkiWebView's own ``pycmd("close")``."""
     js = SHELL_JS.replace("FLASH_MS", str(flash_ms))
     return (
-        f"<style>{SHELL_CSS}</style><style id='rd-card-css'></style>"
+        f"<style>{shell_css()}</style><style id='rd-card-css'></style>"
         f"<div id='rd-root'></div><script>{js}</script>"
     )
 
@@ -185,30 +202,43 @@ def sub_html(view: ViewModel) -> str:
 
 
 def card_html(view: ViewModel, prepare: Prepare) -> str:
-    """The trial and feedback screen."""
+    """The trial and feedback screen.
+
+    Text cards: front, cue line, then the feedback (verdict, diff, Extra).
+    Image cards on full-answer feedback: the verdict and diff, the cue line,
+    then the rendered answer side *in place of* the front (the same figure with
+    the region revealed and its label), then Extra. Both figures stacked would
+    push the revealed label below the fold.
+    """
     head = (
         f'<div class="rd-head"><span class="rd-pill">{escape(view.label)}</span>'
         f'<span class="rd-badge">{escape(view.cue_badge)}</span></div>'
     )
-    front = f'<div class="rd-front">{prepare(display_front(view.front_html, view.hint))}</div>'
-    parts: list[str] = []
+    notices: list[str] = []
     if view.editing:
-        parts.append(f'<div class="rd-notice">{escape(EDITING_NOTICE)}</div>')
+        notices.append(f'<div class="rd-notice">{escape(EDITING_NOTICE)}</div>')
     if view.notice:
-        parts.append(f'<div class="rd-notice">{escape(view.notice)}</div>')
-    if view.feedback is not None:
-        parts.append(feedback_html(view.feedback))
+        notices.append(f'<div class="rd-notice">{escape(view.notice)}</div>')
+    verdict = feedback_html(view.feedback) if view.feedback is not None else ""
+    extra = (
+        '<div class="rd-extra"><span class="rd-extra-label">Extra</span>'
+        f"{prepare(display_extra(view.extra_html))}</div>"
+        if view.extra_html is not None
+        else ""
+    )
+    sub = f'<div class="rd-sub">{sub_html(view)}</div>'
+    classes = "rd-card rd-img-card" if view.image_front else "rd-card"
     if view.answer_html is not None:
-        parts.append(f'<div class="rd-answer">{prepare(view.answer_html)}</div>')
-    if view.extra_html is not None:
-        parts.append(
-            '<div class="rd-extra"><span class="rd-extra-label">Extra</span>'
-            f"{prepare(display_extra(view.extra_html))}</div>"
+        return (
+            f'<div id="rd-card" class="{classes}">{head}'
+            f'<div class="rd-feedback">{"".join(notices)}{verdict}</div>{sub}'
+            f'<div class="rd-answer">{prepare(view.answer_html)}</div>'
+            f'<div class="rd-feedback">{extra}</div></div>'
         )
+    front = f'<div class="rd-front">{prepare(display_front(view.front_html, view.hint))}</div>'
     return (
-        f'<div id="rd-card" class="rd-card">{head}{front}'
-        f'<div class="rd-sub">{sub_html(view)}</div>'
-        f'<div class="rd-feedback">{"".join(parts)}</div></div>'
+        f'<div id="rd-card" class="{classes}">{head}{front}{sub}'
+        f'<div class="rd-feedback">{"".join(notices)}{verdict}{extra}</div></div>'
     )
 
 

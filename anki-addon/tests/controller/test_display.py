@@ -8,6 +8,7 @@ HTML ``drill_view`` builds from a view.
 from __future__ import annotations
 
 from html import escape
+from typing import Any
 
 from controller_support import LONG, SHORT, make, source
 
@@ -21,6 +22,7 @@ from recalldrill.controller import (
 )
 from recalldrill.drill_view import (
     EDITING_NOTICE,
+    IMAGE_MAX_HEIGHT,
     batch_done_html,
     diff_html,
     done_html,
@@ -235,6 +237,88 @@ def test_card_render_shows_cue_extra_answer_side_and_editing() -> None:
     h.ctrl.dwell_elapsed()
     assert h.ctrl.begin_edit() is not None
     assert escape(EDITING_NOTICE) in render(h.ctrl.view(), _identity, "card card1")["html"]
+
+
+# -- image cards: fit the window, answer side in place of the front ----------
+
+TEXT_TRIAL_HTML = (
+    '<div id="rd-card" class="rd-card"><div class="rd-head"><span class="rd-pill">Full Recall'
+    '</span><span class="rd-badge">First-Letter Cue</span></div><div class="rd-front">'
+    '<b>front 0</b></div><div class="rd-sub"><span class="rd-cue">c____</span></div>'
+    '<div class="rd-feedback"></div></div>'
+)
+TEXT_FEEDBACK_HTML = (
+    '<div id="rd-card" class="rd-card"><div class="rd-head"><span class="rd-pill">Full Recall'
+    '</span><span class="rd-badge">First-Letter Cue</span></div><div class="rd-front">'
+    '<b>front 0</b></div><div class="rd-sub"><span class="rd-cue">c____</span></div>'
+    '<div class="rd-feedback"><div class="rd-fb rd-fb-danger">✕ Streak reset — compare your '
+    'answer:</div><div class="rd-diff"><span class="rd-w rd-miss">cardi</span></div></div></div>'
+)
+
+
+def test_text_card_output_is_unchanged() -> None:
+    """Byte for byte what the Phase 3b commit rendered for a text card."""
+    h = make(sources=[source(0, extra_html="<i>x</i>"), source(1), source(2)])
+    assert render(h.ctrl.view(), _identity, "card card1")["html"] == TEXT_TRIAL_HTML
+    h.ctrl.submit("nope")
+    assert render(h.ctrl.view(), _identity, "card card1")["html"] == TEXT_FEEDBACK_HTML
+
+
+def _image_card() -> Any:
+    deck: list[DeckItem] = [
+        {"front": "Bone", "back": "Osteon", "extra": "The unit of compact bone."}
+    ]
+    srcs = [
+        source(
+            0,
+            front_html=IMG_FRONT,
+            answer_html=IMG_ANSWER,
+            image_front=True,
+            extra_html="The unit of compact bone.",
+        )
+    ]
+    return make(deck, sources=srcs)
+
+
+def test_image_card_trial_shows_the_front_figure_fitted() -> None:
+    h = _image_card()
+    html = render(h.ctrl.view(), _identity, "card card1")["html"]
+    assert 'class="rd-card rd-img-card"' in html
+    assert html.count('<img src="osteon.png">') == 1 and 'class="ob a"' in html
+    assert html.index('class="rd-front"') < html.index('class="rd-sub"')
+
+
+def test_image_card_feedback_replaces_the_front_with_the_answer_side() -> None:
+    h = _image_card()
+    h.ctrl.submit("nope")
+    html = render(h.ctrl.view(), _identity, "card card1")["html"]
+    # The answer figure once; the front figure (with its red box) not at all.
+    assert html.count('<img src="osteon.png">') == 1
+    assert 'class="ob a"' not in html and 'class="rd-front"' not in html
+    assert "<p>Osteon</p>" in html
+    # Verdict and diff, then the cue line, then the figure, then Extra (once).
+    order = [
+        html.index(s)
+        for s in (
+            "rd-fb rd-fb-danger",
+            "rd-diff",
+            'class="rd-sub"',
+            'class="rd-answer"',
+            'class="rd-extra"',
+        )
+    ]
+    assert order == sorted(order)
+    assert html.count("The unit of compact bone.") == 1
+
+
+def test_image_fit_rule_is_in_the_page() -> None:
+    body = shell_body(400)
+    assert (
+        ".rd-img-card .rd-front img, .rd-img-card .rd-answer img {\n"
+        f"  max-height: {IMAGE_MAX_HEIGHT} !important; max-width: 100% !important;\n"
+        "  width: auto !important; height: auto !important; }"
+    ) in body
+    assert "window.scrollTo(0, 0);" in body
 
 
 def test_extra_html_is_shown_with_its_formatting() -> None:

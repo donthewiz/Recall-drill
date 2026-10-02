@@ -44,8 +44,10 @@ Phase 3b (drill window, setup panel, entry points).
 
 - [ ] 13. **Search…** `"deck:Human A&P::Lecture 2::Bones and Bone Tissue Chapter 6" "note:Image Occlusion (anki-medical-cards)"`, max cards 3:
   - [ ] the figure shows (media loads), with the **red box visible** on the structure being asked;
+  - [ ] the header line, the whole figure and the cue are visible **without scrolling**, and the answer box is on screen;
   - [ ] no hint is added;
-  - [ ] type the label (e.g. `osteon`). On feedback, the back of the card shows below the diff, with that region revealed and its caption, and the Extra (if any) only once.
+  - [ ] type the label (e.g. `osteon`). On feedback, the verdict and diff are at the top, then the cue, then the back of the card **in place of** the question figure (one figure, that region revealed, its label), then the Extra only once;
+  - [ ] the next card starts scrolled to the top.
 
 ## Also worth a look
 
