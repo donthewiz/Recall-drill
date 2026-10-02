@@ -234,7 +234,7 @@ The front reads `meaning (N forms; hint)`, the skill's order. Default: on when t
 
 **What a source carries for display** (`build.py`, `SourceRef`): `front_html` (rendered question), `answer_html` (rendered answer, `render_output().answer_text`), `css` (the note type's CSS from `render_output()`; some lookalike cards draw their masks with CSS classes only), `extra_html` (raw Extra field), plus ids, class, flags, `answer_hash`, `has_audio`, `image_front` and the `hint` suffix.
 
-**Per-deck settings** (`deck_settings.py`, `deck_settings.json` by deck id): `strictPunctuation`, `stemTolerance`, `batchSize`, `hints`, `cycleOrder`, `card_ords`. With nothing saved, a deck where ≥ 80% of the selected answers have ≤ 3 words gets a **proposal** (`stemTolerance` off, `strictPunctuation` on, `hints` on). It is never saved by the add-on by itself: the setup panel offers it as one click, and saves the deck's settings only on Start or Save. Phase 3b added `encodeReps`.
+**Per-deck settings** (`deck_settings.py`, `deck_settings.json` by deck id): `strictPunctuation`, `stemTolerance`, `batchSize`, `hints`, `cycleOrder`, `card_ords`. With nothing saved, a deck where ≥ 80% of the selected answers have ≤ 3 words gets a **proposal** (`stemTolerance` off, `strictPunctuation` on, `hints` on). It is never saved by the add-on by itself: the setup panel offers it as one click, and saves the deck's settings only on Start or Save. Phase 3b added `encodeReps`; Phase 5 added `holdoutPct` (Holdout %, see "Measurement and holdout").
 
 **Storage** (`storage.py`): `user_files/profiles/<profile>/…`, one folder per Anki profile (a name with unsafe characters gets a hash suffix). Files are `{"schemaVersion": 1, "data": …}`, written atomically; an unreadable file is renamed `*.corrupt-<timestamp>` and the default is used.
 
@@ -445,7 +445,7 @@ The setup panel's other ways out of a pending handoff also write the declined li
 
 ## Measurement and holdout (Phase 5)
 
-**Decision (Don, 2026-10-02): holdout on, at 15%.** `config.json` sets `holdout_pct: 15`. The code default stays **0** (off), so the setting is opt-in for anyone else.
+**Decision (Don, 2026-10-02, revised before merge): holdout off by default, with a per-deck control.** `config.json` and the code both default `holdout_pct` to **0** (off). Each deck turns it on with **Holdout %** (0–50) in the setup panel's card section, saved with the deck's other settings (`deck_settings.json`, `holdoutPct`); the config value is only the default for decks without their own. (The first decision was "on at 15%" in `config.json`; replaced.)
 
 The success metric for the add-on is the **next-day Again rate** on drilled cards. Cost (trials per card) is always shown next to it, because fewer trials is still the priority.
 
@@ -460,14 +460,14 @@ The success metric for the add-on is the **next-day Again rate** on drilled card
 
 ### The holdout
 
-- **Settings:** `holdout_pct` (0–50; code default 0), `holdout_exclude` (true). The salt is a random hex (`secrets.token_hex(8)`) made the first time a selection runs with the holdout on, in `user_files/profiles/<profile>/holdout.json`.
-- **Assignment:** `int(sha1(f"{salt}:{cid}").hexdigest()[:8], 16) % 100 < holdout_pct` (`holdout.is_holdout`). Stable across sessions; a card in the holdout at 15% stays in it at any higher percentage.
+- **Settings:** per deck, `holdoutPct` (0–50, setup panel **Holdout %**), defaulting to config `holdout_pct` (0); `holdout_exclude` (true, global). The salt is a random hex (`secrets.token_hex(8)`) made the first time a selection runs with the holdout on, in `user_files/profiles/<profile>/holdout.json`.
+- **Assignment:** `int(sha1(f"{salt}:{cid}").hexdigest()[:8], 16) % 100 < pct` (`holdout.is_holdout`), with the deck's %. Deterministic: a card's status only changes when the % does, and then only from that session on (raising the % keeps every card already in, adds more; lowering it releases some). Cards already handed off as holdout keep `rd::holdout` and stay out of future drills (`holdout_exclude`), whatever the % is now.
 - **Who can be held out:** classes `new` and `suspended_new` only, **deck scopes only** (never a search such as `tag:rd::hard`; drill-again never selects).
 - **Selection:** `apply_holdout` walks the ordered eligible list, putting holdout cards aside, until `max_cards` **drill** cards are picked.
 - **Rules added on top of the prompt** (to keep the control clean):
   - a note already tagged `rd::drilled` or `rd::holdout` is never held out (its sibling was drilled, or it is a past control);
   - a held-out card whose note also has a picked drill card is dropped from the holdout (and not drilled): the assignment is per card, as the prompt specifies, so a two-direction note can split. It goes to Anki as that drilled card's sibling, and the next selection drills it (its note is then `rd::drilled`).
-- **Panel:** "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." (shown for deck scopes with the holdout on). Cards tagged `rd::holdout` are left out and counted ("N cards tagged rd::holdout left out").
+- **Panel:** in the card section, for deck scopes, "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." next to the **Holdout %** spin box; K is recounted (the panel's usual 300 ms refresh) as the % changes. At 0: "Holdout: off". Search scopes show neither (they never hold cards out). Cards tagged `rd::holdout` are left out and counted ("N cards tagged rd::holdout left out").
 - **Save and history:** `addon.holdout` in the save and `holdout` in the session line (`cid, nid, ord, did, card_class`). At handoff, the `holdout` and `holdout_siblings` groups (see the handoff table): a holdout note enters Anki exactly like a drilled note except for the drill (unsuspended, queued after the drilled cards and their siblings, buried until tomorrow, siblings by the same rule), plus the note tag `rd::holdout` (no `rd::drilled`). A held-out card that is gone or no longer new at handoff is left alone (`holdout_skipped`).
 - **Later selections** leave `rd::holdout` notes out while `holdout_exclude` is on. With it off they can be drilled, and they are never held out a second time.
 

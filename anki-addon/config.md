@@ -21,6 +21,6 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 **Measurement** (Tools → Recall Drill: tuning report):
 
 - `min_words_to_chunk` (8): answers with at most this many words are drilled whole; longer ones are chunked. The tuning report can suggest a new value, applied only when you confirm it.
-- `holdout_pct` (0 when missing; this file sets 15): percent of eligible new cards, in deck sessions only, that skip the drill and go to Anki as plain new cards at the handoff (tagged `rd::holdout`), as a fair comparison for the drilled cards. Which cards is decided by a hash, so a card's status never changes between sessions. 0 turns it off; at most 50.
+- `holdout_pct` (0, off): the default **Holdout %** for decks without their own. Percent of eligible new cards, in deck sessions only, that skip the drill and go to Anki as plain new cards at the handoff (tagged `rd::holdout`), as a fair comparison for the drilled cards. Set it per deck in the Recall Drill panel (Holdout %, saved with the deck's settings). Which cards is decided by a hash, so changing the % only changes which cards are held out from now on. At most 50.
 - `holdout_exclude` (true): leave cards tagged `rd::holdout` out of later sessions, so the control stays undrilled.
 - `min_n` (30): the tuning report's minimum sample per compared group. Smaller groups show "n too small", and no suggestion is made from them.

@@ -57,11 +57,27 @@ def test_resolve_fills_defaults() -> None:
         "encodeReps": 3,
         "cycleOrder": "shuffled",
         "card_ords": {},
+        "holdoutPct": 0,
     }
     assert ds.resolve({"stemTolerance": False})["stemTolerance"] is False
     base: ds.ResolvedSettings = {**ds.DEFAULTS, "encodeReps": 5, "batchSize": 0}
     assert ds.resolve({"batchSize": 3}, base)["encodeReps"] == 5
     assert ds.resolve({"batchSize": 3}, base)["batchSize"] == 3
+
+
+def test_holdout_pct_is_a_deck_setting(tmp_path: Path) -> None:
+    """Phase 5: Holdout % saves and reloads per deck; out-of-range values are dropped."""
+    st = Storage(tmp_path, "User 1")
+    ds.save(st, 42, {"holdoutPct": 15, "batchSize": 3})
+    ds.save(st, 7, {"holdoutPct": 0})
+    assert ds.get_saved(st, 42) == {"holdoutPct": 15, "batchSize": 3}
+    assert ds.get_saved(st, 7) == {"holdoutPct": 0}
+    assert ds.resolve(ds.get_saved(st, 42))["holdoutPct"] == 15
+    base: ds.ResolvedSettings = {**ds.DEFAULTS, "holdoutPct": 10}
+    assert ds.resolve({}, base)["holdoutPct"] == 10  # the config default
+    assert ds.resolve({"holdoutPct": 0}, base)["holdoutPct"] == 0  # a deck can turn it off
+    for bad in (51, -1, True, "15", 7.5):
+        assert "holdoutPct" not in ds.sanitize({"holdoutPct": bad})
 
 
 def test_card_ords_option() -> None:

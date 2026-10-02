@@ -14,9 +14,11 @@ The ``tag:rd::hard`` search ("Recall Drill: my rd::hard cards") leaves out, by
 default, the cards whose last handoff found them not hard: the tag is on the
 note, so a hard card's siblings (and cloze siblings) carry it too.
 
-With the holdout on (config ``holdout_pct``), a deck scope sets some eligible
-new cards aside as the measurement control; the panel says how many. Cards
-tagged ``rd::holdout`` are left out unless ``holdout_exclude`` is off.
+With the holdout on (the deck's **Holdout %**, saved with its settings; the
+config's ``holdout_pct`` is the default, 0 = off), a deck scope sets some
+eligible new cards aside as the measurement control; the panel says how many,
+updated as the % changes. Cards tagged ``rd::holdout`` are left out unless
+``holdout_exclude`` is off.
 """
 
 from __future__ import annotations
@@ -97,7 +99,10 @@ def _plural(n: int, one: str, many: str | None = None) -> str:
     return f"{n} {one if n == 1 else (many or one + 's')}"
 
 
-def holdout_text(held: int) -> str:
+def holdout_text(held: int, pct: int = 1) -> str:
+    """The card section's holdout line. ``pct`` 0: off."""
+    if pct <= 0:
+        return "Holdout: off"
     if held == 1:
         return (
             "Holdout: 1 card skips the drill and goes to Anki as a new card (measurement control)."
@@ -256,10 +261,26 @@ class SetupDialog(QDialog):
         srow = QHBoxLayout()
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
+        self.holdout_row = QWidget()
+        hrow = QHBoxLayout(self.holdout_row)
+        hrow.setContentsMargins(0, 0, 0, 0)
         self.holdout_label = QLabel()
         self.holdout_label.setWordWrap(True)
-        self.holdout_label.hide()
-        cl.addWidget(self.holdout_label)
+        self.holdout_pct = QSpinBox()
+        self.holdout_pct.setRange(0, deck_settings.HOLDOUT_MAX_PCT)
+        self.holdout_pct.setSuffix(" %")
+        self.holdout_pct.setToolTip(
+            "Share of eligible new cards that skip the drill and go to Anki as plain new "
+            "cards, as a fair comparison (tuning report). Saved for this deck. "
+            "Which cards is fixed by a hash: changing it only changes who is held out "
+            "from now on; cards already handed off as rd::holdout stay out."
+        )
+        qconnect(self.holdout_pct.valueChanged, self._on_setting)
+        hrow.addWidget(self.holdout_label, 1)
+        hrow.addWidget(QLabel("Holdout %"))
+        hrow.addWidget(self.holdout_pct)
+        self.holdout_row.hide()
+        cl.addWidget(self.holdout_row)
         self.mapping_btn = QPushButton("Edit mapping…")
         self.mapping_btn.setAutoDefault(False)
         qconnect(self.mapping_btn.clicked, self._edit_mapping)
@@ -437,6 +458,8 @@ class SetupDialog(QDialog):
     def _options(self) -> Any:
         tag = self.tag_edit.text().strip()
         cfg = self.ctx.config()
+        # Deck scopes only (select.holdout_spec): a search never holds cards out.
+        pct = launch.resolved(self.draft, cfg)["holdoutPct"] if self.scope.deck_id else 0
         return options_for(
             self.draft,
             enabled=frozenset(self.enabled),
@@ -444,8 +467,8 @@ class SetupDialog(QDialog):
             extra_tag=tag or None,
             order=cast(OrderMode, self.order.currentData()),
             exclude_cids=self.hard_exclude if self.hard_only.isChecked() else frozenset(),
-            holdout_pct=cfg.holdout_pct,
-            holdout_salt=holdout.salt_for(self.ctx.storage(), cfg.holdout_pct),
+            holdout_pct=pct,
+            holdout_salt=holdout.salt_for(self.ctx.storage(), pct),
             exclude_holdout_tag=cfg.holdout_exclude,
         )
 
@@ -559,10 +582,8 @@ class SetupDialog(QDialog):
                 f"{_plural(sel.holdout_tagged, 'card')} tagged rd::holdout left out "
                 "(earlier measurement controls)."
             )
-        held = len(sel.holdout)
-        on = data.scope.deck_id is not None and sel.options.holdout_pct > 0
-        self.holdout_label.setVisible(on)
-        self.holdout_label.setText(holdout_text(held))
+        self.holdout_row.setVisible(data.scope.deck_id is not None)
+        self.holdout_label.setText(holdout_text(len(sel.holdout), sel.options.holdout_pct))
         image_fronts = sum(1 for s in b.sources if s.image_front)
         if image_fronts:
             lines.append(f"{image_fronts} show an image on the front (no hints for them).")
@@ -578,6 +599,7 @@ class SetupDialog(QDialog):
         self.stem.setChecked(r["stemTolerance"])
         self.stem.setEnabled(not r["strictPunctuation"])
         self.hints.setChecked(data.build.hints_on)
+        self.holdout_pct.setValue(r["holdoutPct"])
         proposal = data.proposal
         self.proposal_row.setVisible(
             proposal is not None and any(self.draft.get(k) != v for k, v in proposal.items())
@@ -694,6 +716,7 @@ class SetupDialog(QDialog):
         d["cycleOrder"] = cast(Any, self.cycle_order.currentData())
         d["strictPunctuation"] = self.strict.isChecked()
         d["stemTolerance"] = self.stem.isChecked()
+        d["holdoutPct"] = self.holdout_pct.value()
         if self.data is None or self.hints.isChecked() != self.data.build.hints_on:
             d["hints"] = self.hints.isChecked()
         self.stem.setEnabled(not self.strict.isChecked())
