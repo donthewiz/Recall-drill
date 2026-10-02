@@ -1163,6 +1163,8 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
         return item
 
     strict = state["config"].get("strictPunctuation")
+    # Add-on extension: the session's own threshold; absent, the TS constant.
+    min_words = state["config"].get("minWordsToChunk", MIN_WORDS_TO_CHUNK)
     answer_changed = not exact_match(old["back"], back, False if strict is None else strict)
     if not answer_changed:
         # An untouched back keeps its stored chunks as-is.
@@ -1171,7 +1173,7 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
                 "state": {**state, "items": replace_item(with_extra({**old, "front": front}))},
                 "restarted": False,
             }
-        chunks = chunk_text(back, state["config"]["chunkDifficulty"], MIN_WORDS_TO_CHUNK)
+        chunks = chunk_text(back, state["config"]["chunkDifficulty"], min_words)
         old_chunks = old["chunks"]
         same_chunk_count = (None if chunks is None else len(chunks)) == (
             None if old_chunks is None else len(old_chunks)
@@ -1192,7 +1194,7 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
             old["id"],
             state["config"]["chunkDifficulty"],
             state["config"]["ladderMode"],
-            MIN_WORDS_TO_CHUNK,
+            min_words,
         ),
         "status": "encoding",
     }

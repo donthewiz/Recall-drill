@@ -53,6 +53,7 @@ def session_config(settings: DeckSettings | None, cfg: AddonConfig) -> NewSessio
         "strictPunctuation": r["strictPunctuation"],
         "batchSize": r["batchSize"],
         "cycleOrder": r["cycleOrder"],
+        "minWordsToChunk": cfg.min_words_to_chunk,
     }
 
 
@@ -81,9 +82,11 @@ def start(
     hints: bool,
     cfg: AddonConfig,
     clock: Callable[[], int] = now_ms,
+    holdout: Sequence[Mapping[str, Any]] = (),
 ) -> tuple[DrillController, SessionStore]:
     """Start: save the deck's settings, then a fresh session (overwriting any
-    save under the scope's key). Raises ``ValueError`` on 0 cards."""
+    save under the scope's key). ``holdout``: the cards the selection held out
+    (recorded in the save, handed off as new cards). Raises ``ValueError`` on 0 cards."""
     if not deck_items:
         raise ValueError("nothing to drill")
     if settings_did is not None:
@@ -100,6 +103,7 @@ def start(
         hints=hints,
         settings=controller_settings(cfg, deck_name),
         now_ms=clock,
+        holdout=holdout,
     )
 
 

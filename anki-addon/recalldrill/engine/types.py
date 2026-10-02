@@ -119,6 +119,10 @@ class SessionConfig(TypedDict):
     batchSize: NotRequired[int]
     cycleOrder: NotRequired[CycleOrder]
     strictPunctuation: NotRequired[bool]
+    minWordsToChunk: NotRequired[int]
+    """Add-on only (docs/DECISIONS.md, "Engine extensions beyond the TS engine"):
+    the session's ``MIN_WORDS_TO_CHUNK``. Absent: the module constant, exactly as
+    the TS engine."""
 
 
 class SessionState(TypedDict):

@@ -308,3 +308,43 @@ def test_save_hint_suppress_or_set(tmp_path: Path, hint: str) -> None:
     st = Storage(tmp_path, "p")
     save_hint(st, "1:0", hint)
     assert st.read_json(HINTS, None) == {"1:0": hint}
+
+
+def test_panel_holdout_and_threshold(col: Collection, tmp_path: Path) -> None:
+    """Phase 5: the holdout reaches PanelData (for the save), and the estimate
+    uses the config's chunking threshold."""
+    from dataclasses import replace
+
+    from recalldrill.holdout import is_holdout
+
+    top = _med_term(col)
+    st = Storage(tmp_path / "user_files", "User 1")
+    scope = Scope(deck_id=top)
+    # Reverse cards only, so no held-out card has a drilled sibling.
+    ntid = int(col.models.by_name("Basic Quizlet Extended")["id"])  # type: ignore[index]
+    draft: DeckSettings = {"card_ords": {str(ntid): [1]}}
+    salt = next(s for s in (f"s{i}" for i in range(500)) if any(
+        is_holdout(s, c, 50) for c in col.find_cards("deck:Medical* card:2")
+    ))  # fmt: skip
+    options = options_for(
+        draft,
+        enabled=DEFAULT_ENABLED,
+        max_cards=None,
+        extra_tag=None,
+        order="priority_first",
+        holdout_pct=50,
+        holdout_salt=salt,
+        exclude_holdout_tag=True,
+    )
+    p = read_panel(col, st, scope, options, draft, top, DEFAULT_CONFIG)
+    held = {c.snap.cid for c in p.selection.holdout}
+    assert held and {h["cid"] for h in p.holdout} == held
+    assert all(h["card_class"] == "suspended_new" and h["ord"] == 1 for h in p.holdout)
+    assert held.isdisjoint(s.cid for s in p.build.sources)
+    assert p.select_options["holdout_pct"] == 50 and p.select_options["exclude_holdout_tag"]
+    # A lower chunking threshold can only raise the estimate's floor.
+    low = read_panel(
+        col, st, scope, options, draft, top, replace(DEFAULT_CONFIG, min_words_to_chunk=1)
+    )
+    assert low.estimate is not None and p.estimate is not None
+    assert low.estimate["floorTrials"] >= p.estimate["floorTrials"]

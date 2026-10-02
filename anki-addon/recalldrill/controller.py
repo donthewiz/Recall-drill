@@ -577,6 +577,8 @@ class DrillController:
             "ladderMode": config.get("ladderMode"),
             "strictPunctuation": config.get("strictPunctuation"),
             "cycleOrder": config.get("cycleOrder"),
+            # Add-on extension; absent (None, dropped below) unless the session set it.
+            "minWordsToChunk": config.get("minWordsToChunk"),
             "batchIndex": s["batchIndex"],
             "batchSize": config.get("batchSize"),
             "batchStartStats": s["batchStartStats"],

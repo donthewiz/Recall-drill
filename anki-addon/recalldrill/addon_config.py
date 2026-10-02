@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+from .engine.items import MIN_WORDS_TO_CHUNK
 from .engine.types import CycleOrder, LadderMode
 
 HandoffMode = Literal["A", "B"]
@@ -33,7 +34,20 @@ class AddonConfig:
     hard_threshold: int = 3
     clear_flag_on_handoff: bool = True
     tag_long: bool = False
+    min_words_to_chunk: int = MIN_WORDS_TO_CHUNK
+    """Answers with at most this many words are drilled whole (the engine's
+    ``MIN_WORDS_TO_CHUNK``, passed per session as ``SessionConfig.minWordsToChunk``)."""
+    holdout_pct: int = 0
+    """Percent of eligible new cards held out of the drill as a measurement
+    control (0 = off). Deck scopes only (Phase 5)."""
+    holdout_exclude: bool = True
+    """Leave cards tagged ``rd::holdout`` out of every selection."""
+    min_n: int = 30
+    """The tuning report's minimum sample per compared group."""
 
+
+HOLDOUT_MAX_PCT = 50
+"""A higher holdout would leave most new cards undrilled."""
 
 DEFAULT_CONFIG = AddonConfig()
 
@@ -72,4 +86,8 @@ def parse_config(raw: object) -> AddonConfig:
         hard_threshold=_int(d.get("hard_threshold"), dc.hard_threshold, 1, 1000),
         clear_flag_on_handoff=_bool(d.get("clear_flag_on_handoff"), dc.clear_flag_on_handoff),
         tag_long=_bool(d.get("tag_long"), dc.tag_long),
+        min_words_to_chunk=_int(d.get("min_words_to_chunk"), dc.min_words_to_chunk, 1, 100),
+        holdout_pct=_int(d.get("holdout_pct"), dc.holdout_pct, 0, HOLDOUT_MAX_PCT),
+        holdout_exclude=_bool(d.get("holdout_exclude"), dc.holdout_exclude),
+        min_n=_int(d.get("min_n"), dc.min_n, 1, 100_000),
     )

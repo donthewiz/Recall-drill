@@ -12,5 +12,9 @@
   "handoff_siblings": true,
   "hard_threshold": 3,
   "clear_flag_on_handoff": true,
-  "tag_long": false
+  "tag_long": false,
+  "min_words_to_chunk": 8,
+  "holdout_pct": 15,
+  "holdout_exclude": true,
+  "min_n": 30
 }

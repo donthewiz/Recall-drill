@@ -2,7 +2,7 @@
 
 Run in Anki 26.08.1 with the dev junction (`docs/DECISIONS.md`, "Dev install"), on Don's real collection. Phase 7 extends this list.
 
-Phase 3b (drill window, setup panel, entry points): nothing in steps 1–13 writes to the collection; step 11 confirms it. Phase 4 (the handoff) is below: **its handoffs are real**.
+Phase 3b (drill window, setup panel, entry points): nothing in steps 1–13 writes to the collection; step 11 confirms it. Phase 4 (the handoff) is below: **its handoffs are real**. Phase 5 (steps 21–23) reads only, except the handoff in step 23.
 
 ## Setup
 
@@ -68,6 +68,12 @@ These handoffs are **real**: the cards show up in your Anki reviews tomorrow. Ed
 - [ ] 20. **anki-cards deck:** **Search…** `"deck:General Psychology::Psychology Ch7" tag:rd::drill::A`, max **5**. Drill to the end, then **Hand off**:
   - [ ] those 5 new cards are buried and at the front of the Ch7 new queue;
   - [ ] their `rd::drill::A`, `Part::*` and `Layer::*` tags are still there, with `rd::drilled` added.
+
+## Phase 5: tuning report and holdout
+
+- [ ] 21. Tools → **Recall Drill: tuning report**. The header counts your sessions; the cards of the Phase 4 handoffs show as outcomes, or as pending if not reviewed yet. The confound warning is there.
+- [ ] 22. Groups under 30 say "n too small", and no Apply button shows. That's expected for weeks. **Copy as CSV** pastes one row per card.
+- [ ] 23. With `holdout_pct` 15 (this repo's `config.json`): start a new Med Term session; the panel says "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." After the handoff, `tag:rd::holdout` finds them: unsuspended, buried until tomorrow, queued right after the drilled cards, and absent from the next session's selection (the panel counts them as left out).
 
 ## Also worth a look
 

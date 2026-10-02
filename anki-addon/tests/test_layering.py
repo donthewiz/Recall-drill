@@ -3,8 +3,9 @@
 - engine/ is pure: no anki, aqt, PyQt*/PySide*, and nothing from anki_io or ui.
 - The top-level helper modules (storage, prompts, deck_settings, sources,
   addon_config), the drill controller with its storage (controller, sessions,
-  history_store) and its display and start-up (card_html, drill_view, launch)
-  are pure the same way: no anki, no Qt. They may use engine/ and each other.
+  history_store) and its display and start-up (card_html, drill_view, launch),
+  and the measurement modules (holdout, measure, tuning) are pure the same way:
+  no anki, no Qt. They may use engine/ and each other.
 - anki_io/ never touches Qt; from aqt it may use aqt.operations only.
 """
 
@@ -86,6 +87,9 @@ PURE_MODULES = (
     "card_html.py",
     "drill_view.py",
     "launch.py",
+    "holdout.py",
+    "measure.py",
+    "tuning.py",
 )
 
 

@@ -27,6 +27,7 @@ from ..engine.estimate import (
     compute_cold_start_estimate,
     format_cold_start_range,
 )
+from ..engine.items import MIN_WORDS_TO_CHUNK
 from ..history_store import get_cold_start_history, hard_cards
 from ..launch import session_config
 from ..prompts import parse_hint_overrides
@@ -94,6 +95,8 @@ class PanelData:
     personal_history: bool
     seconds: float = 0.0
     select_options: dict[str, Any] = field(default_factory=dict[str, Any])
+    holdout: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    """The held-out cards (``holdout_refs``), for the session save."""
 
     @property
     def drillable(self) -> int:
@@ -215,6 +218,7 @@ def read_panel(
             c["chunkDifficulty"],
             c["ladderMode"],
             history["multiplier"] if history is not None else exposure,
+            c.get("minWordsToChunk", MIN_WORDS_TO_CHUNK),
         )
     return PanelData(
         scope=scope,
@@ -232,7 +236,22 @@ def read_panel(
         personal_history=history is not None,
         seconds=time.perf_counter() - started,
         select_options=options_to_json(options),
+        holdout=holdout_refs(selection),
     )
+
+
+def holdout_refs(selection: Selection) -> list[dict[str, Any]]:
+    """The held-out cards as the session save and history line record them."""
+    return [
+        {
+            "cid": c.snap.cid,
+            "nid": c.snap.nid,
+            "ord": c.snap.ord,
+            "did": c.snap.home_did,
+            "card_class": c.card_class,
+        }
+        for c in selection.holdout
+    ]
 
 
 def options_for(
@@ -243,6 +262,9 @@ def options_for(
     extra_tag: str | None,
     order: Any,
     exclude_cids: frozenset[int] = frozenset(),
+    holdout_pct: int = 0,
+    holdout_salt: str = "",
+    exclude_holdout_tag: bool = False,
 ) -> SelectOptions:
     """``SelectOptions`` with the template filter taken from the deck settings."""
     return SelectOptions(
@@ -252,6 +274,9 @@ def options_for(
         extra_tag=extra_tag or None,
         order=order,
         exclude_cids=exclude_cids,
+        exclude_holdout_tag=exclude_holdout_tag,
+        holdout_pct=holdout_pct,
+        holdout_salt=holdout_salt,
     )
 
 
