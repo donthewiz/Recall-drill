@@ -39,13 +39,13 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
 
 - **Type checker:** pyright 1.1.414.
   - `standard` everywhere.
-  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py`, `history_store.py`, `addon_config.py`, `card_html.py`, `drill_view.py` and `launch.py`.
+  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py`, `history_store.py`, `addon_config.py`, `card_html.py`, `drill_view.py`, `launch.py`, and (Phase 5) `holdout.py`, `measure.py` and `tuning.py`.
   - `ui/` stays at standard because PyQt6's stubs leave signals partially `Unknown`, which strict rejects on every `qconnect`.
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
 - **CI** (`.github/workflows/ci.yml`):
   - `addon-engine` runs the engine tests with no anki installed.
-  - `addon-anki` (Phase 3a) runs `tests/anki_io`, `tests/controller` and `tests/storage` with `anki` and `pytest` only. Tests that import `aqt` skip there (`needs_aqt` in `tests/anki_io/anki_fixtures.py`) and run locally.
+  - `addon-anki` (Phase 3a) runs `tests/anki_io`, `tests/controller` and `tests/storage` with `anki` and `pytest` only. Tests that import `aqt` skip there (`needs_aqt` in `tests/anki_io/anki_fixtures.py`) and run locally. Phase 5 added the measurement tests (`tests/tuning`, `tests/test_measure.py`, `tests/test_holdout.py`) to it.
   - `tests/ui` (Phase 3b) needs `aqt`, so it runs locally only: every `ui/` module imports, and the drill window runs on Qt's offscreen platform with a stand-in web view (QtWebEngine can't start offscreen: the process exits with 127).
 - **Commands** (from the repo root):
   ```
@@ -221,7 +221,7 @@ So the name rule only blocked drillable cards. The type-wide sampled-marker rule
 - Ineligible, counted by reason, first match wins: image occlusion, marked ineligible, unmapped, empty answer, then (unless that class is switched on) filtered deck and buried. Content reasons come first because they don't go away by themselves.
 - Deck order: new cards by new-queue position (`odue` while in a filtered deck), then all other cards by `(note id, ord)`. Priority first: class rank `flagged, leech, lapsed, suspended_new, new, young`, then the classes that are off by default, then deck order. New cards are never re-sorted by note id, so `Layer::1 → 4` positions survive.
 - Template filter (`card_ords`, saved per deck) works on the template index, which is 0 for every card of a cloze note type.
-- `apply_holdout(selection)` is the Phase 5 hook (no-op).
+- `apply_holdout` sets the holdout aside while walking the ordered list (Phase 5, see "Measurement and holdout"). Cards of notes tagged `rd::holdout` are left out first (`holdout_exclude`, counted).
 
 **Hints** (`prompts.py`, standard note types only). A port of the medterm skill's rules, with three adaptations for whole decks instead of one day's list:
 1. Conflicts are looked up in a **pool**: every content-eligible card (any state) of the same note type and template under the selection's top-level deck. Hints are only made for the session's cards.
@@ -279,9 +279,10 @@ SessionView isn't a pure view, so its behavior is ported to a Qt-free `DrillCont
 - Drill-again sessions write no history and no handoff, and their save is deleted on completion.
 
 **History** (`recalldrill/history_store.py`): `history/<did or search key>.jsonl`, append-only, never rewritten, no 50-entry cap.
-- One `type: "session"` line per completed session: `sessionId`, `buildHistoryEntry`, `anki` (per card `cid, nid, ord, card_class`), `encode` (`encodeReps, chunkDifficulty, MIN_WORDS_TO_CHUNK, ladderMode, batchSize, strictPunctuation, stemTolerance, hints`), `scope`, `collisions`, `holdout: []`.
+- One `type: "session"` line per completed session: `sessionId`, `buildHistoryEntry`, `anki` (per card `cid, nid, ord, did, card_class`; `did` since Phase 5; parallel to the entry's `cards`), `encode` (`encodeReps, chunkDifficulty, MIN_WORDS_TO_CHUNK, ladderMode, batchSize, strictPunctuation, stemTolerance, hints`; `MIN_WORDS_TO_CHUNK` is the session's own since Phase 5), `scope`, `collisions`, `holdout` (Phase 5: `cid, nid, ord, did, card_class` per held-out card; `[]` before).
 - An append skips a `sessionId` that already has a session line. That covers a crash between the append and the save's `historyWritten`.
 - Phase 4 added `type: "handoff"` lines (a handoff, or a declined one; see "Handoff (Phase 4)").
+- Phase 5 added `history/tuning.jsonl`: one `type: "tuning"` line per applied suggestion (see "Measurement and holdout").
 - **Cold-start estimates:** `estimates.json`, keyed like the saves. It ports `get/saveColdStartHistory` and is updated whenever a session ends (completed or stopped), as SessionView's `finishSession` does.
 
 ## Mid-session edit
@@ -347,6 +348,7 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 | Overview → **Recall Drill** button | `overview_will_render_bottom(link_handler, links)`: the button is added to `links`, and the returned handler answers its `pycmd` | works. **`webview_did_receive_js_message` isn't needed**: the overview's bottom bar sends its messages to the handler this filter returns. |
 | Profile close | `profile_will_close`: each open drill window flushes its dwell, saves and stops, and closes; setup panels close | works |
 | Tools → **Recall Drill: my rd::hard cards** / **Recall Drill: filtered deck for rd::hard** | `mw.form.menuTools` actions (Phase 4) | works (headless test; Don's manual check) |
+| Tools → **Recall Drill: tuning report** | `mw.form.menuTools` action (Phase 5) | works (headless test; Don's manual check) |
 
 "Works" is from the installed source and headless tests; Don's manual check confirms it in Anki. The Phase 2 dev preview (`Recall Drill (dev): preview current deck`) is gone; its content is the setup panel's. The About box stays.
 
@@ -376,7 +378,8 @@ A **complete** session (every card `finalDone`) is handed to Anki in one confirm
 | `drilled_new` | `type == 0` now (suspended or not) | **A**: unsuspend, `set_due_date("1")`. **B**: unsuspend, reposition to the front of the new queue in drill order, bury (manual) |
 | `drilled_scheduled` | `type != 0` now (learning, review, relearning; suspended leeches, red-flagged repair cards, and a card studied on the phone since the drill) | unsuspend if suspended; the schedule is **never** changed; buried (manual) if due today or overdue, so its first Anki rating comes tomorrow |
 | `siblings` | `handoff_siblings` on; the drilled notes' other cards that weren't in the session and are new **and** suspended | unsuspend, reposition right after the drilled cards (A: at the front), bury |
-| `holdout` | empty until Phase 5 | — |
+| `holdout` (Phase 5) | the session's held-out cards (`addon.holdout` in the save) that still exist, are still new, and share no note with a drilled card | unsuspend, reposition right after the drilled cards and their siblings, bury, tag `rd::holdout` (A and B alike: they always stay new) |
+| `holdout_siblings` (Phase 5) | `handoff_siblings` on; the holdout notes' other cards that are new and suspended | as siblings: unsuspend, queued right after the holdout cards, bury |
 
 "Due today or overdue": a review or day-learning card with `due <= today`, or an intraday learning card due before `col.sched.day_cutoff` (the home deck's due while in a filtered deck).
 
@@ -422,7 +425,7 @@ The setup panel's other ways out of a pending handoff also write the declined li
 
 **Undo doesn't bring the save back.** After Edit → Undo "Recall Drill handoff", the cards are back as they were, but the session's save is already deleted, so the panel has no banner. Edit → Redo re-applies the handoff.
 
-**History lines** (`history/<key>.jsonl`): `{"type": "handoff", "sessionId", "mode", "timestamp", "groups": {drilled_new, drilled_scheduled, siblings, holdout, missing}, "actions": {unsuspended, setDue, repositioned: [{cids, start}], buried, flagsCleared}, "tags": {added, removed, byTag}, "hardThreshold", "cards": [{cid, nid, ord, struggle, finalMisses, chunked, hard}], "forecast": {…}}`, or `{"type": "handoff", "sessionId", "declined": true, "timestamp"}`.
+**History lines** (`history/<key>.jsonl`): `{"type": "handoff", "sessionId", "mode", "timestamp", "groups": {drilled_new, drilled_scheduled, siblings, holdout, holdout_siblings, holdout_skipped, missing}, "actions": {unsuspended, setDue, repositioned: [{cids, start}], buried, flagsCleared}, "tags": {added, removed, byTag}, "hardThreshold", "cards": [{cid, nid, ord, struggle, finalMisses, chunked, hard}], "forecast": {…}}`, or `{"type": "handoff", "sessionId", "declined": true, "timestamp"}`.
 
 ### The rd::hard entries (Tools menu)
 
@@ -433,7 +436,63 @@ The setup panel's other ways out of a pending handoff also write the declined li
 
 ## Engine extensions beyond the TS engine
 
-(none yet)
+**`SessionConfig["minWordsToChunk"]`** (Phase 5). Python-only. **Absent ⇒ identical** to the TS engine.
+- What: the session's own `MIN_WORDS_TO_CHUNK` (answers with at most this many words are drilled whole). `edit_current_item` uses `config.get("minWordsToChunk", MIN_WORDS_TO_CHUNK)` for both its rechunk check and its restart rebuild; the module constant is unchanged.
+- Who sets it: the add-on, from config `min_words_to_chunk` (default 8 = the constant), through `launch.session_config` → `sessions.new_session_state` (`build_items(…, min_words_to_chunk)`) → the engine config. The save stores it as top-level `minWordsToChunk` (dropped when absent, like every other `None`), resume and drill-again carry it, and the history line records it as `encode.MIN_WORDS_TO_CHUNK`.
+- `compute_cold_start_estimate(…, min_words_to_chunk=MIN_WORDS_TO_CHUNK)`: an optional last argument, so the panel's estimate chunks as the session will. Left out: the TS call.
+- Why: applying a `MIN_WORDS_TO_CHUNK` suggestion from the tuning report needs the engine to honor it mid-session, not just at build.
+- Proof: the golden and simulate parity suites pass unchanged (they never set the key), the goldens regenerate with no diff, and `tests/engine/test_min_words_to_chunk_ext.py` checks the set case (edit-restart rechunks with the session's T, a case-only edit keeps progress under it) and that an absent key equals the constant.
+
+## Measurement and holdout (Phase 5)
+
+**Decision (Don, 2026-10-02): holdout on, at 15%.** `config.json` sets `holdout_pct: 15`. The code default stays **0** (off), so the setting is opt-in for anyone else.
+
+The success metric for the add-on is the **next-day Again rate** on drilled cards. Cost (trials per card) is always shown next to it, because fewer trials is still the priority.
+
+### One metric (`recalldrill/measure.py`, pure)
+
+- **Anki day** of a time: the local date after subtracting the rollover hour (`col.get_preferences().scheduling.rollover`). One function, `anki_day`, for everything. Local means the machine's time zone, as Anki's.
+- **Counted rating:** a revlog row with `ease ≥ 1` and `type` 0, 1 or 2. Filtered/cram (3), manual (4, e.g. `set_due_date`'s row) and rescheduled (5) rows don't count, nor do `ease 0` rows.
+- **Drilled card:** `t0` = its handoff (`type: "handoff"` line's `timestamp`). Outcome: the first counted rating on an Anki day after `day(t0)`.
+- **Holdout and baseline card:** `t0` = its first counted rating (its introduction). Outcome: the first counted rating on a later Anki day.
+- **Again** = `ease == 1`; `elapsed = day(rating) − day(t0)`.
+- **Primary analysis:** `elapsed ∈ {1, 2}`. Larger gaps are reported as excluded ("rated later than 2 days", e.g. new/day spill). **Pending** cards (no outcome yet) are counted and never treated as successes.
+
+### The holdout
+
+- **Settings:** `holdout_pct` (0–50; code default 0), `holdout_exclude` (true). The salt is a random hex (`secrets.token_hex(8)`) made the first time a selection runs with the holdout on, in `user_files/profiles/<profile>/holdout.json`.
+- **Assignment:** `int(sha1(f"{salt}:{cid}").hexdigest()[:8], 16) % 100 < holdout_pct` (`holdout.is_holdout`). Stable across sessions; a card in the holdout at 15% stays in it at any higher percentage.
+- **Who can be held out:** classes `new` and `suspended_new` only, **deck scopes only** (never a search such as `tag:rd::hard`; drill-again never selects).
+- **Selection:** `apply_holdout` walks the ordered eligible list, putting holdout cards aside, until `max_cards` **drill** cards are picked.
+- **Rules added on top of the prompt** (to keep the control clean):
+  - a note already tagged `rd::drilled` or `rd::holdout` is never held out (its sibling was drilled, or it is a past control);
+  - a held-out card whose note also has a picked drill card is dropped from the holdout (and not drilled): the assignment is per card, as the prompt specifies, so a two-direction note can split. It goes to Anki as that drilled card's sibling, and the next selection drills it (its note is then `rd::drilled`).
+- **Panel:** "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." (shown for deck scopes with the holdout on). Cards tagged `rd::holdout` are left out and counted ("N cards tagged rd::holdout left out").
+- **Save and history:** `addon.holdout` in the save and `holdout` in the session line (`cid, nid, ord, did, card_class`). At handoff, the `holdout` and `holdout_siblings` groups (see the handoff table): a holdout note enters Anki exactly like a drilled note except for the drill (unsuspended, queued after the drilled cards and their siblings, buried until tomorrow, siblings by the same rule), plus the note tag `rd::holdout` (no `rd::drilled`). A held-out card that is gone or no longer new at handoff is left alone (`holdout_skipped`).
+- **Later selections** leave `rd::holdout` notes out while `holdout_exclude` is on. With it off they can be drilled, and they are never held out a second time.
+
+### The tuning report
+
+Tools → **Recall Drill: tuning report** (`ui/tuning_dialog.py`). `anki_io/revlog.py` reads: every history line, the drilled and holdout cards plus every card of their top-level decks (`deck:"<top>"`), their home decks, and their revlog (`select id, cid, ease, type, ivl, time from revlog where cid in (…) order by id`, ≤ 500 ids per query). `tuning.build_report(history_lines, revlog_rows, deck_filter, cards=…, rollover=…)` is pure; the dialog renders it.
+
+- **Header:** scope, number of sessions and their date range, drilled cards with outcomes / excluded / pending (and the holdout's), and the confound warning, verbatim.
+- **Comparison:** drilled vs holdout vs **baseline** = cards in the same top-level decks (of the drilled cards, after the filter), not drilled or held out by the add-on, whose introduction predates the first add-on session (`startedAt` of the earliest session line). Columns: n (primary outcomes), Again, Wilson 95% CI, trials/card and misses + reveals/card (drilled only, per handed-off card).
+- **Breakdowns of drilled cards:** answer words (1, 2–3, 4–8, 9–15, 16+), chunks (none, 2, 3, 4+), `encodeReps`, card class, handoff mode, deck (home deck). Each: n, Again with CI, trials/card, pending.
+- **`min_n`** (config, default 30): a group under it shows "n too small" in place of a rate, and no suggestion is made from it.
+- **Deck filter:** one top-level deck, or all.
+- **Copy as CSV:** the per-card outcome table (group, ids, deck, session, t0, status, rating time, elapsed, ease, again, words, chunks, encodeReps, class, mode, attempts, misses, reveals, final misses).
+
+**Suggestions** (rule-based, at most one per parameter, always shown with the numbers that triggered them):
+- `MIN_WORDS_TO_CHUNK` (T = config `min_words_to_chunk`): unchunked cards with `words ∈ [T−3, T]` vs chunked cards with `words ∈ [T+1, T+4]` (chunked = the session actually chunked them). Unchunked CI lower bound above the chunked CI upper bound → **T − 2** (at least 1). CIs overlap and chunked cards cost ≥ 25% more trials per word (total attempts / total words per group) → **T + 2**. Otherwise no change. Either group under `min_n`: no suggestion. Always with: *"These groups differ in answer length, not just chunking; treat this as a hint, not proof."*
+- `encodeReps` (current = config `encode_reps`): only when ≥ 2 values each reach `min_n`. The suggestion is the **lowest** such value that is not significantly worse (its CI lower bound above the upper bound) than any higher one: a lower value whose CI overlaps a higher one's wins (fewer trials); a significantly worse lower value loses to the higher one. Otherwise "insufficient variation", the normal state until Phase 6's per-card overrides create variation.
+
+**Apply** (per actionable suggestion): a confirmation shows old → new, the verdict, the evidence and the caveat; for `encodeReps` it also lists the decks whose saved "Blind typings required" differs (a deck's saved value wins over the default). Yes writes the add-on's global default through `addonManager.writeConfig` (`min_words_to_chunk` or `encode_reps`) and appends `{"type": "tuning", "timestamp", "parameter", "configKey", "old", "new", "verdict", "evidence", "deckFilter"}` to `history/tuning.jsonl`. Nothing changes without that click and confirmation. New values apply to sessions started afterwards.
+
+**Known limitations:**
+- The baseline is not an Anki-only baseline (the confound warning says so), and drilled cards aren't randomly chosen: only drilled vs holdout is a fair test.
+- Drilled and holdout outcomes are not the same event: a drilled card's outcome is its first Anki rating after the drill (B: its first learning step the next day); a holdout card's is its first rating on the day after its introduction. That is the definition chosen in the prompt.
+- Cards deleted since show as "(deleted card)" (their revlog stays), so a deck filter drops them.
+- The Wilson CIs treat cards as independent; repeated drills of one card count once per handoff.
 
 ## Changing the engine now
 

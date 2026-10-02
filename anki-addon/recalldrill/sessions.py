@@ -11,7 +11,10 @@ A save is the web app's ``SavedSessionState`` exactly as SessionView builds it
 - ``sessionId`` (uuid4 hex, made at Start; Phase 4 links its handoff to it),
   ``startedAt`` (epoch ms);
 - ``handoffPending`` and ``historyWritten``;
-- ``drillAgainOf``: the parent key, for a drill-again session.
+- ``drillAgainOf``: the parent key, for a drill-again session;
+- ``holdout``: the cards the selection held out as the measurement control
+  (Phase 5: ``cid, nid, ord, did, card_class`` each). They aren't drilled; the
+  handoff hands them to Anki as new cards, tagged ``rd::holdout``.
 
 Lifecycle, as App.tsx's ``handleFinishSession`` with the handoff on top:
 
@@ -32,11 +35,11 @@ from __future__ import annotations
 import hashlib
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from .controller import ControllerSettings, DrillController
-from .engine.items import build_items, normalize_item, resolve_batch_config
+from .engine.items import MIN_WORDS_TO_CHUNK, build_items, normalize_item, resolve_batch_config
 from .engine.jscompat import truthy
 from .engine.session import SESSION_COMPLETE_ID, empty_stats, init_session
 from .engine.types import (
@@ -88,6 +91,8 @@ class NewSessionConfig(TypedDict):
     strictPunctuation: bool
     batchSize: int
     cycleOrder: NotRequired[CycleOrder]
+    minWordsToChunk: NotRequired[int]
+    """The add-on's chunking threshold (an engine extension); absent: the TS constant."""
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +154,7 @@ class SessionMeta:
     drill_again_of: str | None = None
     handoff_pending: bool = False
     history_written: bool = False
+    holdout: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
 
     @property
     def is_drill_again(self) -> bool:
@@ -165,6 +171,7 @@ class SessionMeta:
             "handoffPending": self.handoff_pending,
             "historyWritten": self.history_written,
             "drillAgainOf": self.drill_again_of,
+            "holdout": self.holdout,
         }
 
     @classmethod
@@ -181,6 +188,11 @@ class SessionMeta:
             drill_again_of=cast(str | None, addon.get("drillAgainOf")),
             handoff_pending=bool(addon.get("handoffPending", False)),
             history_written=bool(addon.get("historyWritten", False)),
+            holdout=[
+                dict(cast(Mapping[str, Any], h))
+                for h in cast(list[Any], addon.get("holdout") or [])
+                if isinstance(h, dict)
+            ],
         )
 
 
@@ -301,6 +313,7 @@ class SessionStore:
                     scope=self.meta.scope,
                     collisions=ctrl.collisions,
                     hints=self.meta.hints,
+                    holdout=self.meta.holdout,
                 ),
             )
             self.meta.history_written = True
@@ -317,11 +330,13 @@ def new_session_state(
     deck_items: Sequence[DeckItem], config: NewSessionConfig, now_ms: int
 ) -> SessionState:
     """App.handleStartSession then SessionView's initSession: deck order, no shuffle."""
+    min_words = config.get("minWordsToChunk")
     items = build_items(
         deck_items,
         config["chunkDifficulty"],
         config["ladderMode"],
         config["batchSize"],
+        MIN_WORDS_TO_CHUNK if min_words is None else min_words,
         shuffle_within_batch=False,
     )
     engine_config: SessionConfig = {
@@ -333,6 +348,8 @@ def new_session_state(
         "batchSize": config["batchSize"],
         "cycleOrder": config.get("cycleOrder", "shuffled"),
     }
+    if min_words is not None:
+        engine_config["minWordsToChunk"] = min_words
     stats: SessionStats = {**empty_stats(), "startTime": now_ms}
     return init_session(
         {
@@ -372,6 +389,9 @@ def resume(saved: Mapping[str, Any], defaults: AppDefaults = APP_DEFAULTS) -> Se
         "batchSize": batch["batchSize"],
         "cycleOrder": nullish("cycleOrder", "shuffled"),
     }
+    min_words = saved.get("minWordsToChunk")
+    if isinstance(min_words, int) and not isinstance(min_words, bool):
+        config["minWordsToChunk"] = min_words
     state: SessionState = {
         "items": items,
         "phase": saved["phase"],
@@ -402,6 +422,7 @@ def start_session(
     settings: ControllerSettings,
     now_ms: Callable[[], int],
     drill_again_of: str | None = None,
+    holdout: Sequence[Mapping[str, Any]] = (),
 ) -> tuple[DrillController, SessionStore]:
     """A fresh session. Overwrites any save under ``key``. Call
     ``controller.start()`` once the window is up (it writes the first save)."""
@@ -415,6 +436,7 @@ def start_session(
         deck_settings=dict(deck_settings),
         hints=hints,
         drill_again_of=drill_again_of,
+        holdout=[dict(h) for h in holdout],
     )
     store = SessionStore(storage, meta, now_ms)
     ctrl = DrillController(
@@ -451,6 +473,9 @@ def start_drill_again(
         "batchSize": len(deck_items) if size is None else size,
         "cycleOrder": c.get("cycleOrder", "shuffled"),
     }
+    min_words = c.get("minWordsToChunk")
+    if min_words is not None:
+        config["minWordsToChunk"] = min_words
     m = parent_store.meta
     return start_session(
         storage,

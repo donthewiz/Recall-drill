@@ -199,8 +199,8 @@ def test_completion_writes_history_once_and_waits_for_the_handoff(st: Storage) -
     assert line["stats"]["attempts"] > 0
     assert [c["front"] for c in line["cards"]] == ["heart", "liver"]
     assert line["anki"] == [
-        {"cid": 1000, "nid": 2000, "ord": 0, "card_class": "new"},
-        {"cid": 1001, "nid": 2001, "ord": 0, "card_class": "new"},
+        {"cid": 1000, "nid": 2000, "ord": 0, "did": 1, "card_class": "new"},
+        {"cid": 1001, "nid": 2001, "ord": 0, "did": 1, "card_class": "new"},
     ]
     assert line["encode"] == {
         "encodeReps": 1,
@@ -319,3 +319,73 @@ def test_drill_again_needs_final_misses(st: Storage) -> None:
     _finish(ctrl)
     with pytest.raises(ValueError, match="no Final-check misses"):
         start_drill_again(st, ctrl, store, ControllerSettings(), Clock())
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: holdout and the chunking threshold
+# ---------------------------------------------------------------------------
+
+HELD = [{"cid": 9001, "nid": 9101, "ord": 0, "did": 1, "card_class": "suspended_new"}]
+
+
+def test_holdout_is_recorded_in_the_save_and_the_history_line(st: Storage) -> None:
+    ctrl, store = start_session(
+        st,
+        key=deck_key(42),
+        deck_items=SHORT[:2],
+        sources=[source(i) for i in range(2)],
+        config=config(encodeReps=1),
+        scope=scope_json(deck_id=42),
+        select_options=OPTIONS,
+        deck_settings=DECK_SETTINGS,
+        hints=True,
+        settings=ControllerSettings(deck_name="Med Term"),
+        now_ms=Clock(),
+        holdout=HELD,
+    )
+    ctrl.start()
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None and saved["addon"]["holdout"] == HELD
+    # It survives a resume.
+    _, resumed = open_saved(st, "deck-42", saved, ctrl.settings, Clock())
+    assert resumed.meta.holdout == HELD
+    _finish(ctrl)
+    (line,) = history_store.read_all(st, "42")
+    assert line["holdout"] == HELD
+
+
+def test_min_words_to_chunk_goes_into_the_session_and_survives_resume(st: Storage) -> None:
+    long = [{"front": "long", "back": "alpha beta gamma delta epsilon"}, *SHORT[:1]]
+    ctrl, _ = _start(st, long, minWordsToChunk=3, chunkDifficulty=35)
+    assert ctrl.state["config"].get("minWordsToChunk") == 3
+    assert ctrl.state["items"][0]["chunks"] is not None  # 5 words > 3
+    ctrl.start()
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None and saved["minWordsToChunk"] == 3
+    resumed, _ = open_saved(st, "deck-42", saved, ctrl.settings, Clock())
+    assert resumed.state["config"].get("minWordsToChunk") == 3
+    # Without it (an older save, or the parity harness): the key stays absent.
+    plain, _ = _start(st, long, chunkDifficulty=35)
+    assert "minWordsToChunk" not in plain.state["config"]
+    assert plain.state["items"][0]["chunks"] is None  # 5 words <= 8
+    del saved["minWordsToChunk"]
+    old, _ = open_saved(st, "deck-42", saved, ctrl.settings, Clock())
+    assert "minWordsToChunk" not in old.state["config"]
+
+
+def test_history_line_records_the_session_threshold(st: Storage) -> None:
+    ctrl, _ = _start(st, SHORT[:2], encodeReps=1, minWordsToChunk=5)
+    ctrl.start()
+    _finish(ctrl)
+    (line,) = history_store.read_all(st, "42")
+    assert line["encode"]["MIN_WORDS_TO_CHUNK"] == 5
+
+
+def test_drill_again_keeps_the_threshold(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT, encodeReps=1, minWordsToChunk=4)
+    while not (ctrl.state["phase"] == "final" and not ctrl.view().buttons.continue_):
+        _answer_correctly(ctrl)
+    ctrl.submit("nope")  # one miss in the Final check
+    _finish(ctrl)
+    again, _ = start_drill_again(st, ctrl, store, ctrl.settings, Clock())
+    assert again.state["config"].get("minWordsToChunk") == 4

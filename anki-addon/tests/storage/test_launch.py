@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,27 @@ def test_config_json_matches_the_defaults() -> None:
     import json
 
     raw = json.loads((Path(__file__).parents[2] / "config.json").read_text(encoding="utf-8"))
-    assert parse_config(raw) == DEFAULT_CONFIG
+    # One exception, Don's decision (docs/DECISIONS.md, "Measurement and holdout"):
+    # the code keeps the holdout off, his config.json turns it on at 15%.
+    assert parse_config(raw) == replace(DEFAULT_CONFIG, holdout_pct=15)
+    assert set(raw) == {f.name for f in fields(AddonConfig)}
+
+
+def test_parse_config_phase_5_keys() -> None:
+    cfg = parse_config({"min_words_to_chunk": 10, "holdout_pct": 15, "min_n": 20})
+    assert (cfg.min_words_to_chunk, cfg.holdout_pct, cfg.min_n) == (10, 15, 20)
+    assert cfg.holdout_exclude is True
+    bad = parse_config(
+        {"min_words_to_chunk": 0, "holdout_pct": 80, "holdout_exclude": "no", "min_n": -1}
+    )
+    assert (bad.min_words_to_chunk, bad.holdout_pct, bad.min_n) == (8, 0, 30)
+    assert bad.holdout_exclude is True
+    assert DEFAULT_CONFIG.holdout_pct == 0
+
+
+def test_session_config_carries_the_chunking_threshold() -> None:
+    assert launch.session_config({}, DEFAULT_CONFIG).get("minWordsToChunk") == 8
+    assert launch.session_config({}, AddonConfig(min_words_to_chunk=5)).get("minWordsToChunk") == 5
 
 
 def test_session_config_deck_settings_win_over_config() -> None:

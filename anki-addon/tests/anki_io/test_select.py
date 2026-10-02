@@ -177,9 +177,13 @@ def test_max_cards_keeps_priority_and_eligible_counts(col: Collection, mixed: Mi
     assert select(col, Scope(deck_id=mixed.top), max_cards=0).picked == []
 
 
-def test_apply_holdout_is_a_no_op(col: Collection, mixed: Mixed) -> None:
+def test_holdout_is_off_by_default(col: Collection, mixed: Mixed) -> None:
+    """No holdout settings: nothing is held out (tests/anki_io/test_holdout.py has the rest)."""
     sel = select(col, Scope(deck_id=mixed.top))
-    assert apply_holdout(sel) is sel
+    assert sel.holdout == [] and sel.holdout_tagged == 0
+    ordered = list(sel.picked)
+    assert apply_holdout(ordered, None, None) == (ordered, [])
+    assert apply_holdout(ordered, 2, None) == (ordered[:2], [])
 
 
 # ---------------------------------------------------------------------------

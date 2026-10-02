@@ -3,7 +3,8 @@ and closing drill windows with the profile.
 
 Tools also has the ``rd::hard`` entries: the setup panel scoped to
 ``tag:rd::hard``, and Anki's own filtered-deck dialog pre-filled with that
-search (Don builds the deck there; the add-on creates nothing by itself).
+search (Don builds the deck there; the add-on creates nothing by itself). And
+the tuning report (Phase 5).
 
 Checked on 26.08.1 (docs/DECISIONS.md, "Entry points"):
 
@@ -29,6 +30,7 @@ from .context import AddonContext
 TOOLS_LABEL = "Recall Drill…"
 HARD_LABEL = "Recall Drill: my rd::hard cards"
 HARD_FILTERED_LABEL = "Recall Drill: filtered deck for rd::hard"
+TUNING_LABEL = "Recall Drill: tuning report"
 GEAR_LABEL = "Recall Drill this deck"
 OVERVIEW_LABEL = "Recall Drill"
 OVERVIEW_CMD = "recalldrill:setup"
@@ -66,6 +68,15 @@ def open_hard_filtered_deck() -> None:
     if mw.col is None:
         return
     aqt.dialogs.open("FilteredDeckConfigDialog", mw, search=HARD_SEARCH)
+
+
+def open_tuning() -> None:
+    """The tuning report (next-day Again, holdout, baseline, suggestions)."""
+    if _ctx is None or mw.col is None:
+        return
+    from .tuning_dialog import open_tuning_report
+
+    open_tuning_report(_ctx)
 
 
 def _current_deck() -> int | None:
@@ -116,6 +127,7 @@ def register(module: str, user_files: str) -> None:
         (TOOLS_LABEL, lambda: open_setup_for(_current_deck())),
         (HARD_LABEL, open_hard_cards),
         (HARD_FILTERED_LABEL, open_hard_filtered_deck),
+        (TUNING_LABEL, open_tuning),
     ):
         action = QAction(label, mw)
         qconnect(action.triggered, fn)

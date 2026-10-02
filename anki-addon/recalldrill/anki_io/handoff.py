@@ -17,7 +17,13 @@ Groups (``docs/DECISIONS.md``, "Handoff (Phase 4)"):
 - ``siblings`` (``handoff_siblings``): the notes' other cards that weren't in
   the session and are new and suspended: unsuspended, repositioned right after
   the drilled cards, buried. The same for A and B.
-- ``holdout``: empty until Phase 5.
+- ``holdout`` (Phase 5): the cards the selection held out as the measurement
+  control, still new: unsuspended, repositioned right after the drilled cards
+  and their siblings, buried, and their notes tagged ``rd::holdout``. So they
+  start the same day as the drilled cards. ``holdout_siblings``: the holdout
+  notes' suspended new cards, by the same siblings rule (queued after the
+  holdout cards, buried), so a holdout note enters Anki exactly like a drilled
+  note except for the drill itself.
 
 ``reposition_new_cards`` gives one position **per note**, in the order the
 notes first appear in the list, to the cards it's given (a note's cards share
@@ -62,6 +68,7 @@ from ..addon_config import AddonConfig, HandoffMode
 from ..engine.history import card_trouble_score
 from ..engine.jscompat import js_iso_string
 from ..engine.types import DrillItem
+from ..holdout import TAG_HOLDOUT
 from ..sessions import saved_sources
 from .cards import RED_FLAG, CardSnapshot, NoteCache, has_tag, snapshot
 
@@ -136,6 +143,10 @@ class HandoffInput:
     today: int
     day_cutoff: int
     """When the next day starts (epoch seconds, ``col.sched.day_cutoff``)."""
+    holdout: tuple[int, ...] = ()
+    """The session's held-out cards (in the save's order) still in the collection;
+    their snapshots and their notes' cards are in ``snapshots`` / ``note_cards``."""
+    holdout_missing: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -156,6 +167,7 @@ class HandoffPlan:
     drilled_scheduled: tuple[int, ...]
     siblings: tuple[int, ...]
     holdout: tuple[int, ...]
+    """Held-out cards handed off as new cards (the measurement control)."""
     missing: tuple[int, ...]
     # Actions, in the order apply_handoff runs them.
     tag_add: Mapping[str, tuple[int, ...]]
@@ -174,6 +186,9 @@ class HandoffPlan:
     snapshots: Mapping[int, CardSnapshot]
     today: int
     day_cutoff: int
+    holdout_siblings: tuple[int, ...] = ()
+    holdout_skipped: tuple[int, ...] = ()
+    """Held-out cards left alone: gone, or no longer new (studied since)."""
 
     @property
     def cards(self) -> int:
@@ -190,8 +205,9 @@ class HandoffPlan:
     @property
     def front(self) -> tuple[int, ...]:
         """The new cards that join the front of the new queue: B's drilled new
-        cards, then the siblings."""
-        return (self.drilled_new if self.mode == "B" else ()) + self.siblings
+        cards, the siblings, then the holdout cards and their siblings."""
+        drilled = self.drilled_new if self.mode == "B" else ()
+        return drilled + self.siblings + self.holdout + self.holdout_siblings
 
     @property
     def buried_scheduled(self) -> tuple[int, ...]:
@@ -279,6 +295,25 @@ def note_positions(
     return tuple(steps), where
 
 
+def _suspended_new_siblings(
+    notes: Iterable[int],
+    note_cards: Mapping[int, tuple[int, ...]],
+    snaps: Mapping[int, CardSnapshot],
+    taken: set[int],
+) -> list[int]:
+    """The notes' other cards, not in ``taken``, that are new and suspended, by ord."""
+    out: list[int] = []
+    for nid in notes:
+        others = sorted(
+            (snaps[c] for c in note_cards.get(nid, ()) if c not in taken and c in snaps),
+            key=lambda s: s.ord,
+        )
+        out += [
+            s.cid for s in others if s.type == CARD_TYPE_NEW and s.queue == QUEUE_TYPE_SUSPENDED
+        ]
+    return out
+
+
 def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
     snaps = inp.snapshots
     drilled = tuple(d for d in inp.drilled if d.cid in snaps)
@@ -287,27 +322,42 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
 
     in_session = {d.cid for d in inp.drilled}
     notes = list(dict.fromkeys(snaps[d.cid].nid for d in drilled))
+    # Holdout cards: still new, not drilled, of a note no drilled card shares.
+    drilled_notes = set(notes)
+    holdout = tuple(
+        c
+        for c in dict.fromkeys(inp.holdout)
+        if c in snaps
+        and c not in in_session
+        and snaps[c].type == CARD_TYPE_NEW
+        and snaps[c].nid not in drilled_notes
+    )
+    holdout_skipped = tuple(c for c in inp.holdout if c not in holdout) + inp.holdout_missing
+    holdout_notes = list(dict.fromkeys(snaps[c].nid for c in holdout))
+    taken = in_session | set(holdout)
     siblings: list[int] = []
+    holdout_siblings: list[int] = []
     if settings.siblings:
-        for nid in notes:
-            others = sorted(
-                (snaps[c] for c in inp.note_cards.get(nid, ()) if c not in in_session),
-                key=lambda s: s.ord,
-            )
-            siblings += [
-                s.cid for s in others if s.type == CARD_TYPE_NEW and s.queue == QUEUE_TYPE_SUSPENDED
-            ]
+        siblings = _suspended_new_siblings(notes, inp.note_cards, snaps, taken)
+        holdout_siblings = _suspended_new_siblings(holdout_notes, inp.note_cards, snaps, taken)
 
-    handed = drilled_new + drilled_scheduled + tuple(siblings)
+    control = holdout + tuple(holdout_siblings)
+    handed = drilled_new + drilled_scheduled + tuple(siblings) + control
     unsuspend = tuple(c for c in handed if snaps[c].queue == QUEUE_TYPE_SUSPENDED)
     if settings.mode == "A":
         set_due = drilled_new
-        front = tuple(siblings)
+        front = tuple(siblings) + control
     else:
         set_due = ()
-        front = drilled_new + tuple(siblings)
+        front = drilled_new + tuple(siblings) + control
     steps, where = note_positions(
-        [drilled_new if settings.mode == "B" else (), tuple(siblings)], snaps
+        [
+            drilled_new if settings.mode == "B" else (),
+            tuple(siblings),
+            holdout,
+            tuple(holdout_siblings),
+        ],
+        snaps,
     )
     in_place = all(snaps[c].new_position == p for c, p in where.items())
     reposition = () if in_place else steps
@@ -340,6 +390,9 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
                 tag_add.setdefault(tag, []).append(nid)
             elif not on and present and tag in REPLACED_TAGS:
                 tag_remove.setdefault(tag, []).append(nid)
+    for nid in holdout_notes:
+        if not has_tag(snaps[next(c for c in holdout if snaps[c].nid == nid)].tags, TAG_HOLDOUT):
+            tag_add.setdefault(TAG_HOLDOUT, []).append(nid)
 
     return HandoffPlan(
         session_id=inp.session_id,
@@ -348,7 +401,7 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
         drilled_new=drilled_new,
         drilled_scheduled=drilled_scheduled,
         siblings=tuple(siblings),
-        holdout=(),
+        holdout=holdout,
         missing=inp.missing,
         tag_add={t: tuple(n) for t, n in tag_add.items()},
         tag_remove={t: tuple(n) for t, n in tag_remove.items()},
@@ -362,6 +415,8 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
         snapshots=snaps,
         today=inp.today,
         day_cutoff=inp.day_cutoff,
+        holdout_siblings=tuple(holdout_siblings),
+        holdout_skipped=holdout_skipped,
     )
 
 
@@ -382,20 +437,41 @@ def reviews_tomorrow(plan: HandoffPlan) -> tuple[int, ...]:
 # ---------------------------------------------------------------------------
 
 
+def saved_holdout(saved: Mapping[str, Any]) -> tuple[int, ...]:
+    """The held-out card ids the session save recorded (Phase 5), in order."""
+    addon = cast(Mapping[str, Any], saved.get("addon") or {})
+    out: list[int] = []
+    for h in cast(list[Any], addon.get("holdout") or []):
+        cid = cast(Mapping[str, Any], h).get("cid") if isinstance(h, dict) else None
+        if isinstance(cid, int) and not isinstance(cid, bool):
+            out.append(cid)
+    return tuple(dict.fromkeys(out))
+
+
 def read_input(col: Collection, saved: Mapping[str, Any]) -> HandoffInput:
     """A fresh snapshot of every session card (Don may have reviewed on his
-    phone or edited since the session started) and of their notes' other cards."""
+    phone or edited since the session started), of the held-out cards, and of
+    their notes' other cards."""
     drilled = drilled_cards(saved)
     notes = NoteCache(col)
     snaps: dict[int, CardSnapshot] = {}
     missing: list[int] = []
-    for d in drilled:
+    holdout: list[int] = []
+    holdout_missing: list[int] = []
+
+    def read(cid: int) -> bool:
         try:
-            card = col.get_card(CardId(d.cid))
+            card = col.get_card(CardId(cid))
         except NotFoundError:
+            return False
+        snaps[cid] = snapshot(card, notes.get(card.nid))
+        return True
+
+    for d in drilled:
+        if not read(d.cid):
             missing.append(d.cid)
-            continue
-        snaps[d.cid] = snapshot(card, notes.get(card.nid))
+    for cid in saved_holdout(saved):
+        (holdout if read(cid) else holdout_missing).append(cid)
     note_cards: dict[int, tuple[int, ...]] = {}
     for nid in dict.fromkeys(s.nid for s in list(snaps.values())):
         cids = tuple(int(c) for c in col.card_ids_of_note(NoteId(nid)))
@@ -412,6 +488,8 @@ def read_input(col: Collection, saved: Mapping[str, Any]) -> HandoffInput:
         missing=tuple(missing),
         today=col.sched.today,
         day_cutoff=col.sched.day_cutoff,
+        holdout=tuple(holdout),
+        holdout_missing=tuple(holdout_missing),
     )
 
 
@@ -583,7 +661,13 @@ def forecast(
     def find(*terms: str | SearchNode) -> set[int]:
         return {int(c) for c in col.find_cards(col.build_search_string(*terms))}
 
-    planned = plan.drilled_new + plan.drilled_scheduled + plan.siblings
+    planned = (
+        plan.drilled_new
+        + plan.drilled_scheduled
+        + plan.siblings
+        + plan.holdout
+        + plan.holdout_siblings
+    )
     in_deck = find(deck, f"cid:{','.join(map(str, planned))}") if planned else set[int]()
     handoff_reviews = set(reviews_tomorrow(plan))
     base = find(deck, TOMORROW_DUE_QUERY)
@@ -684,6 +768,13 @@ def describe(plan: HandoffPlan, fc: Forecast | None, when: datetime) -> HandoffT
             else "."
         )
     )
+    if plan.holdout:
+        hs = len(plan.holdout_siblings)
+        lines.append(
+            f"Holdout: {_n(len(plan.holdout), 'card')} (measurement control, not drilled): "
+            f"unsuspended, queued after the drilled cards, available from {w}, "
+            f"tagged {TAG_HOLDOUT}" + (f"; with {_n(hs, 'sibling')}." if hs else ".")
+        )
     lines.append(f"Tags: +{plan.tags_added} / −{plan.tags_removed}{_tag_breakdown(plan)}.")
     if plan.clear_flags:
         lines.append(f"Red flag cleared on {_n(len(plan.clear_flags), 'card')}.")
@@ -726,6 +817,8 @@ def handoff_line(plan: HandoffPlan, fc: Forecast | None, at_ms: float) -> dict[s
             "drilled_scheduled": list(plan.drilled_scheduled),
             "siblings": list(plan.siblings),
             "holdout": list(plan.holdout),
+            "holdout_siblings": list(plan.holdout_siblings),
+            "holdout_skipped": list(plan.holdout_skipped),
             "missing": list(plan.missing),
         },
         "actions": {

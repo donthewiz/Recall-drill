@@ -104,3 +104,17 @@ def test_hard_cards_latest_handoff_wins_across_logs(st: Storage) -> None:
     hard = history_store.hard_cards(st)
     assert hard.hard == frozenset({1, 4})
     assert hard.not_hard == frozenset({2, 3})
+
+
+def test_tuning_lines_and_every_log(st: Storage) -> None:
+    history_store.append_session(st, "42", {"type": "session", "sessionId": "a"})
+    history_store.append_handoff(st, "search-abc", {"type": "handoff", "sessionId": "a"})
+    line = {"type": "tuning", "parameter": "encode_reps", "old": 3, "new": 2}
+    history_store.append_tuning(st, line)
+    assert history_store.read_all(st, history_store.TUNING_KEY) == [line]
+    every = history_store.read_every_log(st)
+    assert sorted(x["type"] for x in every) == ["handoff", "session", "tuning"]
+    with pytest.raises(ValueError):
+        history_store.append_tuning(st, {"type": "session"})
+    # The rd::hard reader ignores tuning lines.
+    assert history_store.hard_cards(st).hard == frozenset()

@@ -15,6 +15,15 @@ note that weren't hard in their last handoff (``rd::hard`` is a note tag, so
 siblings and cloze siblings share it; the template filter can't tell cloze
 cards apart).
 
+``exclude_holdout_tag`` (config ``holdout_exclude``) leaves out the cards of
+notes tagged ``rd::holdout`` (counted as ``holdout_tagged``): a past holdout
+stays an undrilled control.
+
+**Holdout** (Phase 5, :func:`apply_holdout`): with ``holdout_pct`` above 0 and
+a deck scope, eligible ``new`` / ``suspended_new`` cards whose hash falls in the
+holdout are set aside (``Selection.holdout``) while walking the ordered list,
+until ``max_cards`` drill cards are picked.
+
 A card is ineligible, and counted by reason, when (first match wins):
 image occlusion, marked ineligible in mappings.json, unmapped, empty answer,
 or (unless that class is enabled) in a filtered deck or buried. Every other
@@ -31,6 +40,7 @@ from typing import Any, Literal, cast
 from anki.collection import Collection, SearchNode
 from anki.decks import DeckId
 
+from ..holdout import HOLDOUT_CLASSES, TAG_HOLDOUT, is_holdout
 from .cards import (
     CARD_CLASSES,
     DEFAULT_ENABLED,
@@ -40,8 +50,10 @@ from .cards import (
     CardSnapshot,
     NoteCache,
     classify,
+    has_tag,
     read_snapshots,
 )
+from .handoff import TAG_DRILLED
 from .notetypes import MappingTable, NoteMapping, answer_text, is_io_note
 
 OrderMode = Literal["priority_first", "deck_order"]
@@ -116,6 +128,11 @@ class SelectOptions:
     flag: int = RED_FLAG
     exclude_cids: frozenset[int] = frozenset()
     """Cards left out, whatever their class (counted as ``Selection.excluded``)."""
+    exclude_holdout_tag: bool = False
+    """Leave out notes tagged ``rd::holdout`` (counted as ``Selection.holdout_tagged``)."""
+    holdout_pct: int = 0
+    """Holdout percentage (0 = off). Applied to deck scopes only."""
+    holdout_salt: str = ""
 
 
 def scope_to_json(scope: Scope) -> dict[str, Any]:
@@ -138,6 +155,9 @@ def options_to_json(o: SelectOptions) -> dict[str, Any]:
         "young_ivl": o.young_ivl,
         "flag": o.flag,
         "exclude_cids": sorted(o.exclude_cids),
+        "exclude_holdout_tag": o.exclude_holdout_tag,
+        "holdout_pct": o.holdout_pct,
+        "holdout_salt": o.holdout_salt,
     }
 
 
@@ -154,6 +174,9 @@ def options_from_json(d: Mapping[str, Any]) -> SelectOptions:
         young_ivl=int(d.get("young_ivl", YOUNG_IVL)),
         flag=int(d.get("flag", RED_FLAG)),
         exclude_cids=frozenset(int(x) for x in cast(list[Any], d.get("exclude_cids") or [])),
+        exclude_holdout_tag=bool(d.get("exclude_holdout_tag", False)),
+        holdout_pct=int(d.get("holdout_pct") or 0),
+        holdout_salt=str(d.get("holdout_salt") or ""),
     )
 
 
@@ -187,6 +210,11 @@ class Selection:
     """Every (note type, template) met in the scope."""
     excluded: int = 0
     """Cards left out by ``exclude_cids``."""
+    holdout: list[Candidate] = field(default_factory=list[Candidate])
+    """Eligible cards set aside as the measurement control: not drilled, handed
+    off as new cards (``apply_holdout``)."""
+    holdout_tagged: int = 0
+    """Cards left out because their note is tagged ``rd::holdout``."""
 
 
 # ---------------------------------------------------------------------------
@@ -221,9 +249,52 @@ def state_reason(card_class: CardClass, enabled: frozenset[CardClass]) -> Inelig
     return None
 
 
-def apply_holdout(selection: Selection) -> Selection:
-    """Hook for Phase 5 (holding cards back for a later check). No-op for now."""
-    return selection
+@dataclass(frozen=True)
+class HoldoutSpec:
+    pct: int
+    salt: str
+
+
+def holdout_spec(scope: Scope, options: SelectOptions) -> HoldoutSpec | None:
+    """The holdout a selection applies: deck scopes only (never a search such as
+    ``tag:rd::hard``; a drill-again session never selects), and only when on."""
+    if scope.deck_id is None or options.holdout_pct <= 0 or not options.holdout_salt:
+        return None
+    return HoldoutSpec(options.holdout_pct, options.holdout_salt)
+
+
+def holdout_candidate(c: Candidate, spec: HoldoutSpec) -> bool:
+    """A new card (suspended or not) of a note never drilled or held out, in the hash's
+    share. A note already tagged ``rd::drilled`` isn't a clean control."""
+    return (
+        c.card_class in HOLDOUT_CLASSES
+        and not has_tag(c.snap.tags, TAG_DRILLED)
+        and not has_tag(c.snap.tags, TAG_HOLDOUT)
+        and is_holdout(spec.salt, c.snap.cid, spec.pct)
+    )
+
+
+def apply_holdout(
+    ordered: Sequence[Candidate], max_cards: int | None, spec: HoldoutSpec | None
+) -> tuple[list[Candidate], list[Candidate]]:
+    """(drill, holdout): walks ``ordered``, setting holdout cards aside, until
+    ``max_cards`` drill cards are picked (None: all of them).
+
+    A holdout card whose note also has a picked drill card is dropped from the
+    holdout (and not drilled): its sibling's drill would contaminate the control.
+    """
+    limit = None if max_cards is None else max(0, max_cards)
+    drill: list[Candidate] = []
+    held: list[Candidate] = []
+    for c in ordered:
+        if limit is not None and len(drill) >= limit:
+            break
+        if spec is not None and holdout_candidate(c, spec):
+            held.append(c)
+        else:
+            drill.append(c)
+    drilled_notes = {c.snap.nid for c in drill}
+    return drill, [c for c in held if c.snap.nid not in drilled_notes]
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +334,7 @@ def select_cards(
     ineligible: dict[IneligibleReason, int] = dict.fromkeys(INELIGIBLE_REASONS, 0)
     template_excluded = 0
     excluded = 0
+    holdout_tagged = 0
     met: dict[tuple[int, int], NoteMapping] = {}
     cands: list[Candidate] = []
 
@@ -271,6 +343,9 @@ def select_cards(
         met[(mapping.ntid, mapping.template_ord)] = mapping
         if snap.cid in options.exclude_cids:
             excluded += 1
+            continue
+        if options.exclude_holdout_tag and has_tag(snap.tags, TAG_HOLDOUT):
+            holdout_tagged += 1
             continue
         allowed = options.card_ords.get(snap.ntid)
         if allowed is not None and mapping.template_ord not in allowed:
@@ -287,9 +362,9 @@ def select_cards(
         if card_class in options.enabled:
             cands.append(Candidate(snap, card_class, mapping, answer))
 
-    picked = order_candidates(cands, options.order)
-    if options.max_cards is not None:
-        picked = picked[: max(0, options.max_cards)]
+    picked, held = apply_holdout(
+        order_candidates(cands, options.order), options.max_cards, holdout_spec(scope, options)
+    )
     picked_counts: dict[CardClass, int] = dict.fromkeys(CARD_CLASSES, 0)
     for c in picked:
         picked_counts[c.card_class] += 1
@@ -307,5 +382,7 @@ def select_cards(
         sibling_notes=sib_notes,
         mappings=dict(sorted(met.items())),
         excluded=excluded,
+        holdout=held,
+        holdout_tagged=holdout_tagged,
     )
-    return apply_holdout(selection)
+    return selection

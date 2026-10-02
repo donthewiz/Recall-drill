@@ -141,11 +141,17 @@ def compute_cold_start_estimate(
     chunk_difficulty: float,
     ladder_mode: LadderMode,
     multiplier_override: float | ExposureLevel,
+    min_words_to_chunk: int = MIN_WORDS_TO_CHUNK,
 ) -> ColdStartEstimate:
     """Setup-screen estimate. ``build_items`` shuffles, so this draws from
-    :mod:`.rand` exactly like the TS call (the result doesn't depend on the draws)."""
+    :mod:`.rand` exactly like the TS call (the result doesn't depend on the draws).
+
+    ``min_words_to_chunk`` is an add-on extension (the session's threshold);
+    left out, the TS constant."""
     deck_shape = pick_cold_start_deck_shape(deck_items)
-    built = build_items(deck_items, chunk_difficulty, ladder_mode)
+    built = build_items(
+        deck_items, chunk_difficulty, ladder_mode, min_words_to_chunk=min_words_to_chunk
+    )
     floor_trials = compute_minimum_trials(built, encode_reps, ladder_mode)
     multiplier = (
         COLD_START_MULTIPLIERS[deck_shape][multiplier_override]

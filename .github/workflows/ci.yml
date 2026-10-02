@@ -46,7 +46,8 @@ jobs:
       # again against them (the pytest step above), in the same commit.
       - run: npx tsx anki-addon/tools/export_golden.ts && git diff --exit-code anki-addon/tests/golden
 
-  # The add-on's Anki I/O, drill controller and session storage tests. They need
+  # The add-on's Anki I/O, drill controller, session storage and measurement
+  # (tuning report, holdout) tests. They need
   # anki (scratch collections, never a real profile) but no Qt: the few tests that
   # import aqt skip themselves when it isn't installed (tests/anki_io/anki_fixtures.py,
   # needs_aqt).
@@ -60,4 +61,4 @@ jobs:
           python-version: '3.13.13'
       # Versions match anki-addon/requirements-dev.txt.
       - run: pip install anki==26.8.1 pytest==9.1.1
-      - run: pytest anki-addon/tests/anki_io anki-addon/tests/controller anki-addon/tests/storage -q
+      - run: pytest anki-addon/tests/anki_io anki-addon/tests/controller anki-addon/tests/storage anki-addon/tests/tuning anki-addon/tests/test_measure.py anki-addon/tests/test_holdout.py -q

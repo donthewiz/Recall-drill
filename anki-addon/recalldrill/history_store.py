@@ -4,8 +4,9 @@
 
 - ``type: "session"``: one per completed session (written here, at completion):
   ``sessionId``, the web app's ``buildHistoryEntry`` fields, an ``anki`` block
-  (per card ``cid, nid, ord, card_class``), the encode settings used, the scope,
-  ``collisions`` and ``holdout: []`` (Phase 5 fills it in).
+  (per card ``cid, nid, ord, did, card_class``, parallel to the entry's
+  ``cards``), the encode settings used, the scope, ``collisions`` and
+  ``holdout`` (the cards held out as the measurement control, Phase 5).
 - ``type: "handoff"``: one per handoff (``anki_io/handoff.py``, ``handoff_line``),
   with the same ``sessionId``: mode, timestamp, the card ids per group, what
   was done, the tag counts, per card ``struggle`` and ``hard``, and the
@@ -44,6 +45,7 @@ class AnkiCardRef(TypedDict):
     cid: int
     nid: int
     ord: int
+    did: int
     card_class: str
 
 
@@ -74,7 +76,7 @@ def encode_settings(state: SessionState, hints: bool) -> EncodeSettings:
     out: EncodeSettings = {
         "encodeReps": c["encodeReps"],
         "chunkDifficulty": c["chunkDifficulty"],
-        "MIN_WORDS_TO_CHUNK": MIN_WORDS_TO_CHUNK,
+        "MIN_WORDS_TO_CHUNK": c.get("minWordsToChunk", MIN_WORDS_TO_CHUNK),
         "ladderMode": c["ladderMode"],
         "strictPunctuation": c.get("strictPunctuation", False),
         "stemTolerance": c["stemTolerance"],
@@ -95,14 +97,18 @@ def build_session_line(
     scope: Mapping[str, Any],
     collisions: int,
     hints: bool,
+    holdout: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """One ``type: "session"`` history line."""
+    """One ``type: "session"`` history line. ``anki`` follows ``state["items"]``,
+    so it is parallel to the entry's ``cards`` (the add-on never reorders items,
+    so that is item id order too)."""
     entry = build_history_entry(state, finished_at)
-    by_id = {i["id"]: i for i in state["items"]}
     anki: list[AnkiCardRef] = []
-    for item_id in sorted(by_id):
-        s = sources[item_id]
-        anki.append({"cid": s.cid, "nid": s.nid, "ord": s.ord, "card_class": s.card_class})
+    for item in state["items"]:
+        s = sources[item["id"]]
+        anki.append(
+            {"cid": s.cid, "nid": s.nid, "ord": s.ord, "did": s.did, "card_class": s.card_class}
+        )
     return {
         "type": "session",
         "sessionId": session_id,
@@ -111,7 +117,7 @@ def build_session_line(
         "encode": encode_settings(state, hints),
         "scope": dict(scope),
         "collisions": collisions,
-        "holdout": [],
+        "holdout": [dict(h) for h in holdout],
     }
 
 
@@ -185,6 +191,24 @@ def hard_cards(storage: Storage) -> HardCards:
         hard=frozenset(cid for cid, (_, h) in latest.items() if h),
         not_hard=frozenset(cid for cid, (_, h) in latest.items() if not h),
     )
+
+
+TUNING_KEY = "tuning"
+"""``history/tuning.jsonl``: one ``type: "tuning"`` line per applied suggestion."""
+
+
+def append_tuning(storage: Storage, line: Mapping[str, Any]) -> None:
+    if line.get("type") != "tuning":
+        raise ValueError("not a tuning line")
+    storage.append_jsonl(history_name(TUNING_KEY), dict(line))
+
+
+def read_every_log(storage: Storage) -> list[dict[str, Any]]:
+    """Every line of every history log (the tuning report reads them all)."""
+    out: list[dict[str, Any]] = []
+    for name in storage.list_names(HISTORY_DIR, ".jsonl"):
+        out += [cast(dict[str, Any], x) for x in storage.read_jsonl(name) if isinstance(x, dict)]
+    return out
 
 
 def read_all(storage: Storage, history_key: str) -> list[dict[str, Any]]:

@@ -45,6 +45,7 @@ def test_every_ui_module_is_listed() -> None:
         "recalldrill.ui.handoff_dialog",
         "recalldrill.ui.mapping_dialog",
         "recalldrill.ui.setup_dialog",
+        "recalldrill.ui.tuning_dialog",
     } <= set(UI_MODULES)
 
 
@@ -673,3 +674,131 @@ def test_hard_cards_menu_actions(
     assert not d.hard_only.isVisibleTo(d)  # no handoff history yet
     d.close()
 
+
+
+# -- Phase 5: the holdout in the panel, the tuning report ------------------------
+
+
+def test_setup_panel_shows_and_records_the_holdout(panel_env: Any, window_env: Path) -> None:
+    import aqt
+
+    from recalldrill import holdout, sessions
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog, holdout_text
+
+    col, did = panel_env
+    aqt.mw.addonManager = type(  # type: ignore[attr-defined]
+        "AM", (), {"getConfig": lambda self, m: {"holdout_pct": 50}}
+    )()
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    held = d.data.selection.holdout
+    assert holdout.read_salt(ctx.storage())  # made on first enable
+    assert d.holdout_label.isVisibleTo(d) and d.holdout_label.text() == holdout_text(len(held))
+    assert d.data.drillable + len(held) <= 6
+    assert holdout_text(1).startswith("Holdout: 1 card skips the drill")
+    assert holdout_text(3) == (
+        "Holdout: 3 cards skip the drill and go to Anki as new cards (measurement control)."
+    )
+    d._start()
+    saved = sessions.load(ctx.storage(), sessions.deck_key(did))
+    assert saved is not None and saved["addon"]["holdout"] == d.data.holdout
+    assert saved["minWordsToChunk"] == 8
+    ctx.windows[0].save_and_close()
+    # A search scope never holds cards out.
+    d2: Any = SetupDialog(ctx, None, search=f"did:{did}")
+    assert d2.data.selection.holdout == [] and not d2.holdout_label.isVisibleTo(d2)
+    d2.close()
+
+
+def test_tuning_report_dialog(
+    window_env: Path, monkeypatch: pytest.MonkeyPatch, qt_app: object
+) -> None:
+    import sys
+
+    import aqt
+    from aqt.qt import QApplication
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tuning"))
+    from tuning_support import Drilled, handoff_line, ms, rating, session_line
+
+    from recalldrill import history_store
+    from recalldrill.anki_io.revlog import ReportInputs
+    from recalldrill.storage import Storage
+    from recalldrill.tuning import CONFOUND_WARNING, CardInfo
+    from recalldrill.ui import context, entry, tuning_dialog
+    from recalldrill.ui.context import AddonContext
+
+    # Two encodeReps values, 40 outcomes each, same Again rate: suggest the lower.
+    lines: list[dict[str, Any]] = []
+    revlog: list[Any] = []
+    cards: dict[int, CardInfo] = {}
+    for sid, reps, base in (("a", 3, 1000), ("b", 2, 2000)):
+        drilled = [Drilled(base + i) for i in range(40)]
+        lines += [
+            session_line(sid, ms(2026, 10, 1, 14), drilled, encode_reps=reps),
+            handoff_line(sid, ms(2026, 10, 1, 15), drilled),
+        ]
+        revlog += [
+            rating(d.cid, ms(2026, 10, 2, 10), 1 if i < 4 else 3) for i, d in enumerate(drilled)
+        ]
+        cards |= {d.cid: CardInfo("Med Term::Ch 1", "Med Term") for d in drilled}
+    inputs = ReportInputs(lines=lines, cards=cards, revlog=revlog, rollover=4)
+
+    written: list[dict[str, Any]] = []
+
+    class AM:
+        conf: dict[str, Any] = {"min_n": 30, "encode_reps": 3}
+
+        def getConfig(self, module: str) -> dict[str, Any]:  # noqa: N802
+            return dict(self.conf)
+
+        def writeConfig(self, module: str, conf: dict[str, Any]) -> None:  # noqa: N802
+            written.append(conf)
+            AM.conf = conf
+
+    aqt.mw.addonManager = AM()  # type: ignore[attr-defined]
+    aqt.mw.col = object()  # type: ignore[attr-defined]
+    monkeypatch.setattr(tuning_dialog, "mw", aqt.mw)
+    monkeypatch.setattr(context, "mw", aqt.mw)
+    monkeypatch.setattr(tuning_dialog, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(tuning_dialog, "read_report_inputs", lambda col, st: inputs)
+    monkeypatch.setattr(tuning_dialog, "encode_reps_overrides", lambda col, st, p: ["Med Term (3)"])
+    asked: list[str] = []
+    monkeypatch.setattr(tuning_dialog, "ask_apply", lambda parent, text: asked.append(text) or True)
+    ctx = AddonContext("recall_drill", str(window_env))
+    st = Storage(window_env, "p")
+    ctx.storage = lambda: st  # type: ignore[method-assign]
+
+    monkeypatch.setattr(entry, "_ctx", ctx)
+    monkeypatch.setattr(entry, "mw", aqt.mw)
+    entry.open_tuning()
+    (d,) = ctx.dialogs
+    assert isinstance(d, tuning_dialog.TuningDialog)
+    assert d.report is not None and d.report.sessions == 2
+    assert CONFOUND_WARNING.split(".")[0] in d.body.toPlainText()
+    assert [d.deck.itemText(i) for i in range(d.deck.count())] == ["All decks", "Med Term"]
+    buttons = [b.text() for b in d.findChildren(type(d.csv_btn)) if b.text().startswith("Apply")]
+    assert buttons == ["Apply 3 → 2…"]
+
+    d.csv_btn.click()
+    clip = QApplication.clipboard()
+    assert clip is not None and clip.text().startswith("group,cid,nid,deck")
+
+    (s,) = [s for s in d.report.suggestions if s.actionable]
+    d._apply(s)
+    assert "from 3 to 2" in asked[0] and "Med Term (3)" in asked[0]
+    assert written[-1]["encode_reps"] == 2 and written[-1]["min_n"] == 30
+    (line,) = history_store.read_all(st, history_store.TUNING_KEY)
+    assert (line["type"], line["old"], line["new"]) == ("tuning", 3, 2)
+    # Re-rendered with the new default: nothing left to apply.
+    assert not any(s.actionable for s in d.report.suggestions)
+
+    # Cancelled: nothing written.
+    monkeypatch.setattr(tuning_dialog, "ask_apply", lambda parent, text: False)
+    AM.conf = {"encode_reps": 3, "min_n": 30}
+    d._render()
+    d._apply(next(s for s in d.report.suggestions if s.actionable))
+    assert len(written) == 1
+    d.close()
+    assert ctx.dialogs == []

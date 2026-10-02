@@ -13,6 +13,10 @@ The pending banner's **Hand off finished session** runs the handoff
 The ``tag:rd::hard`` search ("Recall Drill: my rd::hard cards") leaves out, by
 default, the cards whose last handoff found them not hard: the tag is on the
 note, so a hard card's siblings (and cloze siblings) carry it too.
+
+With the holdout on (config ``holdout_pct``), a deck scope sets some eligible
+new cards aside as the measurement control; the panel says how many. Cards
+tagged ``rd::holdout`` are left out unless ``holdout_exclude`` is off.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ from aqt.qt import (
 )
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
 
-from .. import deck_settings, launch, sessions
+from .. import deck_settings, holdout, launch, sessions
 from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
 from ..anki_io.panel import (
     PanelData,
@@ -91,6 +95,16 @@ _EXPOSURE: list[tuple[ExposureLevel, str]] = [
 
 def _plural(n: int, one: str, many: str | None = None) -> str:
     return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
+def holdout_text(held: int) -> str:
+    if held == 1:
+        return (
+            "Holdout: 1 card skips the drill and goes to Anki as a new card (measurement control)."
+        )
+    return (
+        f"Holdout: {held} cards skip the drill and go to Anki as new cards (measurement control)."
+    )
 
 
 class SetupDialog(QDialog):
@@ -242,6 +256,10 @@ class SetupDialog(QDialog):
         srow = QHBoxLayout()
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
+        self.holdout_label = QLabel()
+        self.holdout_label.setWordWrap(True)
+        self.holdout_label.hide()
+        cl.addWidget(self.holdout_label)
         self.mapping_btn = QPushButton("Edit mapping…")
         self.mapping_btn.setAutoDefault(False)
         qconnect(self.mapping_btn.clicked, self._edit_mapping)
@@ -418,6 +436,7 @@ class SetupDialog(QDialog):
 
     def _options(self) -> Any:
         tag = self.tag_edit.text().strip()
+        cfg = self.ctx.config()
         return options_for(
             self.draft,
             enabled=frozenset(self.enabled),
@@ -425,6 +444,9 @@ class SetupDialog(QDialog):
             extra_tag=tag or None,
             order=cast(OrderMode, self.order.currentData()),
             exclude_cids=self.hard_exclude if self.hard_only.isChecked() else frozenset(),
+            holdout_pct=cfg.holdout_pct,
+            holdout_salt=holdout.salt_for(self.ctx.storage(), cfg.holdout_pct),
+            exclude_holdout_tag=cfg.holdout_exclude,
         )
 
     def _refresh(self) -> None:
@@ -532,6 +554,15 @@ class SetupDialog(QDialog):
                 f"{_plural(sel.excluded, 'card')} left out: not hard in "
                 f"{'its' if sel.excluded == 1 else 'their'} last handoff."
             )
+        if sel.holdout_tagged:
+            lines.append(
+                f"{_plural(sel.holdout_tagged, 'card')} tagged rd::holdout left out "
+                "(earlier measurement controls)."
+            )
+        held = len(sel.holdout)
+        on = data.scope.deck_id is not None and sel.options.holdout_pct > 0
+        self.holdout_label.setVisible(on)
+        self.holdout_label.setText(holdout_text(held))
         image_fronts = sum(1 for s in b.sources if s.image_front)
         if image_fronts:
             lines.append(f"{image_fronts} show an image on the front (no hints for them).")
@@ -764,6 +795,7 @@ class SetupDialog(QDialog):
             select_options=data.select_options,
             hints=data.build.hints_on,
             cfg=self.ctx.config(),
+            holdout=data.holdout,
         )
         open_drill_window(self.ctx, ctrl, store)
         self.close()
