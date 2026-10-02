@@ -1,6 +1,8 @@
 """Import-layering rules, checked statically with ast.
 
 - engine/ is pure: no anki, aqt, PyQt*/PySide*, and nothing from anki_io or ui.
+- The top-level helper modules (storage, prompts, deck_settings) are pure the
+  same way; they may use engine/.
 - anki_io/ never touches Qt; from aqt it may use aqt.operations only.
 """
 
@@ -70,10 +72,15 @@ def anki_io_violations(name: str) -> bool:
     return _is(name, "aqt") and not _is(name, "aqt.operations")
 
 
+PURE_MODULES = ("storage.py", "prompts.py", "deck_settings.py")
+
+
 def _violations(layer: str, rule: object) -> list[str]:
     assert callable(rule)
     found: list[str] = []
-    for path in sorted((RECALLDRILL / layer).rglob("*.py")):
+    target = RECALLDRILL / layer
+    paths = [target] if target.is_file() else sorted(target.rglob("*.py"))
+    for path in paths:
         module = _module_name(path)
         source = path.read_text(encoding="utf-8")
         for name in imported_modules(source, module, path.name == "__init__.py"):
@@ -85,6 +92,12 @@ def _violations(layer: str, rule: object) -> list[str]:
 def test_engine_is_pure() -> None:
     assert (RECALLDRILL / "engine" / "__init__.py").exists()
     assert _violations("engine", engine_violations) == []
+
+
+@pytest.mark.parametrize("module", PURE_MODULES)
+def test_pure_modules_are_pure(module: str) -> None:
+    assert (RECALLDRILL / module).is_file()
+    assert _violations(module, engine_violations) == []
 
 
 def test_anki_io_has_no_qt() -> None:

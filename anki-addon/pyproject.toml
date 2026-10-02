@@ -21,7 +21,14 @@ typeCheckingMode = "standard"
 # The Qt-free layers are held to strict. ui/ stays at standard because
 # PyQt6's stubs leave signals partially Unknown, which strict rejects on
 # every connect. Tests and tools poke at col._backend on purpose.
-strict = ["recalldrill/__init__.py", "recalldrill/engine", "recalldrill/anki_io"]
+strict = [
+    "recalldrill/__init__.py",
+    "recalldrill/engine",
+    "recalldrill/anki_io",
+    "recalldrill/storage.py",
+    "recalldrill/prompts.py",
+    "recalldrill/deck_settings.py",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

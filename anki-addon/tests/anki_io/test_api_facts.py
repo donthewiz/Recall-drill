@@ -16,7 +16,7 @@ from pathlib import Path
 import anki.collection  # noqa: F401
 import pytest
 from anki.cards import Card, CardId
-from anki.collection import Collection
+from anki.collection import Collection, SearchNode
 from anki.consts import (
     CARD_TYPE_NEW,
     CARD_TYPE_REV,
@@ -32,6 +32,7 @@ from anki.notes import Note
 from anki.scheduler.v3 import CardAnswer
 from anki.scheduler.v3 import Scheduler as V3Scheduler
 from anki.sound import SoundOrVideoTag, TTSTag
+from anki.template import TemplateRenderOutput
 from anki.utils import strip_html
 
 # ---------------------------------------------------------------------------
@@ -461,6 +462,91 @@ def test_note_type_detection(col: Collection) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 2: reading cards into drill items
+# ---------------------------------------------------------------------------
+
+
+def test_render_output_question_text_swaps_media_for_placeholders(col: Collection) -> None:
+    """The drill's front is card.render_output(reload=True).question_text. On a
+    rendered side, [sound:] (and TTS) become [anki:play:q:N] and {{type:F}}
+    becomes [[type:F]], so grading_text strips those too."""
+    did = deck(col, "X")
+    model = col.models.by_name("Basic (type in the answer)")
+    assert model is not None
+    note = col.new_note(model)
+    note["Front"] = "q [sound:a.mp3]"
+    note["Back"] = "ans"
+    col.add_note(note, did)
+    out = first_card(note).render_output(reload=True)
+    assert isinstance(out, TemplateRenderOutput)
+    assert out.question_text == "q [anki:play:q:0]\n\n[[type:Back]]"
+    assert out.question_av_tags == [SoundOrVideoTag(filename="a.mp3")]
+
+
+def test_rendered_cloze_question(col: Collection) -> None:
+    did = deck(col, "X")
+    model = col.models.by_name("Cloze")
+    assert model is not None
+    note = col.new_note(model)
+    note["Text"] = "{{c1::outer {{c2::inner}} text}} and {{c3::x::hint}}"
+    col.add_note(note, did)
+    by_ord = {c.ord: c for c in note.cards()}
+    q = {o: strip_html(c.render_output(reload=True).question_text) for o, c in by_ord.items()}
+    # The active deletion shows [...] or its [hint]; other numbers show as text.
+    assert q == {0: "[...] and x", 1: "outer [...] text and x", 2: "outer inner text and [hint]"}
+    # Public wrapper of the backend call (cloze number = card.ord + 1); nesting
+    # is flattened for typing.
+    assert col.extract_cloze_for_typing(note["Text"], 1) == "outer inner text"
+    assert col.extract_cloze_for_typing(note["Text"], 2) == "inner"
+    assert col.extract_cloze_for_typing(note["Text"], 3) == "x"
+
+
+def test_search_by_notetype_and_template(col: Collection) -> None:
+    did = deck(col, "X")
+    model = col.models.by_name("Basic (and reversed card)")
+    assert model is not None
+    note = col.new_note(model)
+    note["Front"], note["Back"] = "f", "b"
+    col.add_note(note, did)
+    add_basic(col, did)
+    c0, c1 = sorted(note.cards(), key=lambda c: c.ord)
+    assert col.find_cards(f"mid:{model['id']} card:1") == [c0.id]
+    assert col.find_cards(f"mid:{model['id']} card:2") == [c1.id]
+    assert col.models.nids(model["id"]) == [note.id]
+
+
+def test_search_node_escaping(col: Collection) -> None:
+    assert col.build_search_string(SearchNode(deck='A_b*c "q"')) == '"deck:A\\_b\\*c \\"q\\""'
+    assert col.build_search_string(SearchNode(tag="rd::drill::A_1")) == "tag:rd::drill::A\\_1"
+    assert col.build_search_string("(a or b)", SearchNode(tag="t")) == "(a OR b) tag:t"
+
+
+def test_user_flag_and_filtered_odue(col: Collection) -> None:
+    did = deck(col, "X")
+    card = first_card(add_basic(col, did))
+    col.set_user_flag_for_cards(1, [card.id])
+    card.load()
+    assert card.user_flag() == 1
+    assert col.find_cards("flag:1") == [card.id]
+    due = card.due
+    fid = col.decks.new_filtered("F")
+    fdeck = col.decks.get(fid)
+    assert fdeck is not None
+    fdeck["terms"] = [['deck:"X"', 100, 0]]
+    col.decks.save(fdeck)
+    col.sched.rebuild_filtered_deck(fid)
+    card.load()
+    # A new card in a filtered deck keeps its queue position in odue.
+    assert (card.odid, card.odue) == (did, due)
+
+
+def test_current_deck_is_a_dict_with_an_id(col: Collection) -> None:
+    did = deck(col, "X")
+    col.decks.select(did)
+    assert col.decks.current()["id"] == did
+
+
+# ---------------------------------------------------------------------------
 # GUI-side facts that can be checked headless
 # ---------------------------------------------------------------------------
 
@@ -487,3 +573,14 @@ def test_collection_op_api() -> None:
 
     for name in ("success", "failure", "run_in_background"):
         assert callable(getattr(CollectionOp, name))
+
+
+def test_query_op_api() -> None:
+    """The Phase 2 dev preview reads cards off the main thread with QueryOp."""
+    import inspect
+
+    from aqt.operations import QueryOp
+
+    for name in ("with_progress", "failure", "run_in_background"):
+        assert callable(getattr(QueryOp, name))
+    assert list(inspect.signature(QueryOp.__init__).parameters)[1:] == ["parent", "op", "success"]
