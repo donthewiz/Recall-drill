@@ -39,7 +39,7 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
 
 - **Type checker:** pyright 1.1.414.
   - `standard` everywhere.
-  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure helper modules `recalldrill/storage.py`, `prompts.py` and `deck_settings.py`.
+  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py` and `history_store.py`.
   - `ui/` stays at standard because PyQt6's stubs leave signals partially `Unknown`, which strict rejects on every `qconnect`.
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
@@ -239,6 +239,47 @@ The front reads `meaning (N forms; hint)`, the skill's order. Default: on when t
 - The template filter can't pick cloze numbers (c1 vs c2): a cloze note type has one template.
 - The front's `front_html` still holds `[anki:play:q:N]` and `[[type:F]]`; the display layer (Phase 3b) must handle them.
 
+## Drill controller and session storage (Phase 3a)
+
+SessionView isn't a pure view, so its behavior is ported to a Qt-free `DrillController` (`recalldrill/controller.py`). Phase 3b's Qt window renders `view()` and runs the effects each action returns: `StartDwell(ms)`, `PlayAnswerAudio(cid)`, `Persisted` / `PersistFailed`, `SessionComplete`, `SessionStopped`, `CollisionNotice(other_answer)`, `ClearInput`.
+
+**Ported one-to-one** (each beside a comment naming the TS handler):
+- the pre-wrong snapshot that "Count as correct" re-applies;
+- the reveal flag the next answer consumes;
+- the dwell from `DWELL_MS[dwellKey]`;
+- the Extra pause, which holds the advanced state until Continue;
+- `applyNext` on Continue in the cycle and Final check only;
+- editing with a wrong verdict showing, and `editRevealsOnClose`;
+- the busy guard (B5);
+- saving after every answer.
+
+`tests/controller/test_parity.py` replays the Phase 1b scripted scenarios through the controller's actions and checks the engine state after every step against the goldens.
+
+**Changes from SessionView:**
+- After "Count as correct" auto-advances, SessionView leaves Continue up on the next trial (`handleOverride`'s dwell callback never resets `showNextBtn`), and pressing it in the cycle runs `applyNext`, skipping a card. The controller's dwell always ends with Continue down. The web app still has the bug.
+- Every action, End session included, is ignored during a dwell (busy guard). SessionView's End session also works during a dwell.
+- An Extra that is only an image counts as an Extra: it shows, and it holds the pause like a text Extra does. The web app's Extra is text only.
+
+**Kept from SessionView, on purpose:** End session during the Extra pause saves the state still on screen, as App does, so that one answer is lost.
+
+**Add-on only:**
+- **The "other card's answer" catch** (config `collision_catch`, default on). `build` gives each `SourceRef` `colliding_answers`: the answers of cards whose fronts conflict under the hint rule (same pool as the hints, filled in even with hints off; image fronts have none). On a full / cycle / Final trial, typing one of them exactly (and not this card's answer) shows *"That's the answer to another card with this prompt. This one wants a different form."*, clears the input and changes nothing: no trial, no save. The engine never sees it. A controller-side `collisions` tally goes into the save and the history.
+- **Answer audio** (config `play_audio_on_feedback`, default on): `PlayAnswerAudio` when feedback shows the full back and the card has answer audio.
+- **0 items is refused.** The engine's empty-deck path never completes.
+
+**Session saves** (`recalldrill/sessions.py`): `sessions/<key>.json`. Keys: `deck-<did>`, `search-<sha1(query)[:12]>`, `again-<parent key>`.
+- The content is the web app's `SavedSessionState`, written as SessionView builds it, plus `addon`: `sources`, `scope`, `selectOptions`, `deckSettings`, `hints`, `sessionId` (uuid4 hex from Start), `startedAt`, `collisions`, `handoffPending`, `historyWritten`, `drillAgainOf`.
+- Resume (`sessions.resume`) mirrors `App.handleResumeSession`.
+- `anki_io.resume.check_resume(col, saved)` lists `missing` and `changed` cards (answer hash vs what `build` reads now) for "Start fresh" / "Resume with the saved text". Engine state is never patched.
+- **On completion:** history is written once, then `handoffPending` is set and the save is kept. A pending save offers "Hand off finished session", never "Resume". It's deleted after the Phase 4 handoff or on "Don't hand off" (`sessions.discard`).
+- Drill-again sessions write no history and no handoff, and their save is deleted on completion.
+
+**History** (`recalldrill/history_store.py`): `history/<did or search key>.jsonl`, append-only, never rewritten, no 50-entry cap.
+- One `type: "session"` line per completed session: `sessionId`, `buildHistoryEntry`, `anki` (per card `cid, nid, ord, card_class`), `encode` (`encodeReps, chunkDifficulty, MIN_WORDS_TO_CHUNK, ladderMode, batchSize, strictPunctuation, stemTolerance, hints`), `scope`, `collisions`, `holdout: []`.
+- An append skips a `sessionId` that already has a session line. That covers a crash between the append and the save's `historyWritten`.
+- Phase 4 adds `type: "handoff"` lines.
+- **Cold-start estimates:** `estimates.json`, keyed like the saves. It ports `get/saveColdStartHistory` and is updated whenever a session ends (completed or stopped), as SessionView's `finishSession` does.
+
 ## Mid-session edit
 
 **Decision (Don, 2026-10-01): session-only.** The drill **never writes note fields itself**.
@@ -251,6 +292,8 @@ Implementation note (checked in the installed `aqt` 26.08.1 source):
 - `Browser.closeEvent` saves the note via `editor.call_after_note_saved`, then `_closeWindow` tears down.
 - The Browser is a singleton (`aqt.dialogs.open("Browser", mw, …)`) and may already be open.
 - Candidate signals for "closed / edited": the Browser window's Qt `destroyed`/`finished` signal, or `operation_did_execute` with `changes.note_text` for the card's note. To be settled in the phase that builds it.
+
+Controller side (Phase 3a): `begin_edit()` returns the card to open (or None when SessionView's Edit button would be disabled), and the Browser closing calls `apply_card_edit(front, back, extra, source)` with the card as `build` reads it now, or `cancel_edit()`. The engine's `edit_current_item` decides restart vs kept progress, as in the web app. The web app's write-back to a saved deck and its "Saved for this session only." notice don't apply.
 
 ## UI tech
 

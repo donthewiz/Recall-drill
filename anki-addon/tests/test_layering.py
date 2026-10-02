@@ -1,8 +1,9 @@
 """Import-layering rules, checked statically with ast.
 
 - engine/ is pure: no anki, aqt, PyQt*/PySide*, and nothing from anki_io or ui.
-- The top-level helper modules (storage, prompts, deck_settings) are pure the
-  same way; they may use engine/.
+- The top-level helper modules (storage, prompts, deck_settings, sources) and
+  the drill controller with its storage (controller, sessions, history_store)
+  are pure the same way: no anki, no Qt. They may use engine/ and each other.
 - anki_io/ never touches Qt; from aqt it may use aqt.operations only.
 """
 
@@ -72,7 +73,15 @@ def anki_io_violations(name: str) -> bool:
     return _is(name, "aqt") and not _is(name, "aqt.operations")
 
 
-PURE_MODULES = ("storage.py", "prompts.py", "deck_settings.py")
+PURE_MODULES = (
+    "storage.py",
+    "prompts.py",
+    "deck_settings.py",
+    "sources.py",
+    "controller.py",
+    "sessions.py",
+    "history_store.py",
+)
 
 
 def _violations(layer: str, rule: object) -> list[str]:

@@ -14,8 +14,9 @@ pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
 include = ["__init__.py", "recalldrill", "tests", "tools"]
-# tests import tools/simulate.py (the simulate() harness) as `simulate`.
-extraPaths = ["tools"]
+# tests import tools/simulate.py (the simulate() harness) as `simulate`, and the
+# controller/storage tests reuse helpers from the engine, anki_io and controller test folders.
+extraPaths = ["tools", "tests/engine", "tests/anki_io", "tests/controller"]
 exclude = [".venv", "dist", "**/__pycache__"]
 typeCheckingMode = "standard"
 # The Qt-free layers are held to strict. ui/ stays at standard because
@@ -28,6 +29,10 @@ strict = [
     "recalldrill/storage.py",
     "recalldrill/prompts.py",
     "recalldrill/deck_settings.py",
+    "recalldrill/sources.py",
+    "recalldrill/controller.py",
+    "recalldrill/sessions.py",
+    "recalldrill/history_store.py",
 ]
 
 [tool.pytest.ini_options]

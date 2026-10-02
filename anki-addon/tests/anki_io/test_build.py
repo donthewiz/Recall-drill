@@ -195,6 +195,69 @@ def test_hints_off_unless_settings_say_so(
         assert all("(" not in i["front"] for i in res.deck_items)
 
 
+def _colliding(res: BuildResult) -> dict[str, set[str]]:
+    return {
+        i["back"]: set(s.colliding_answers)
+        for i, s in zip(res.deck_items, res.sources, strict=True)
+    }
+
+
+CH2_COLLISIONS = {
+    "-dynia": {"-algia"},  # Ch 1's card counts: same pool as the hints
+    "ten/o": {"tendin/o"},
+    "tendin/o": {"ten/o"},
+    "nat/i": {"natal", "nat"},
+    "natal": {"nat/i", "nat"},
+    "nat": {"nat/i", "natal"},
+}
+
+
+def test_colliding_answers_with_hints_off(
+    col: Collection, medterm: tuple[DeckId, DeckId, int]
+) -> None:
+    _, ch2, ntid = medterm
+    _, res = run(col, ch2, None, card_ords={ntid: frozenset({1})})
+    assert not res.hints_on
+    assert all("(" not in i["front"] for i in res.deck_items)
+    assert _colliding(res) == CH2_COLLISIONS
+    assert res.hint_pool == 8
+
+
+def test_colliding_answers_with_hints_on_match(
+    col: Collection, medterm: tuple[DeckId, DeckId, int]
+) -> None:
+    _, ch2, ntid = medterm
+    _, res = run(col, ch2, STRICT, card_ords={ntid: frozenset({1})})
+    assert res.hints_on and _colliding(res) == CH2_COLLISIONS
+    assert all(len(set(s.colliding_answers)) == len(s.colliding_answers) for s in res.sources)
+
+
+def test_colliding_answers_can_be_skipped(
+    col: Collection, medterm: tuple[DeckId, DeckId, int]
+) -> None:
+    _, ch2, ntid = medterm
+    table = MappingTable(col)
+    sel = select_cards(
+        col, Scope(deck_id=ch2), SelectOptions(card_ords={ntid: frozenset({1})}), table
+    )
+    res = build_session(col, sel, None, table, {}, collisions=False)
+    assert all(s.colliding_answers == () for s in res.sources)
+    assert res.hint_pool == 0  # the pool isn't read at all
+
+
+def test_image_fronts_have_no_colliding_answers(col: Collection) -> None:
+    did = deck(col, "Med::Ch 1")
+    add_note(col, "Basic", did, {"Front": 'pain <img src="x.png">', "Back": "-dynia"})
+    add_note(col, "Basic", did, {"Front": "pain", "Back": "-algia"})
+    _, res = run(col, did)
+    assert [
+        (i["back"], s.colliding_answers) for i, s in zip(res.deck_items, res.sources, strict=True)
+    ] == [
+        ("-dynia", ()),
+        ("-algia", ()),
+    ]
+
+
 def test_n_forms_on_the_normal_direction(
     col: Collection, medterm: tuple[DeckId, DeckId, int]
 ) -> None:

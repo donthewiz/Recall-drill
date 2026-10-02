@@ -25,6 +25,9 @@ def test_config_defaults_match_web_app() -> None:
         "stem_tolerance": True,
         "ladder_mode": "cumulative",
         "cycle_order": "shuffled",
+        # Add-on only (Phase 3a): the drill controller's settings.
+        "collision_catch": True,
+        "play_audio_on_feedback": True,
     }
 
 

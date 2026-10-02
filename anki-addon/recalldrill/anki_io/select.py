@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal, cast
 
 from anki.collection import Collection, SearchNode
 from anki.decks import DeckId
@@ -108,6 +108,43 @@ class SelectOptions:
     order: OrderMode = "priority_first"
     young_ivl: int = YOUNG_IVL
     flag: int = RED_FLAG
+
+
+def scope_to_json(scope: Scope) -> dict[str, Any]:
+    """``sessions.ScopeJson``."""
+    return {"deckId": scope.deck_id, "search": scope.search}
+
+
+def scope_from_json(d: Mapping[str, Any]) -> Scope:
+    return Scope(deck_id=d.get("deckId"), search=d.get("search"))
+
+
+def options_to_json(o: SelectOptions) -> dict[str, Any]:
+    """For the session save's ``selectOptions``."""
+    return {
+        "enabled": sorted(o.enabled),
+        "card_ords": {str(k): sorted(v) for k, v in sorted(o.card_ords.items())},
+        "max_cards": o.max_cards,
+        "extra_tag": o.extra_tag,
+        "order": o.order,
+        "young_ivl": o.young_ivl,
+        "flag": o.flag,
+    }
+
+
+def options_from_json(d: Mapping[str, Any]) -> SelectOptions:
+    """Inverse of :func:`options_to_json`; unknown classes are dropped."""
+    enabled = frozenset(c for c in d.get("enabled", DEFAULT_ENABLED) if c in CARD_CLASSES)
+    ords = cast(Mapping[str, Any], d.get("card_ords") or {})
+    return SelectOptions(
+        enabled=cast(frozenset[CardClass], enabled),
+        card_ords={int(k): frozenset(int(x) for x in v) for k, v in ords.items()},
+        max_cards=d.get("max_cards"),
+        extra_tag=d.get("extra_tag"),
+        order=d.get("order", "priority_first"),
+        young_ivl=int(d.get("young_ivl", YOUNG_IVL)),
+        flag=int(d.get("flag", RED_FLAG)),
+    )
 
 
 @dataclass(frozen=True)

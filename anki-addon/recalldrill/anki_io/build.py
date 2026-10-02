@@ -26,43 +26,12 @@ from anki.decks import DeckId
 
 from ..deck_settings import DeckSettings, hints_enabled, standard_share
 from ..engine.types import DeckItem
-from ..prompts import HintEntry, compute_hints
-from .cards import CardClass, NoteCache
+from ..prompts import HintEntry, compute_hints, find_conflicts
+from ..sources import SourceRef
+from .cards import NoteCache
 from .notetypes import MappingTable, NoteMapping, answer_text, extra_html
 from .select import Candidate, Selection
 from .text import grading_text
-
-
-@dataclass(frozen=True)
-class SourceRef:
-    """Where engine item ``i`` came from, and what to display for it."""
-
-    cid: int
-    nid: int
-    ord: int
-    did: int
-    """The card's home deck (its original deck while in a filtered deck)."""
-    ntid: int
-    card_class: CardClass
-    flags: int
-    front_html: str
-    """Anki's rendered question, as-is. Still holds ``[anki:play:q:N]`` and
-    ``[[type:F]]`` placeholders for the display layer to deal with."""
-    extra_html: str
-    """The raw Extra field (anki-cards Extras carry <i>, lists and images)."""
-    answer_hash: str
-    """SHA-1 (hex) of the answer text, to notice later edits."""
-    has_audio: bool
-    """The answer side has sound or TTS (``card.answer_av_tags()``)."""
-    answer_html: str
-    """Anki's rendered answer side (``render_output().answer_text``), as-is."""
-    css: str
-    """The note type's CSS (``render_output().css``). Some cards draw their
-    masks with CSS classes only, so the display needs it."""
-    image_front: bool
-    """The front shows an image: no hint, no conflict/collision entry."""
-    hint: str = ""
-    """The disambiguation suffix appended to the front, e.g. ``" (-a___)"``."""
 
 
 @dataclass(frozen=True)
@@ -199,16 +168,22 @@ def build_session(
     mappings: MappingTable,
     hints: Mapping[str, str],
     notes: NoteCache | None = None,
+    collisions: bool = True,
 ) -> BuildResult:
-    """Everything the session and the panel need from a selection."""
+    """Everything the session and the panel need from a selection.
+
+    ``collisions``: look up each card's colliding answers (the conflict pool is
+    read even with hints off). False skips the pool when hints are off too.
+    """
     cache = notes if notes is not None else NoteCache(col)
     rows, empty = _rows(col, selection.picked, cache)
     hints_on = hints_enabled(deck_settings, standard_share(r.cand.mapping.kind for r in rows))
 
     suffixes: dict[str, str] = {}
+    colliding: dict[str, tuple[str, ...]] = {}
     flagged: list[FlaggedHint] = []
     pool_size = 0
-    if hints_on:
+    if hints_on or collisions:
         groups: dict[tuple[str, int, int], list[_Row]] = {}
         image_keys = {r.key for r in rows if r.image_front}
         for r in rows:
@@ -222,13 +197,20 @@ def build_session(
             known = {t.key: t for t in targets}
             pool = _hint_pool(col, top, group[0].cand.mapping, known, image_keys, mappings, cache)
             pool_size += len(pool)
-            result = compute_hints(targets, pool, hints)
-            suffixes.update(result.suffixes)
-            cids = {r.key: r.cand.snap.cid for r in group}
-            flagged.extend(
-                FlaggedHint(cids[t.key], t.key, t.term, t.meaning, tuple(result.conflicts[t.key]))
-                for t in result.flagged
-            )
+            if hints_on:
+                result = compute_hints(targets, pool, hints)
+                conflicts = result.conflicts
+                suffixes.update(result.suffixes)
+                cids = {r.key: r.cand.snap.cid for r in group}
+                flagged.extend(
+                    FlaggedHint(cids[t.key], t.key, t.term, t.meaning, tuple(conflicts[t.key]))
+                    for t in result.flagged
+                )
+            else:
+                conflicts = find_conflicts(targets, pool)
+            if collisions:
+                for key, terms in conflicts.items():
+                    colliding[key] = tuple(dict.fromkeys(terms))
 
     deck_items: list[DeckItem] = []
     sources: list[SourceRef] = []
@@ -256,6 +238,7 @@ def build_session(
                 css=r.css,
                 image_front=r.image_front,
                 hint=hint,
+                colliding_answers=colliding.get(r.key, ()),
             )
         )
     return BuildResult(deck_items, sources, hints_on, flagged, empty, pool_size)
