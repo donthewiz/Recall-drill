@@ -33,7 +33,7 @@ jobs:
       # The engine needs nothing else. Versions match anki-addon/requirements-dev.txt.
       - run: pip install pytest==9.1.1 pytest-cov==7.1.0 ruff==0.16.10
       - run: ruff check anki-addon
-      - run: pytest anki-addon/tests/engine anki-addon/tests/test_layering.py -q
+      - run: pytest anki-addon/tests/engine anki-addon/tests/test_layering.py anki-addon/tests/test_build.py -q
       - uses: actions/setup-node@v4
         with:
           node-version: 24
