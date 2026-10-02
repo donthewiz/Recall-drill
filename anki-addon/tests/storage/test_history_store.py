@@ -120,9 +120,10 @@ def test_tuning_lines_and_every_log(st: Storage) -> None:
     assert history_store.hard_cards(st).hard == frozenset()
 
 
-def test_handed_off_cids(st: Storage) -> None:
-    """The new-card groups of every handoff in every log; declined handoffs, A's
-    drilled scheduled cards, skipped and missing cards don't count."""
+def test_handed_off_at(st: Storage) -> None:
+    """The never-studied groups of every handoff in every log, with the latest
+    handoff's time per card; declined handoffs, already-scheduled drilled cards,
+    skipped and missing cards don't count."""
     groups = {
         "drilled_new": [1, 2],
         "drilled_scheduled": [3],
@@ -132,12 +133,35 @@ def test_handed_off_cids(st: Storage) -> None:
         "holdout_skipped": [7],
         "missing": [8],
     }
-    history_store.append_handoff(st, "10", {"type": "handoff", "sessionId": "a", "groups": groups})
+    first = "2026-10-01T15:00:00.000Z"
+    later = "2026-10-03T15:00:00.000Z"
     history_store.append_handoff(
-        st, "20", {"type": "handoff", "sessionId": "b", "groups": {"drilled_new": [9, True]}}
+        st, "10", {"type": "handoff", "sessionId": "a", "timestamp": first, "groups": groups}
+    )
+    history_store.append_handoff(
+        st,
+        "20",
+        {
+            "type": "handoff",
+            "sessionId": "b",
+            "timestamp": later,
+            "groups": {"drilled_new": [9, 1]},
+        },
+    )
+    history_store.append_handoff(
+        st, "20", {"type": "handoff", "sessionId": "e", "groups": {"siblings": [10, True]}}
     )
     history_store.append_handoff(st, "20", history_store.declined_line("c", 0))
     history_store.append_handoff(
         st, "20", {"type": "handoff", "sessionId": "d", "declined": True, "groups": groups}
     )
-    assert history_store.handed_off_cids(st) == {1, 2, 4, 5, 6, 9}
+    t1, t3 = 1_790_866_800_000, 1_791_039_600_000
+    assert history_store.handed_off_at(st) == {
+        1: t3,  # handed off twice: the later time
+        2: t1,
+        4: t1,
+        5: t1,
+        6: t1,
+        9: t3,
+        10: 0,  # no timestamp: any later rating releases it
+    }

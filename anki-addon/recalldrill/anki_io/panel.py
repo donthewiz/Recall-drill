@@ -26,7 +26,7 @@ from .. import deck_settings, sessions
 from ..addon_config import AddonConfig
 from ..deck_settings import DeckSettings
 from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY, DifficultySummary, summarize
-from ..history_store import handed_off_cids, hard_cards
+from ..history_store import handed_off_at, hard_cards
 from ..launch import resolved, session_config
 from ..pacing import DrillSpeed, minutes_text
 from ..prompts import parse_hint_overrides
@@ -37,6 +37,7 @@ from .cards import NoteCache
 from .handoff import HARD_SEARCH
 from .notetypes import MappingTable, field_names, load_overrides
 from .resume import ResumeCheck, check_resume
+from .revlog import waiting_for_anki
 from .select import (
     Scope,
     Selection,
@@ -206,7 +207,9 @@ def read_panel(
     """
     started = time.perf_counter()
     if not options.exclude_handed_off:
-        options = replace(options, exclude_handed_off=handed_off_exclusions(storage, scope, cfg))
+        options = replace(
+            options, exclude_handed_off=handed_off_exclusions(col, storage, scope, cfg)
+        )
     table = MappingTable(col, load_overrides(storage))
     notes = NoteCache(col)
     selection = select_cards(col, scope, options, table, notes)
@@ -316,15 +319,18 @@ def hard_exclusions(storage: Storage, scope: Scope) -> frozenset[int]:
     return hard_cards(storage).not_hard
 
 
-def handed_off_exclusions(storage: Storage, scope: Scope, cfg: AddonConfig) -> frozenset[int]:
-    """The handed-off cards a selection leaves out while still new (config
-    ``exclude_handed_off_new``): every handoff's new cards, for deck scopes and
-    searches, but not the ``tag:rd::hard`` scope (Don asked for those cards)."""
+def handed_off_exclusions(
+    col: Collection, storage: Storage, scope: Scope, cfg: AddonConfig
+) -> frozenset[int]:
+    """The handed-off cards a selection leaves out (config ``exclude_handed_off_new``):
+    every handoff's cards that Anki hasn't rated since (``select_cards`` also lets
+    suspended ones through), for deck scopes and searches, but not the
+    ``tag:rd::hard`` scope (Don asked for those cards)."""
     if not cfg.exclude_handed_off_new:
         return frozenset()
     if scope.search is not None and scope.search.strip() == HARD_SEARCH:
         return frozenset()
-    return handed_off_cids(storage)
+    return waiting_for_anki(col, handed_off_at(storage))
 
 
 def save_hint(storage: Storage, key: str, hint: str | None) -> None:

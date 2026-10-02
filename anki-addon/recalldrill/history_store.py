@@ -43,6 +43,7 @@ from .engine.history import build_history_entry
 from .engine.items import MIN_WORDS_TO_CHUNK, min_words_for, reps_for
 from .engine.jscompat import js_iso_string
 from .engine.types import SessionState
+from .measure import iso_ms
 from .sources import SourceRef
 from .storage import ESTIMATES, HISTORY_DIR, Storage
 
@@ -230,15 +231,17 @@ def hard_cards(storage: Storage) -> HardCards:
 
 
 HANDED_OFF_GROUPS = ("drilled_new", "siblings", "holdout", "holdout_siblings")
-"""The handoff line's groups that go to Anki as new cards (handoff B's drilled
-cards stay new; siblings and holdout cards always do)."""
+"""The handoff line's groups of cards that had never been studied in Anki: the
+drilled new cards (B keeps them new, A makes them reviews due tomorrow), the
+siblings and the holdout cards."""
 
 
-def handed_off_cids(storage: Storage) -> frozenset[int]:
-    """Every card a handoff (declined ones aside) sent to Anki as a new card, in
-    any history log. Selection leaves out the ones still new (``SelectOptions.
-    exclude_handed_off``): they are waiting for their first Anki review."""
-    out: set[int] = set()
+def handed_off_at(storage: Storage) -> dict[int, int]:
+    """Card id -> its latest handoff's time (epoch ms; 0 if the line has none),
+    for every card a handoff (declined ones aside) sent to Anki from
+    :data:`HANDED_OFF_GROUPS`, in any history log. Selection leaves a card out
+    until Anki has rated it since (``revlog.waiting_for_anki``)."""
+    out: dict[int, int] = {}
     for name in storage.list_names(HISTORY_DIR, ".jsonl"):
         for raw in storage.read_jsonl(name):
             if not isinstance(raw, dict):
@@ -249,11 +252,13 @@ def handed_off_cids(storage: Storage) -> frozenset[int]:
             groups = line.get("groups")
             if not isinstance(groups, dict):
                 continue
+            stamp = line.get("timestamp")
+            at = (iso_ms(stamp) if isinstance(stamp, str) else None) or 0
             for key in HANDED_OFF_GROUPS:
                 for cid in cast(list[Any], cast(dict[str, Any], groups).get(key) or []):
                     if isinstance(cid, int) and not isinstance(cid, bool):
-                        out.add(cid)
-    return frozenset(out)
+                        out[cid] = max(at, out.get(cid, 0))
+    return out
 
 
 TUNING_KEY = "tuning"
