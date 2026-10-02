@@ -12,6 +12,12 @@ The report **suggests**. A setting changes only when Don presses a
 suggestion's Apply and confirms a dialog that shows the evidence; that writes
 the add-on's global default and a ``type: "tuning"`` history line
 (:func:`tuning_line`).
+
+Phase 6: a card's ``encodeReps`` is the one it was drilled with (the session
+line's per-card ``encodeReps``, set by the FSRS difficulty adjustment; the
+session's for older lines), so the ``encodeReps`` breakdown and suggestion see
+per-card variation. The "adjustment" breakdown groups cards by ``+1`` / ``0`` /
+``−1`` against the session's reps.
 """
 
 from __future__ import annotations
@@ -95,6 +101,9 @@ class CardRow:
     words: int | None = None
     chunks: int | None = None
     encode_reps: int | None = None
+    """The reps this card was drilled with (its own, else the session's)."""
+    adjustment: int | None = None
+    """+1 / 0 / -1 against the session's reps (Phase 6); None on older lines."""
     card_class: str | None = None
     mode: str | None = None
     attempts: int | None = None
@@ -236,6 +245,8 @@ def _ints(v: object) -> list[int]:
 class _SessionCard:
     nid: int | None
     card_class: str | None
+    encode_reps: int | None
+    adjustment: int | None
     words: int | None
     chunks: int | None
     attempts: int | None
@@ -266,6 +277,8 @@ def _session(line: Mapping[str, Any]) -> _Session:
         by_cid[cid] = _SessionCard(
             nid=_int(a.get("nid")),
             card_class=_str(a.get("card_class")),
+            encode_reps=_int(a.get("encodeReps")),
+            adjustment=_int(a.get("adjust")),
             words=_int(c.get("words")),
             chunks=_int(c.get("chunks")),
             attempts=_int(c.get("attempts")),
@@ -363,7 +376,12 @@ def card_rows(
                     session_id=sid,
                     words=sc.words if sc else None,
                     chunks=sc.chunks if sc else None,
-                    encode_reps=sess.encode_reps if sess else None,
+                    encode_reps=(
+                        sc.encode_reps
+                        if sc is not None and sc.encode_reps is not None
+                        else (sess.encode_reps if sess else None)
+                    ),
+                    adjustment=sc.adjustment if sc else None,
                     card_class=sc.card_class if sc else None,
                     mode=mode,
                     attempts=sc.attempts if sc else None,
@@ -470,6 +488,19 @@ def chunks_bucket(chunks: int | None) -> str:
 
 
 CHUNK_BUCKETS = ("none", "2", "3", "4+", "unknown")
+
+
+def adjustment_bucket(adjustment: int | None) -> str:
+    if adjustment is None:
+        return "unknown"
+    if adjustment > 0:
+        return "+1"
+    if adjustment < 0:
+        return "−1"
+    return "0"
+
+
+ADJUSTMENT_BUCKETS = ("+1", "0", "−1", "unknown")
 
 
 def _breakdown(
@@ -610,6 +641,10 @@ def build_report(
         ("answer words", _breakdown(drilled, lambda r: words_bucket(r.words), m, WORD_BUCKETS)),
         ("chunks", _breakdown(drilled, lambda r: chunks_bucket(r.chunks), m, CHUNK_BUCKETS)),
         ("encodeReps", _breakdown(drilled, lambda r: str(r.encode_reps or "unknown"), m)),
+        (
+            "adjustment (+1 / 0 / −1)",
+            _breakdown(drilled, lambda r: adjustment_bucket(r.adjustment), m, ADJUSTMENT_BUCKETS),
+        ),
         ("card class", _breakdown(drilled, lambda r: r.card_class or "unknown", m)),
         ("handoff mode", _breakdown(drilled, lambda r: r.mode or "unknown", m)),
         ("deck", _breakdown(drilled, lambda r: r.deck, m)),
@@ -783,6 +818,7 @@ CSV_COLUMNS = (
     "words",
     "chunks",
     "encode_reps",
+    "adjustment",
     "card_class",
     "handoff_mode",
     "attempts",
@@ -827,6 +863,7 @@ def to_csv(r: Report, tz: tzinfo | None = None) -> str:
                     row.words,
                     row.chunks,
                     row.encode_reps,
+                    row.adjustment,
                     row.card_class,
                     row.mode,
                     row.attempts,

@@ -54,7 +54,7 @@ from .engine.estimate import compute_cumulative_cold_start_multiplier, format_co
 from .engine.estimate import compute_remaining_cold_start_range as _remaining_range
 from .engine.grading import exact_match
 from .engine.history import rank_hardest_cards
-from .engine.items import partition_into_batches
+from .engine.items import item_overrides, partition_into_batches
 from .engine.jscompat import js_round, js_trim
 from .engine.progress import compute_session_progress
 from .engine.session import (
@@ -72,6 +72,7 @@ from .engine.types import (
     DeckItem,
     DrillItem,
     Feedback,
+    ItemOverrides,
     SessionState,
     Trial,
     Verdict,
@@ -1231,3 +1232,13 @@ class DrillController:
             deck.append(card)
             sources.append(self._sources[item_id])
         return deck, sources
+
+    def drill_again_overrides(self) -> list[ItemOverrides]:
+        """The per-card overrides of :meth:`drill_again_input`'s cards, in the same
+        order: the same Anki cards keep their reps and chunk threshold."""
+        out: list[ItemOverrides] = []
+        for item_id in self.done_summary().drill_again:
+            it = self._item(item_id)
+            assert it is not None
+            out.append(item_overrides(it))
+        return out

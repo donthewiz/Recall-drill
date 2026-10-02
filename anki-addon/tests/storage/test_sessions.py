@@ -198,9 +198,10 @@ def test_completion_writes_history_once_and_waits_for_the_handoff(st: Storage) -
     assert line["finishedAt"].endswith("Z") and line["startedAt"].endswith("Z")
     assert line["stats"]["attempts"] > 0
     assert [c["front"] for c in line["cards"]] == ["heart", "liver"]
+    per_card = {"d": None, "s": None, "encodeReps": 1, "minWordsToChunk": 8, "adjust": 0}
     assert line["anki"] == [
-        {"cid": 1000, "nid": 2000, "ord": 0, "did": 1, "card_class": "new"},
-        {"cid": 1001, "nid": 2001, "ord": 0, "did": 1, "card_class": "new"},
+        {"cid": 1000, "nid": 2000, "ord": 0, "did": 1, "card_class": "new", **per_card},
+        {"cid": 1001, "nid": 2001, "ord": 0, "did": 1, "card_class": "new", **per_card},
     ]
     assert line["encode"] == {
         "encodeReps": 1,
@@ -389,3 +390,46 @@ def test_drill_again_keeps_the_threshold(st: Storage) -> None:
     _finish(ctrl)
     again, _ = start_drill_again(st, ctrl, store, ctrl.settings, Clock())
     assert again.state["config"].get("minWordsToChunk") == 4
+
+
+def test_overrides_survive_save_resume_and_drill_again(st: Storage) -> None:
+    """Phase 6: per-card overrides are stored on the items, so the save, a
+    resume and a drill-again of the same cards keep them."""
+    overrides: list[Any] = [{"encodeRepsOverride": 3, "minWordsToChunkOverride": 4}, {}, {}]
+    ctrl, store = start_session(
+        st,
+        key=deck_key(42),
+        deck_items=SHORT,
+        sources=[source(i) for i in range(len(SHORT))],
+        config=config(encodeReps=1),
+        scope=scope_json(deck_id=42),
+        select_options=OPTIONS,
+        deck_settings=DECK_SETTINGS,
+        hints=True,
+        settings=ControllerSettings(deck_name="Med Term"),
+        now_ms=Clock(),
+        overrides=overrides,
+    )
+    ctrl.start()
+    _answer_correctly(ctrl)
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    assert saved["items"][0].get("encodeRepsOverride") == 3
+    assert "encodeRepsOverride" not in saved["items"][1]
+    resumed, _ = open_saved(st, "deck-42", saved, ControllerSettings(), Clock())
+    first = resumed.state["items"][0]
+    assert (first.get("encodeRepsOverride"), first.get("minWordsToChunkOverride")) == (3, 4)
+
+    # Miss card 0 (and only card 0) in the Final check, then drill it again.
+    for _ in range(200):
+        if ctrl.state["phase"] == "final" and not ctrl.view().buttons.continue_:
+            trial = select_trial(ctrl.state)
+            assert trial is not None
+            if trial["itemId"] == 0:
+                break
+        _answer_correctly(ctrl)
+    ctrl.submit("nope")
+    _finish(ctrl)
+    again, _ = start_drill_again(st, ctrl, store, ctrl.settings, Clock())
+    (item,) = again.state["items"]
+    assert (item.get("encodeRepsOverride"), item.get("minWordsToChunkOverride")) == (3, 4)

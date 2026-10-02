@@ -30,6 +30,8 @@ class Drilled:
     reveals: int = 0
     card_class: str = "suspended_new"
     final_misses: int = 0
+    reps: int | None = None
+    """Phase 6: the card's own ``encodeReps`` (None: an older line without it)."""
 
     @property
     def nid(self) -> int:
@@ -70,6 +72,17 @@ def session_line(
         ],
         "anki": [
             {"cid": c.cid, "nid": c.nid, "ord": 0, "did": did, "card_class": c.card_class}
+            | (
+                {}
+                if c.reps is None
+                else {
+                    "encodeReps": c.reps,
+                    "adjust": (c.reps > encode_reps) - (c.reps < encode_reps),
+                    "minWordsToChunk": t,
+                    "d": None,
+                    "s": None,
+                }
+            )
             for c in cards
         ],
         "encode": {

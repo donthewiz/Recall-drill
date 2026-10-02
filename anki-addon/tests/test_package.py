@@ -42,6 +42,14 @@ def test_config_defaults_match_web_app() -> None:
         "holdout_pct": 0,
         "holdout_exclude": True,
         "min_n": 30,
+        # Add-on only (Phase 6): per-card reps and chunking from FSRS difficulty.
+        "difficulty_adjust": True,
+        "hard_d": 7,
+        "easy_d": 3,
+        "min_encode_reps": 2,
+        "hard_chunk_shift": 2,
+        "skip_min_stability": 30,
+        "skip_max_difficulty": 5,
     }
 
 

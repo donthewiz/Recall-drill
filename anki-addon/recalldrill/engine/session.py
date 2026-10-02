@@ -34,6 +34,12 @@ TS name                         Python name
 ``editCurrentItem``             ``edit_current_item``
 ==============================  ================================
 
+Add-on only (docs/DECISIONS.md, "Engine extensions"): every ``encodeReps`` read
+for a card goes through :func:`.items.reps_for` (the card's
+``encodeRepsOverride``, else the session's), and :func:`edit_current_item`
+keeps a card's overrides and chunks with its own threshold. With no overrides
+set, this is the TS behavior.
+
 Every ``Math.random()`` in the TS code is a :func:`.rand.random` call here, at
 the same point and in the same order (the cycle's ``2 + floor(random * 2)``
 gaps, and every ``shuffle``).
@@ -60,8 +66,11 @@ from .items import (
     chunk_text,
     culprit_half,
     find_all_culprit_chunks,
+    item_overrides,
+    min_words_for,
     partition_into_batches,
     render_first_letter_cue,
+    reps_for,
     required_reps_for_window,
     select_next_encode_item,
     shuffle,
@@ -620,7 +629,8 @@ def _grade_and_advance(
             typed, target, lenient=True, stem_tolerance=stem_tolerance, strict_punctuation=strict
         )
 
-    encode_reps = state["config"]["encodeReps"]
+    # Add-on extension: the card's own encodeReps (the session's when unset).
+    encode_reps = reps_for(it, state["config"])
 
     if state["phase"] == "encode":
         chunks = it["chunks"]
@@ -1163,8 +1173,9 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
         return item
 
     strict = state["config"].get("strictPunctuation")
-    # Add-on extension: the session's own threshold; absent, the TS constant.
-    min_words = state["config"].get("minWordsToChunk", MIN_WORDS_TO_CHUNK)
+    # Add-on extensions: the card's own threshold, else the session's, else
+    # (both absent) the TS constant.
+    min_words = min_words_for(old, state["config"].get("minWordsToChunk", MIN_WORDS_TO_CHUNK))
     answer_changed = not exact_match(old["back"], back, False if strict is None else strict)
     if not answer_changed:
         # An untouched back keeps its stored chunks as-is.
@@ -1195,6 +1206,8 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
             state["config"]["chunkDifficulty"],
             state["config"]["ladderMode"],
             min_words,
+            # A rebuilt card is the same Anki card: it keeps its overrides.
+            item_overrides(old),
         ),
         "status": "encoding",
     }

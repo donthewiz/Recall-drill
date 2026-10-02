@@ -215,7 +215,7 @@ So the name rule only blocked drillable cards. The type-wide sampled-marker rule
 - Cloze: the field of the first `{{cloze:F}}` (or `{{type:cloze:F}}`) on the front; answer = `extract_cloze_for_typing(field, card.ord + 1)`; Extra = `Extra` or `Back Extra`. Never `FullContext` or `Source`.
 - Overrides in `mappings.json` win, and may name any field (a reference field too). `ineligible: true` excludes the template ("marked ineligible"). No override makes stock IO drillable: it holds shapes, not text. An override naming a missing field leaves the template unmapped, so the panel shows it.
 
-**Classes** (`cards.py`, first match wins): `in_filtered_deck`, `buried`, `flagged` (red by default), `leech`, `suspended_new`, `suspended_review`, `lapsed`, `learning`, `new`, `young` (< 21 days), `mature`. Picked by default: flagged, leech, suspended_new, lapsed, new, young.
+**Classes** (`cards.py`, first match wins): `in_filtered_deck`, `buried`, `flagged` (red by default), `leech`, `stable` (Phase 6, see "Difficulty adjustment"), `suspended_new`, `suspended_review`, `lapsed`, `learning`, `new`, `young` (< 21 days), `mature`. Picked by default: flagged, leech, suspended_new, lapsed, new, young.
 
 **Selection** (`select.py`):
 - Ineligible, counted by reason, first match wins: image occlusion, marked ineligible, unmapped, empty answer, then (unless that class is switched on) filtered deck and buried. Content reasons come first because they don't go away by themselves.
@@ -443,6 +443,42 @@ The setup panel's other ways out of a pending handoff also write the declined li
 - Why: applying a `MIN_WORDS_TO_CHUNK` suggestion from the tuning report needs the engine to honor it mid-session, not just at build.
 - Proof: the golden and simulate parity suites pass unchanged (they never set the key), the goldens regenerate with no diff, and `tests/engine/test_min_words_to_chunk_ext.py` checks the set case (edit-restart rechunks with the session's T, a case-only edit keeps progress under it) and that an absent key equals the constant.
 
+**`DrillItem["encodeRepsOverride"]` and `DrillItem["minWordsToChunkOverride"]`** (Phase 6). Python-only, optional, per card. **Both absent ⇒ identical** to the TS engine.
+- What: a card's own `encodeReps` and its own chunk threshold, in place of the session's.
+- One helper, `items.reps_for(item, config)` = `item.get("encodeRepsOverride", config["encodeReps"])` (it also takes the number itself), is the only way the engine reads `encodeReps` for a card:
+  - `session._grade_and_advance`: the full stage, the combine windows (`required_reps_for_window(…, reps_for(it, config))` in cumulative mode, `reps_for` on every window in exhaustive mode), and remediation; the "N of M streaks" feedback says the card's M;
+  - `estimate.compute_minimum_trials` (so `compute_cumulative_cold_start_multiplier` and `compute_remaining_cold_start_range`, which call it, follow);
+  - `progress.compute_item_progress` (so `compute_session_progress` follows).
+  The session-level reads that are about the session, not a card, are unchanged: `history.build_history_entry`'s `config.encodeReps`, `history_store.encode_settings`, the controller's save (`encodeReps`), `sessions.resume`.
+- `items.min_words_for(item, session_T)`: `build_item(…, overrides)` chunks with the card's threshold (the override wins over the session value from Phase 5); `edit_current_item` uses it for both its rechunk check and its restart rebuild.
+- `build_items(…, overrides=[…])` and `build_item(…, overrides)` store the fields on the item. `normalize_item` threads both through (a resumed card keeps them). `edit_current_item`'s restart path keeps them (`items.item_overrides(old)`): a rebuilt card is the same Anki card.
+- Who sets them: `difficulty.adjust_card` (see "Difficulty adjustment"), through `build.BuildResult.adjustments` (a side table parallel to `deck_items`) → `launch.start(…, overrides)` → `sessions.new_session_state` → `build_items`. A drill-again session copies the parent items' overrides (`DrillController.drill_again_overrides`).
+- Proof: the golden and simulate parity suites pass unchanged (they never set the fields); `tests/engine/test_difficulty_overrides_ext.py` checks a full card needing its own reps, the final combine window (cumulative) and every window (exhaustive), remediation, an edit restart and an in-place edit keeping both fields, progress, and `compute_minimum_trials` with mixed overrides equal to a perfect `simulate()` run's `attempts` (the `coldStartEstimate.consistency.spec.ts` rule, 4 decks × reps 1/3/5 × both ladders); `tests/storage/test_sessions.py` and `tests/anki_io/test_difficulty_build.py` check save, resume and drill-again.
+- `tools/simulate.py` is unchanged by default (byte-identical to `npm run simulate`). `--difficulty-overrides` adds a **Python-only** section: the scoreboard's decks and learners with cards 0–3 at +1 (one more rep, T − 2), 4–7 unchanged, 8–11 at −1.
+
+## Difficulty adjustment (Phase 6)
+
+Cards that already have review history have an FSRS difficulty. `recalldrill/difficulty.py` (pure) turns it into the engine's per-card overrides. **New cards, most of what gets drilled, have no FSRS data and are unchanged**: they keep the word-count and `chunkDifficulty` rules exactly. The `chunkDifficulty` model and remediation are untouched.
+
+- **Input:** a `CardSnapshot` (`card_state.py`, pure; `anki_io/cards.py` re-exports it), whose `fsrs_d` (1–10) and `fsrs_s` (days) come from `card.memory_state` directly. The 0–1 `prop:d` search scale is never used.
+- **Settings** (`config.json`; defaults): `difficulty_adjust` **true** (each deck's "Adjust reps by difficulty" toggle, `deck_settings` key `difficultyAdjust`, wins), `hard_d` **7**, `easy_d` **3**, `min_encode_reps` **2**, `hard_chunk_shift` **2**, `skip_min_stability` **30**, `skip_max_difficulty` **5**.
+- **Rules** (first match wins; R = the deck's reps, T = the session's threshold):
+
+| Card | Reps | Threshold |
+|---|---|---|
+| FSRS, `D ≥ hard_d` | R + 1 | `max(4, T − hard_chunk_shift)`, never above T |
+| FSRS, `D ≤ easy_d` | `max(R − 1, min(min_encode_reps, R), 1)`: a deck at 1 stays at 1 | T |
+| FSRS, otherwise | R | T |
+| No FSRS, `reps > 0`, and `lapses ≥ 3` or `0 < factor < 2000` or tag `leech` | R + 1 | T |
+| No FSRS, `reps > 0`, otherwise | R | T |
+| New card (`reps == 0`, no FSRS) | R | T |
+
+  Only values that differ from the session's become overrides. With FSRS present, only D counts (lapses and the leech tag don't add a rep).
+- **The `stable` class** (`classify`, right after `leech`): FSRS present, `S ≥ skip_min_stability`, `D ≤ skip_max_difficulty`, not tagged `leech`. Off by default in selection (the §7.1 trial saver): the panel counts the stable cards it skips. Ranked after `young` when switched on.
+- **Panel:** in the card section, "Difficulty-adjusted: X cards +1 rep, Y cards −1 rep, Z cards chunk earlier. New cards (N): no FSRS data, unchanged." and, when any are skipped, "Stable: K cards skipped (…). Tick “stable” to drill them." The toggle sits with the deck's settings.
+- **History:** each card of the session line's `anki` block also records `d`, `s` (None without FSRS), `encodeReps` and `minWordsToChunk` (what the card was drilled with) and `adjust` (+1 / 0 / −1 against the session's `encodeReps`).
+- **Tuning report** (`tuning.py`; the prompt said `measure.py`, but the breakdowns and suggestions live in `tuning.py`, and `measure.py` stays the metric alone): a card's `encodeReps` is its own (older lines: the session's), so the `encodeReps` breakdown and suggestion use the **effective** reps per card; a new breakdown "adjustment (+1 / 0 / −1)"; the CSV gains an `adjustment` column.
+
 ## Measurement and holdout (Phase 5)
 
 **Decision (Don, 2026-10-02, revised before merge): holdout off by default, with a per-deck control.** `config.json` and the code both default `holdout_pct` to **0** (off). Each deck turns it on with **Holdout %** (0–50) in the setup panel's card section, saved with the deck's other settings (`deck_settings.json`, `holdoutPct`); the config value is only the default for decks without their own. (The first decision was "on at 15%" in `config.json`; replaced.)
@@ -484,7 +520,7 @@ Tools → **Recall Drill: tuning report** (`ui/tuning_dialog.py`). `anki_io/revl
 
 **Suggestions** (rule-based, at most one per parameter, always shown with the numbers that triggered them):
 - `MIN_WORDS_TO_CHUNK` (T = config `min_words_to_chunk`): unchunked cards with `words ∈ [T−3, T]` vs chunked cards with `words ∈ [T+1, T+4]` (chunked = the session actually chunked them). Unchunked CI lower bound above the chunked CI upper bound → **T − 2** (at least 1). CIs overlap and chunked cards cost ≥ 25% more trials per word (total attempts / total words per group) → **T + 2**. Otherwise no change. Either group under `min_n`: no suggestion. Always with: *"These groups differ in answer length, not just chunking; treat this as a hint, not proof."*
-- `encodeReps` (current = config `encode_reps`): only when ≥ 2 values each reach `min_n`. The suggestion is the **lowest** such value that is not significantly worse (its CI lower bound above the upper bound) than any higher one: a lower value whose CI overlaps a higher one's wins (fewer trials); a significantly worse lower value loses to the higher one. Otherwise "insufficient variation", the normal state until Phase 6's per-card overrides create variation.
+- `encodeReps` (current = config `encode_reps`): only when ≥ 2 values each reach `min_n`. The suggestion is the **lowest** such value that is not significantly worse (its CI lower bound above the upper bound) than any higher one: a lower value whose CI overlaps a higher one's wins (fewer trials); a significantly worse lower value loses to the higher one. Otherwise "insufficient variation". Since Phase 6 the values are per card (the difficulty adjustment's effective reps), which is what creates the variation.
 
 **Apply** (per actionable suggestion): a confirmation shows old → new, the verdict, the evidence and the caveat; for `encodeReps` it also lists the decks whose saved "Blind typings required" differs (a deck's saved value wins over the default). Yes writes the add-on's global default through `addonManager.writeConfig` (`min_words_to_chunk` or `encode_reps`) and appends `{"type": "tuning", "timestamp", "parameter", "configKey", "old", "new", "verdict", "evidence", "deckFilter"}` to `history/tuning.jsonl`. Nothing changes without that click and confirmation. New values apply to sessions started afterwards.
 

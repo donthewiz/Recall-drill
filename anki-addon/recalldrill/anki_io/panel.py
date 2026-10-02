@@ -21,6 +21,7 @@ from anki.collection import Collection
 from .. import deck_settings, sessions
 from ..addon_config import AddonConfig
 from ..deck_settings import DeckSettings
+from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY, DifficultySummary, summarize
 from ..engine.estimate import (
     ColdStartEstimate,
     ExposureLevel,
@@ -29,11 +30,11 @@ from ..engine.estimate import (
 )
 from ..engine.items import MIN_WORDS_TO_CHUNK
 from ..history_store import get_cold_start_history, hard_cards
-from ..launch import session_config
+from ..launch import resolved, session_config
 from ..prompts import parse_hint_overrides
 from ..sessions import SaveStatus
 from ..storage import HINTS, Storage
-from .build import BuildResult, build_session
+from .build import BuildResult, DifficultyInputs, build_session
 from .cards import NoteCache
 from .handoff import HARD_SEARCH
 from .notetypes import MappingTable, field_names, load_overrides
@@ -97,6 +98,14 @@ class PanelData:
     select_options: dict[str, Any] = field(default_factory=dict[str, Any])
     holdout: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     """The held-out cards (``holdout_refs``), for the session save."""
+    difficulty: DifficultySummary | None = None
+    """The difficulty adjustment's counts (Phase 6)."""
+
+    @property
+    def stable_skipped(self) -> int:
+        """Eligible ``stable`` cards left out because the class is off."""
+        sel = self.selection
+        return 0 if "stable" in sel.options.enabled else sel.eligible_counts.get("stable", 0)
 
     @property
     def drillable(self) -> int:
@@ -204,8 +213,19 @@ def read_panel(
         else None
     )
     overrides = parse_hint_overrides(storage.read_json(HINTS, {}))
+    r = resolved(settings, cfg)
+    difficulty = DifficultyInputs(
+        cfg.difficulty(r["difficultyAdjust"]), r["encodeReps"], cfg.min_words_to_chunk
+    )
     build = build_session(
-        col, selection, settings, table, overrides, notes, collisions=cfg.collision_catch
+        col,
+        selection,
+        settings,
+        table,
+        overrides,
+        notes,
+        collisions=cfg.collision_catch,
+        difficulty=difficulty,
     )
     key = scope_key(scope)
     history = get_cold_start_history(storage, key)
@@ -237,6 +257,7 @@ def read_panel(
         seconds=time.perf_counter() - started,
         select_options=options_to_json(options),
         holdout=holdout_refs(selection),
+        difficulty=summarize(build.adjustments, difficulty.settings.adjust),
     )
 
 
@@ -265,6 +286,8 @@ def options_for(
     holdout_pct: int = 0,
     holdout_salt: str = "",
     exclude_holdout_tag: bool = False,
+    skip_min_stability: float = SKIP_MIN_STABILITY,
+    skip_max_difficulty: float = SKIP_MAX_DIFFICULTY,
 ) -> SelectOptions:
     """``SelectOptions`` with the template filter taken from the deck settings."""
     return SelectOptions(
@@ -277,6 +300,8 @@ def options_for(
         exclude_holdout_tag=exclude_holdout_tag,
         holdout_pct=holdout_pct,
         holdout_salt=holdout_salt,
+        skip_min_stability=skip_min_stability,
+        skip_max_difficulty=skip_max_difficulty,
     )
 
 

@@ -16,7 +16,7 @@ from . import deck_settings, sessions
 from .addon_config import AddonConfig
 from .controller import ControllerSettings, DrillController
 from .deck_settings import DeckSettings, ResolvedSettings
-from .engine.types import DeckItem
+from .engine.types import DeckItem, ItemOverrides
 from .sessions import NewSessionConfig, ScopeJson, SessionStore
 from .sources import SourceRef
 from .storage import Storage
@@ -36,6 +36,7 @@ def config_defaults(cfg: AddonConfig) -> ResolvedSettings:
         "cycleOrder": cfg.cycle_order,
         "card_ords": {},
         "holdoutPct": cfg.holdout_pct,
+        "difficultyAdjust": cfg.difficulty_adjust,
     }
 
 
@@ -84,10 +85,13 @@ def start(
     cfg: AddonConfig,
     clock: Callable[[], int] = now_ms,
     holdout: Sequence[Mapping[str, Any]] = (),
+    overrides: Sequence[ItemOverrides | None] = (),
 ) -> tuple[DrillController, SessionStore]:
     """Start: save the deck's settings, then a fresh session (overwriting any
     save under the scope's key). ``holdout``: the cards the selection held out
-    (recorded in the save, handed off as new cards). Raises ``ValueError`` on 0 cards."""
+    (recorded in the save, handed off as new cards). ``overrides``: per card,
+    parallel to ``deck_items`` (the FSRS difficulty adjustment). Raises
+    ``ValueError`` on 0 cards."""
     if not deck_items:
         raise ValueError("nothing to drill")
     if settings_did is not None:
@@ -105,6 +109,7 @@ def start(
         settings=controller_settings(cfg, deck_name),
         now_ms=clock,
         holdout=holdout,
+        overrides=overrides,
     )
 
 

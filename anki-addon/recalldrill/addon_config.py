@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from .deck_settings import HOLDOUT_MAX_PCT
+from .difficulty import DifficultySettings
 from .engine.items import MIN_WORDS_TO_CHUNK
 from .engine.types import CycleOrder, LadderMode
 
@@ -46,6 +47,32 @@ class AddonConfig:
     """Leave cards tagged ``rd::holdout`` out of every selection."""
     min_n: int = 30
     """The tuning report's minimum sample per compared group."""
+    difficulty_adjust: bool = True
+    """Default for a deck's "Adjust reps by difficulty" (Phase 6)."""
+    hard_d: float = 7
+    """FSRS difficulty (1-10) at or above which a card gets one more rep and chunks earlier."""
+    easy_d: float = 3
+    """FSRS difficulty at or below which a card gets one fewer rep."""
+    min_encode_reps: int = 2
+    """An easy card's reps never go below this (nor below the deck's own, if lower)."""
+    hard_chunk_shift: int = 2
+    """A hard card's chunk threshold is the session's minus this (never under 4)."""
+    skip_min_stability: float = 30
+    """The ``stable`` class: FSRS stability at least this many days ..."""
+    skip_max_difficulty: float = 5
+    """... and difficulty at most this."""
+
+    def difficulty(self, adjust: bool | None = None) -> DifficultySettings:
+        """The difficulty rules; ``adjust`` (the deck's toggle) wins over the default."""
+        return DifficultySettings(
+            adjust=self.difficulty_adjust if adjust is None else adjust,
+            hard_d=self.hard_d,
+            easy_d=self.easy_d,
+            min_encode_reps=self.min_encode_reps,
+            hard_chunk_shift=self.hard_chunk_shift,
+            skip_min_stability=self.skip_min_stability,
+            skip_max_difficulty=self.skip_max_difficulty,
+        )
 
 
 DEFAULT_CONFIG = AddonConfig()
@@ -56,6 +83,13 @@ def _int(value: object, default: int, lo: int, hi: int) -> int:
         return default
     n = int(value)
     return n if lo <= n <= hi else default
+
+
+def _float(value: object, default: float, lo: float, hi: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return default
+    x = float(value)
+    return x if lo <= x <= hi else default
 
 
 def _bool(value: object, default: bool) -> bool:
@@ -89,4 +123,11 @@ def parse_config(raw: object) -> AddonConfig:
         holdout_pct=_int(d.get("holdout_pct"), dc.holdout_pct, 0, HOLDOUT_MAX_PCT),
         holdout_exclude=_bool(d.get("holdout_exclude"), dc.holdout_exclude),
         min_n=_int(d.get("min_n"), dc.min_n, 1, 100_000),
+        difficulty_adjust=_bool(d.get("difficulty_adjust"), dc.difficulty_adjust),
+        hard_d=_float(d.get("hard_d"), dc.hard_d, 1, 10),
+        easy_d=_float(d.get("easy_d"), dc.easy_d, 1, 10),
+        min_encode_reps=_int(d.get("min_encode_reps"), dc.min_encode_reps, 1, 10),
+        hard_chunk_shift=_int(d.get("hard_chunk_shift"), dc.hard_chunk_shift, 0, 100),
+        skip_min_stability=_float(d.get("skip_min_stability"), dc.skip_min_stability, 0, 1_000_000),
+        skip_max_difficulty=_float(d.get("skip_max_difficulty"), dc.skip_max_difficulty, 1, 10),
     )

@@ -3,7 +3,9 @@
 Keyed by deck id. Keys: ``strictPunctuation``, ``stemTolerance``,
 ``batchSize``, ``encodeReps``, ``hints``, ``cycleOrder``, ``card_ords``,
 ``holdoutPct`` (Phase 5: the deck's holdout percentage, 0-50; the config's
-``holdout_pct`` is the default). A
+``holdout_pct`` is the default), ``difficultyAdjust`` (Phase 6: per-card reps
+and chunking from FSRS difficulty; the config's ``difficulty_adjust`` is the
+default). A
 deck without saved settings uses :data:`DEFAULTS` (or the add-on config's, via
 ``resolve``'s ``base``); for a terminology-looking deck,
 :func:`propose_terminology_settings` suggests better ones, which the setup
@@ -36,6 +38,8 @@ class DeckSettings(TypedDict):
     """Template filter: note type id (as a string, for JSON) -> template ords."""
     holdoutPct: NotRequired[int]
     """Holdout percentage for this deck's sessions (0 = off)."""
+    difficultyAdjust: NotRequired[bool]
+    """Per-card encode reps and chunk threshold from FSRS difficulty (``difficulty.py``)."""
 
 
 class ResolvedSettings(TypedDict):
@@ -46,6 +50,7 @@ class ResolvedSettings(TypedDict):
     cycleOrder: CycleOrder
     card_ords: dict[str, list[int]]
     holdoutPct: int
+    difficultyAdjust: bool
 
 
 HOLDOUT_MAX_PCT = 50
@@ -60,6 +65,7 @@ DEFAULTS: ResolvedSettings = {
     "cycleOrder": "shuffled",
     "card_ords": {},
     "holdoutPct": 0,
+    "difficultyAdjust": True,
 }
 
 TERMINOLOGY_MAX_WORDS = 3
@@ -75,7 +81,7 @@ def sanitize(raw: object) -> DeckSettings:
     if not isinstance(raw, dict):
         return out
     d = {str(k): v for k, v in cast(dict[object, Any], raw).items()}
-    for key in ("strictPunctuation", "stemTolerance", "hints"):
+    for key in ("strictPunctuation", "stemTolerance", "hints", "difficultyAdjust"):
         if isinstance(d.get(key), bool):
             out[key] = d[key]
     batch = d.get("batchSize")
@@ -134,6 +140,7 @@ def resolve(settings: DeckSettings | None, base: ResolvedSettings = DEFAULTS) ->
         "cycleOrder": s.get("cycleOrder", base["cycleOrder"]),
         "card_ords": dict(s.get("card_ords", base["card_ords"])),
         "holdoutPct": s.get("holdoutPct", base["holdoutPct"]),
+        "difficultyAdjust": s.get("difficultyAdjust", base["difficultyAdjust"]),
     }
 
 

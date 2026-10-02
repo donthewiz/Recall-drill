@@ -8,7 +8,6 @@ tested without a collection. :func:`read_snapshots` is the one pass over
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 # anki.collection must load before anki.cards (circular import).
 import anki.collection  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -25,6 +24,11 @@ from anki.consts import (
 )
 from anki.notes import Note, NoteId
 
+# Pure, so difficulty.py can take a snapshot; re-exported here.
+from ..card_state import CardSnapshot as CardSnapshot
+from ..card_state import has_tag as has_tag
+from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY, is_stable
+
 # Defined in the pure sources module (SourceRef carries it); re-exported here.
 from ..sources import CardClass as CardClass
 
@@ -33,6 +37,7 @@ CARD_CLASSES: tuple[CardClass, ...] = (
     "buried",
     "flagged",
     "leech",
+    "stable",
     "suspended_new",
     "suspended_review",
     "lapsed",
@@ -55,51 +60,20 @@ YOUNG_IVL = 21
 """Review cards with an interval below this many days are young."""
 
 
-@dataclass(frozen=True)
-class CardSnapshot:
-    cid: int
-    nid: int
-    did: int
-    odid: int
-    ord: int
-    ntid: int
-    type: int
-    queue: int
-    ivl: int
-    due: int
-    lapses: int
-    reps: int
-    factor: int
-    flags: int
-    """The user flag (``card.user_flag()``, 0-7), not the raw flags column."""
-    tags: tuple[str, ...]
-    fsrs_d: float | None
-    """FSRS difficulty, 1-10 (``memory_state.difficulty``), or None."""
-    fsrs_s: float | None
-    """FSRS stability in days, or None."""
-    odue: int = 0
-    """The home deck's due while in a filtered deck (new-queue position for new cards)."""
-
-    @property
-    def home_did(self) -> int:
-        """The deck the card belongs to, even while it sits in a filtered deck."""
-        return self.odid or self.did
-
-    @property
-    def new_position(self) -> int:
-        """New-queue position (meaningful for type 0 only)."""
-        return self.odue if self.odid else self.due
-
-
-def has_tag(tags: Iterable[str], tag: str) -> bool:
-    """Anki tags compare case-insensitively."""
-    want = tag.casefold()
-    return any(t.casefold() == want for t in tags)
-
-
-def classify(snap: CardSnapshot, young_ivl: int = YOUNG_IVL, flag: int = RED_FLAG) -> CardClass:
+def classify(
+    snap: CardSnapshot,
+    young_ivl: int = YOUNG_IVL,
+    flag: int = RED_FLAG,
+    skip_min_stability: float = SKIP_MIN_STABILITY,
+    skip_max_difficulty: float = SKIP_MAX_DIFFICULTY,
+) -> CardClass:
     """The card's class. First match wins, so a red-flagged mature card is
-    ``flagged`` and a suspended leech is ``leech``."""
+    ``flagged`` and a suspended leech is ``leech``.
+
+    ``stable`` (Phase 6, off by default in selection): FSRS says the card is
+    already well learned (stability at least ``skip_min_stability`` days,
+    difficulty at most ``skip_max_difficulty``), so drilling it spends trials
+    for nothing."""
     if snap.odid != 0:
         return "in_filtered_deck"
     if snap.queue in (QUEUE_TYPE_SIBLING_BURIED, QUEUE_TYPE_MANUALLY_BURIED):
@@ -108,6 +82,8 @@ def classify(snap: CardSnapshot, young_ivl: int = YOUNG_IVL, flag: int = RED_FLA
         return "flagged"
     if has_tag(snap.tags, "leech"):
         return "leech"
+    if is_stable(snap, skip_min_stability, skip_max_difficulty):
+        return "stable"
     if snap.queue == QUEUE_TYPE_SUSPENDED:
         return "suspended_new" if snap.type == CARD_TYPE_NEW else "suspended_review"
     if snap.type in (CARD_TYPE_REV, CARD_TYPE_RELEARNING) and snap.lapses > 0:

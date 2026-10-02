@@ -24,3 +24,13 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `holdout_pct` (0, off): the default **Holdout %** for decks without their own. Percent of eligible new cards, in deck sessions only, that skip the drill and go to Anki as plain new cards at the handoff (tagged `rd::holdout`), as a fair comparison for the drilled cards. Set it per deck in the Recall Drill panel (Holdout %, saved with the deck's settings). Which cards is decided by a hash, so changing the % only changes which cards are held out from now on. At most 50.
 - `holdout_exclude` (true): leave cards tagged `rd::holdout` out of later sessions, so the control stays undrilled.
 - `min_n` (30): the tuning report's minimum sample per compared group. Smaller groups show "n too small", and no suggestion is made from them.
+
+**Difficulty** (cards that already have review history; new cards have no FSRS data and keep the deck's settings):
+
+- `difficulty_adjust` (true): the default for a deck's **Adjust reps by difficulty** (Recall Drill panel, saved with the deck's settings).
+- `hard_d` (7): a card whose FSRS difficulty (1–10) is at least this gets one more blind typing, and chunks earlier.
+- `easy_d` (3): a card whose FSRS difficulty is at most this gets one fewer blind typing.
+- `min_encode_reps` (2): an easy card never goes below this many blind typings (nor below the deck's own setting, if that is lower).
+- `hard_chunk_shift` (2): a hard card's chunk threshold is `min_words_to_chunk` minus this, never under 4.
+- Without FSRS data, a reviewed card with 3+ lapses, an ease under 200% or the `leech` tag gets one more blind typing.
+- `skip_min_stability` (30) and `skip_max_difficulty` (5): a card with FSRS stability at least 30 days and difficulty at most 5 (and not a leech) is **stable**, a class that is off by default: the panel counts the stable cards it skips.

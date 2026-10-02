@@ -28,6 +28,10 @@ TS name                       Python name
 ``resolveSourceDeckEditable``  ``resolve_source_deck_editable``
 ============================  ================================
 
+Add-on only (docs/DECISIONS.md, "Engine extensions"): :func:`reps_for` and the
+optional per-item ``encodeRepsOverride`` / ``minWordsToChunkOverride``. With
+neither set, every function here behaves exactly as its TS original.
+
 Every ``Math.random()`` in the TS code is a :func:`.rand.random` call here, at
 the same point and in the same order.
 """
@@ -42,7 +46,14 @@ from typing import Any, NotRequired, TypedDict, cast
 from . import rand
 from .grading import compute_word_diff, exact_match
 from .jscompat import js_round, js_split_ws, js_trim, truthy
-from .types import CombineSequenceItem, DeckItem, DrillItem, LadderMode
+from .types import (
+    CombineSequenceItem,
+    DeckItem,
+    DrillItem,
+    ItemOverrides,
+    LadderMode,
+    SessionConfig,
+)
 
 
 def parse_deck(text: str) -> list[DeckItem]:
@@ -167,6 +178,22 @@ def build_combine_sequence(n: int, mode: LadderMode = "cumulative") -> list[Comb
     return seq
 
 
+def reps_for(item: Mapping[str, Any], config: SessionConfig | int) -> int:
+    """Add-on only: the consecutive blind successes this card's ``encodeReps``
+    steps need. Its ``encodeRepsOverride`` when set, else the session's
+    (``config["encodeReps"]``, or ``config`` itself when it is the number)."""
+    session_reps = config if isinstance(config, int) else config["encodeReps"]
+    override = item.get("encodeRepsOverride")
+    return session_reps if override is None else override
+
+
+def min_words_for(item: Mapping[str, Any], session_min_words: int) -> int:
+    """Add-on only: this card's chunking threshold. Its ``minWordsToChunkOverride``
+    when set, else the session's."""
+    override = item.get("minWordsToChunkOverride")
+    return session_min_words if override is None else override
+
+
 def required_reps_for_window(seq_item: CombineSequenceItem, n: int, encode_reps: int) -> int:
     """Consecutive blind successes a cumulative combine window needs."""
     return encode_reps if seq_item["end"] >= n else 1
@@ -286,11 +313,22 @@ def build_items(
     batch_size: int | None = None,
     min_words_to_chunk: int = MIN_WORDS_TO_CHUNK,
     shuffle_within_batch: bool = True,
+    overrides: Sequence[ItemOverrides | None] | None = None,
 ) -> list[DrillItem]:
     """Fresh items for a deck. ``shuffle_within_batch=False`` keeps deck order (what
-    the app and the add-on use); the default True matches the TS harness and tests."""
+    the app and the add-on use); the default True matches the TS harness and tests.
+
+    ``overrides`` (add-on only): per card, parallel to ``parsed``; None (or a
+    None entry) is the TS call."""
     items = [
-        build_item(p, i, chunk_percent, ladder_mode, min_words_to_chunk)
+        build_item(
+            p,
+            i,
+            chunk_percent,
+            ladder_mode,
+            min_words_to_chunk,
+            overrides[i] if overrides is not None and i < len(overrides) else None,
+        )
         for i, p in enumerate(parsed)
     ]
     return _shuffle_within_batches(items, batch_size) if shuffle_within_batch else items
@@ -302,9 +340,14 @@ def build_item(
     chunk_percent: float,
     ladder_mode: LadderMode,
     min_words_to_chunk: int,
+    overrides: ItemOverrides | None = None,
 ) -> DrillItem:
-    """One fresh item (status 'new', no progress) for a card."""
-    chunks = chunk_text(p["back"], chunk_percent, min_words_to_chunk)
+    """One fresh item (status 'new', no progress) for a card.
+
+    ``overrides`` (add-on only) is stored on the item; its
+    ``minWordsToChunkOverride`` wins over ``min_words_to_chunk``."""
+    o: ItemOverrides = overrides if overrides is not None else {}
+    chunks = chunk_text(p["back"], chunk_percent, min_words_for(o, min_words_to_chunk))
     item: DrillItem = {
         "id": item_id,
         "front": p["front"],
@@ -327,7 +370,21 @@ def build_item(
     # TS `extra: p.extra`: absent stays absent.
     if "extra" in p:
         item["extra"] = p["extra"]
+    if "encodeRepsOverride" in o:
+        item["encodeRepsOverride"] = o["encodeRepsOverride"]
+    if "minWordsToChunkOverride" in o:
+        item["minWordsToChunkOverride"] = o["minWordsToChunkOverride"]
     return item
+
+
+def item_overrides(item: Mapping[str, Any]) -> ItemOverrides:
+    """Add-on only: the card's overrides, to carry onto a rebuilt item."""
+    out: ItemOverrides = {}
+    if "encodeRepsOverride" in item:
+        out["encodeRepsOverride"] = item["encodeRepsOverride"]
+    if "minWordsToChunkOverride" in item:
+        out["minWordsToChunkOverride"] = item["minWordsToChunkOverride"]
+    return out
 
 
 def _nullish(value: Any, default: Any) -> Any:
@@ -350,6 +407,9 @@ _PASS_THROUGH_FIELDS = (
     "reveals",
     "nearMisses",
     "hardSpans",
+    # Add-on only (engine extensions): a resumed card keeps its overrides.
+    "encodeRepsOverride",
+    "minWordsToChunkOverride",
 )
 
 

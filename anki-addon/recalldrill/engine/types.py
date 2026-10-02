@@ -60,6 +60,20 @@ class DrillItem(TypedDict):
     reveals: NotRequired[int]
     nearMisses: NotRequired[int]
     hardSpans: NotRequired[list[str]]
+    encodeRepsOverride: NotRequired[int]
+    """Add-on only (docs/DECISIONS.md, "Engine extensions"): this card's
+    ``encodeReps``, in place of the session's (``items.reps_for``). Absent:
+    the session's, exactly as the TS engine."""
+    minWordsToChunkOverride: NotRequired[int]
+    """Add-on only: this card's ``MIN_WORDS_TO_CHUNK``, in place of the session's
+    (``build_item`` and ``edit_current_item``). Absent: the session's."""
+
+
+class ItemOverrides(TypedDict, total=False):
+    """Add-on only: per-card values ``build_items`` stores on each item."""
+
+    encodeRepsOverride: int
+    minWordsToChunkOverride: int
 
 
 class SessionStats(TypedDict):

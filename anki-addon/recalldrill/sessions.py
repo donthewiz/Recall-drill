@@ -45,6 +45,7 @@ from .engine.session import SESSION_COMPLETE_ID, empty_stats, init_session
 from .engine.types import (
     CycleOrder,
     DeckItem,
+    ItemOverrides,
     LadderMode,
     SessionConfig,
     SessionState,
@@ -327,9 +328,15 @@ class SessionStore:
 
 
 def new_session_state(
-    deck_items: Sequence[DeckItem], config: NewSessionConfig, now_ms: int
+    deck_items: Sequence[DeckItem],
+    config: NewSessionConfig,
+    now_ms: int,
+    overrides: Sequence[ItemOverrides | None] = (),
 ) -> SessionState:
-    """App.handleStartSession then SessionView's initSession: deck order, no shuffle."""
+    """App.handleStartSession then SessionView's initSession: deck order, no shuffle.
+
+    ``overrides``: per card, parallel to ``deck_items`` (Phase 6, the FSRS
+    difficulty adjustment), stored on each item; empty: none."""
     min_words = config.get("minWordsToChunk")
     items = build_items(
         deck_items,
@@ -338,6 +345,7 @@ def new_session_state(
         config["batchSize"],
         MIN_WORDS_TO_CHUNK if min_words is None else min_words,
         shuffle_within_batch=False,
+        overrides=list(overrides) or None,
     )
     engine_config: SessionConfig = {
         "encodeReps": config["encodeReps"],
@@ -423,9 +431,11 @@ def start_session(
     now_ms: Callable[[], int],
     drill_again_of: str | None = None,
     holdout: Sequence[Mapping[str, Any]] = (),
+    overrides: Sequence[ItemOverrides | None] = (),
 ) -> tuple[DrillController, SessionStore]:
     """A fresh session. Overwrites any save under ``key``. Call
-    ``controller.start()`` once the window is up (it writes the first save)."""
+    ``controller.start()`` once the window is up (it writes the first save).
+    ``overrides``: per card, parallel to ``deck_items`` (see :func:`new_session_state`)."""
     now = now_ms()
     meta = SessionMeta(
         key=key,
@@ -440,7 +450,7 @@ def start_session(
     )
     store = SessionStore(storage, meta, now_ms)
     ctrl = DrillController(
-        new_session_state(deck_items, config, now),
+        new_session_state(deck_items, config, now, overrides),
         sources,
         settings,
         store.persist,
@@ -490,6 +500,7 @@ def start_drill_again(
         settings=settings,
         now_ms=now_ms,
         drill_again_of=m.key,
+        overrides=parent.drill_again_overrides(),
     )
 
 
