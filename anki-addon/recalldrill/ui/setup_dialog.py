@@ -1,4 +1,4 @@
-"""The setup panel: what to drill, the deck's settings, the estimate, Start.
+"""The setup panel: what to drill, the deck's settings, drill time, pacing, Start.
 
 Reads with ``anki_io.panel`` off the main thread (``QueryOp``), shows the
 result, and starts or resumes through ``launch``. Saves only:
@@ -24,10 +24,21 @@ updated as the % changes. Cards tagged ``rd::holdout`` are left out unless
 or one fewer rep, or chunk earlier, from their FSRS difficulty (new cards have
 no FSRS data and are unchanged), and how many ``stable`` cards are skipped.
 The deck's "Adjust reps by difficulty" toggle is saved with its settings.
+
+**Drill time and pacing** (Phase 6): the drill time is measured (Don's own
+active time per card; "no estimate yet" until there are 3 timed sessions), never
+the web app's cold-start estimate, and the exposure picker is gone. For a deck
+scope, the Pacing section takes a target date, the drill weekdays and how many
+days early to finish (saved at once in ``pacing.json``), and shows today's N,
+the drill minutes, Anki's minutes tomorrow and on the peak day (FSRS simulator,
+else the revlog), each with its source, and the new/day or review-limit
+warning. "Use N as max cards" fills in Max cards. Pacing is read in its own
+background op after the card list.
 """
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, cast
 
 from anki.decks import DeckId
@@ -37,6 +48,8 @@ from aqt.qt import (
     QCheckBox,
     QCloseEvent,
     QComboBox,
+    QDate,
+    QDateEdit,
     QDialog,
     QFormLayout,
     QFrame,
@@ -59,7 +72,7 @@ from aqt.qt import (
 )
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
 
-from .. import deck_settings, holdout, launch, sessions
+from .. import deck_settings, holdout, launch, pacing, sessions
 from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
 from ..anki_io.panel import (
     PanelData,
@@ -75,8 +88,8 @@ from ..anki_io.panel import (
     settings_deck,
 )
 from ..anki_io.select import INELIGIBLE_REASONS, OrderMode, Scope, scope_to_json
+from ..anki_io.workload import read_pacing
 from ..deck_settings import DeckSettings
-from ..engine.estimate import ExposureLevel
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
 from .handoff_dialog import offer_handoff
@@ -93,11 +106,6 @@ _REASON_LABELS = {
     "filtered_deck": "in a filtered deck",
     "buried": "buried",
 }
-_EXPOSURE: list[tuple[ExposureLevel, str]] = [
-    ("fresh", "First time seeing this material"),
-    ("once", "Studied it once or twice"),
-    ("familiar", "Reviewed it several times"),
-]
 
 
 def _plural(n: int, one: str, many: str | None = None) -> str:
@@ -139,8 +147,9 @@ class SetupDialog(QDialog):
         self.draft: DeckSettings = {}
         self.settings_did: int | None = None
         self.enabled: set[CardClass] = set(DEFAULT_ENABLED)
-        self.exposure: ExposureLevel = "fresh"
         self.data: PanelData | None = None
+        self.pacing_view: pacing.PacingView | None = None
+        self._pacing_generation = 0
         self.saved_info: SavedInfo | None = None
         self._generation = 0
         self._closed = False
@@ -387,18 +396,66 @@ class SetupDialog(QDialog):
         hl.addWidget(self.hints_table)
         self.body.addWidget(self.hints_box)
 
-        # Estimate
-        est = QGroupBox("Estimate")
+        # Drill time (measured)
+        est = QGroupBox("Drill time")
         el = QFormLayout(est)
         self.estimate_label = QLabel()
-        self.exposure_combo = QComboBox()
-        for level, label in _EXPOSURE:
-            self.exposure_combo.addItem(label, level)
-        qconnect(self.exposure_combo.currentIndexChanged, self._on_exposure)
-        self.exposure_row_label = QLabel("How familiar are you with this material?")
-        el.addRow("Estimated time", self.estimate_label)
-        el.addRow(self.exposure_row_label, self.exposure_combo)
+        self.estimate_source = QLabel()
+        self.estimate_source.setWordWrap(True)
+        self.estimate_source.setStyleSheet("color: gray; font-size: small;")
+        el.addRow("These cards", self.estimate_label)
+        el.addRow("", self.estimate_source)
         self.body.addWidget(est)
+
+        # Pacing (deck scopes)
+        self.pacing_box = QGroupBox("Pacing")
+        pl = QVBoxLayout(self.pacing_box)
+        prow1 = QHBoxLayout()
+        self.pace_on = QCheckBox("Pace to a target date")
+        self.pace_date = QDateEdit()
+        self.pace_date.setCalendarPopup(True)
+        self.pace_date.setDisplayFormat("ddd d MMM yyyy")
+        self.pace_early = QSpinBox()
+        self.pace_early.setRange(0, 30)
+        self.pace_early.setSuffix(" day(s) early")
+        self.pace_early.setToolTip("Finish this many days before the target date.")
+        prow1.addWidget(self.pace_on)
+        prow1.addWidget(self.pace_date)
+        prow1.addWidget(QLabel("finish"))
+        prow1.addWidget(self.pace_early)
+        prow1.addStretch(1)
+        pl.addLayout(prow1)
+        prow2 = QHBoxLayout()
+        prow2.addWidget(QLabel("Drill on"))
+        self.pace_days: list[QCheckBox] = []
+        for name in pacing.WEEKDAY_NAMES:
+            box = QCheckBox(name)
+            self.pace_days.append(box)
+            prow2.addWidget(box)
+        prow2.addStretch(1)
+        pl.addLayout(prow2)
+        self.pace_line = QLabel()
+        self.pace_line.setWordWrap(True)
+        self.pace_sources = QLabel()
+        self.pace_sources.setWordWrap(True)
+        self.pace_sources.setStyleSheet("color: gray; font-size: small;")
+        self.pace_warning = QLabel()
+        self.pace_warning.setWordWrap(True)
+        self.pace_warning.setStyleSheet("color: #b26b00;")
+        pl.addWidget(self.pace_line)
+        pl.addWidget(self.pace_sources)
+        pl.addWidget(self.pace_warning)
+        self.use_n_btn = QPushButton("Use N as max cards")
+        self.use_n_btn.setAutoDefault(False)
+        qconnect(self.use_n_btn.clicked, self._use_pace_n)
+        pl.addWidget(self.use_n_btn, 0, Qt.AlignmentFlag.AlignRight)
+        qconnect(self.pace_on.toggled, self._on_pacing_edited)
+        qconnect(self.pace_date.dateChanged, self._on_pacing_edited)
+        qconnect(self.pace_early.valueChanged, self._on_pacing_edited)
+        for box in self.pace_days:
+            qconnect(box.toggled, self._on_pacing_edited)
+        self.pacing_box.hide()
+        self.body.addWidget(self.pacing_box)
         self.body.addStretch(1)
 
         # Bottom
@@ -462,6 +519,12 @@ class SetupDialog(QDialog):
             self.draft = draft
             self.hard_exclude = exclude
             self.hard_only.setVisible(bool(exclude))
+            if scope.deck_id is not None:
+                self._updating = True
+                try:
+                    self._show_pacing_settings(scope.deck_id)
+                finally:
+                    self._updating = False
             what = "Deck" if scope.deck_id is not None else "Search"
             self.scope_label.setText(f"<b>{what}:</b> {label}")
             self.setWindowTitle(f"Recall Drill: {label}")
@@ -510,12 +573,10 @@ class SetupDialog(QDialog):
         storage = self.ctx.storage()
         cfg = self.ctx.config()
         scope, options, draft = self.scope, self._options(), dict(self.draft)
-        did, exposure = self.settings_did, self.exposure
+        did = self.settings_did
 
         def op(col: Any) -> PanelData:
-            return read_panel(
-                col, storage, scope, options, cast(DeckSettings, draft), did, cfg, exposure
-            )
+            return read_panel(col, storage, scope, options, cast(DeckSettings, draft), did, cfg)
 
         def done(data: PanelData) -> None:
             if self._closed or gen != self._generation:
@@ -523,6 +584,7 @@ class SetupDialog(QDialog):
             self.data = data
             self._show(data)
             self._set_loading(False)
+            self._refresh_pacing()
 
         QueryOp(parent=self, op=op, success=done).failure(self._failed).run_in_background()
 
@@ -671,13 +733,99 @@ class SetupDialog(QDialog):
         self.hints_table.resizeColumnsToContents()
 
     def _show_estimate(self, data: PanelData) -> None:
-        self.estimate_label.setText(data.estimate_text() or "—")
-        if data.personal_history:
-            self.exposure_row_label.setText("Based on your last session with these cards.")
-            self.exposure_combo.hide()
+        if data.drill_seconds is None:
+            self.estimate_label.setText(data.drill_source if data.drillable else "—")
+            self.estimate_source.setText("")
         else:
-            self.exposure_row_label.setText("How familiar are you with this material?")
-            self.exposure_combo.show()
+            self.estimate_label.setText(data.estimate_text())
+            self.estimate_source.setText(f"From {data.drill_source}.")
+
+    # -- pacing -----------------------------------------------------------------
+
+    def _show_pacing_settings(self, did: int) -> None:
+        s = pacing.load(self.ctx.storage(), did)
+        today = QDate.currentDate()
+        self.pace_on.setChecked(s.target_date is not None)
+        t = s.target_date
+        self.pace_date.setDate(QDate(t.year, t.month, t.day) if t else today.addDays(14))
+        self.pace_early.setValue(s.finish_days_before)
+        for i, box in enumerate(self.pace_days):
+            box.setChecked(i in s.drill_weekdays)
+        self._enable_pacing_inputs()
+
+    def _enable_pacing_inputs(self) -> None:
+        on = self.pace_on.isChecked()
+        self.pace_date.setEnabled(on)
+        self.pace_early.setEnabled(on)
+        for box in self.pace_days:
+            box.setEnabled(on)
+
+    def _pacing_from_inputs(self) -> pacing.PacingSettings:
+        d = self.pace_date.date()
+        target = date(d.year(), d.month(), d.day()) if self.pace_on.isChecked() else None
+        days = frozenset(i for i, box in enumerate(self.pace_days) if box.isChecked())
+        return pacing.PacingSettings(target, days, self.pace_early.value())
+
+    def _on_pacing_edited(self, *_args: Any) -> None:
+        if self._updating or self.scope.deck_id is None:
+            return
+        self._enable_pacing_inputs()
+        pacing.save(self.ctx.storage(), self.scope.deck_id, self._pacing_from_inputs())
+        self._refresh_pacing()
+
+    def _refresh_pacing(self) -> None:
+        data = self.data
+        did = self.scope.deck_id
+        self._pacing_generation += 1
+        gen = self._pacing_generation
+        if data is None or did is None or data.scope.deck_id != did:
+            self.pacing_box.hide()
+            return
+        self.pacing_box.show()
+        if not self.pace_on.isChecked():
+            self.pacing_view = None
+            self.pace_line.setText("Set a target date (a chapter exam) to pace this deck.")
+            self.pace_sources.setText("")
+            self.pace_warning.setText("")
+            self.use_n_btn.setEnabled(False)
+            return
+        self.pace_line.setText("Working out the pace…")
+        self.use_n_btn.setEnabled(False)
+        storage, cfg, draft = self.ctx.storage(), self.ctx.config(), dict(self.draft)
+
+        def op(col: Any) -> pacing.PacingView:
+            return read_pacing(
+                col, storage, did, data.selection, data.card_shapes, data.speed, draft, cfg
+            )
+
+        def done(view: pacing.PacingView) -> None:
+            if self._closed or gen != self._pacing_generation:
+                return
+            self._show_pacing(view)
+
+        def failed(exc: Exception) -> None:
+            if self._closed or gen != self._pacing_generation:
+                return
+            self.pace_line.setText(f"Couldn't work out the pace: {exc}")
+
+        QueryOp(parent=self, op=op, success=done).failure(failed).run_in_background()
+
+    def _show_pacing(self, view: pacing.PacingView) -> None:
+        self.pacing_view = view
+        self.pace_line.setText(view.line())
+        ok = view.pace.status == "ok"
+        self.pace_sources.setText(view.sources() if ok else "")
+        self.pace_warning.setText(f"⚠ {view.warning}" if view.warning else "")
+        self.pace_warning.setVisible(bool(view.warning))
+        n = view.pace.per_day
+        self.use_n_btn.setEnabled(ok and n > 0)
+        self.use_n_btn.setText(f"Use {n} as max cards" if ok and n > 0 else "Use N as max cards")
+
+    def _use_pace_n(self) -> None:
+        view = self.pacing_view
+        if view is None or view.pace.per_day <= 0:
+            return
+        self.max_cards.setValue(view.pace.per_day)  # schedules a refresh
 
     def _show_start(self, data: PanelData) -> None:
         n = data.drillable
@@ -774,12 +922,6 @@ class SetupDialog(QDialog):
         deck_settings.save(self.ctx.storage(), self.settings_did, self.draft)
         tooltip("Settings saved for this deck.", parent=self)
         self._refresh()
-
-    def _on_exposure(self, _index: int) -> None:
-        if self._updating:
-            return
-        self.exposure = cast(ExposureLevel, self.exposure_combo.currentData())
-        self._schedule()
 
     def _on_hint_edited(self, item: QTableWidgetItem | None) -> None:
         if self._updating or item is None or item.column() != 3:

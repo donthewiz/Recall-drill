@@ -199,10 +199,14 @@ def test_completion_writes_history_once_and_waits_for_the_handoff(st: Storage) -
     assert line["stats"]["attempts"] > 0
     assert [c["front"] for c in line["cards"]] == ["heart", "liver"]
     per_card = {"d": None, "s": None, "encodeReps": 1, "minWordsToChunk": 8, "adjust": 0}
+    shares = [a.pop("activeMs") for a in line["anki"]]
     assert line["anki"] == [
         {"cid": 1000, "nid": 2000, "ord": 0, "did": 1, "card_class": "new", **per_card},
         {"cid": 1001, "nid": 2001, "ord": 0, "did": 1, "card_class": "new", **per_card},
     ]
+    # Active time: every gap between actions (the clock ticks 1 s per read).
+    assert all(ms > 0 for ms in shares) and line["activeMs"] >= sum(shares)
+    assert line["activeMs"] == ctrl.active_ms
     assert line["encode"] == {
         "encodeReps": 1,
         "chunkDifficulty": 100,

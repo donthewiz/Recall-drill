@@ -374,7 +374,10 @@ def test_setup_panel_reads_filters_and_starts(panel_env: Any, window_env: Path) 
     assert data is not None and data.drillable == 6
     assert d.class_boxes["suspended_new"].text() == "suspended new (6)"
     assert d.proposal_row.isVisibleTo(d) and d.start_btn.isEnabled()
-    assert "about" in d.estimate_label.text()
+    # No timed session yet: the measured drill time says so (no cold-start figure).
+    assert d.estimate_label.text() == "no estimate yet (needs 3 timed sessions)"
+    assert not hasattr(d, "exposure_combo")
+    assert d.pacing_box.isVisibleTo(d) and not d.pace_on.isChecked()
     assert "6 picked cards share a note" in d.sibling_label.text()
 
     # Reverse only, then terminology settings, batch size 3: nothing saved yet.
@@ -836,3 +839,59 @@ def test_tuning_report_dialog(
     assert len(written) == 1
     d.close()
     assert ctx.dialogs == []
+
+
+# -- Phase 6: difficulty line, pacing ---------------------------------------------
+
+
+def test_setup_panel_difficulty_line_and_pacing(panel_env: Any, window_env: Path) -> None:
+    """All-new Med Term: the difficulty line says new cards are unchanged; a target
+    date gives today's N, "no estimate yet" for the minutes, and Use N fills Max
+    cards; the pacing settings are saved for the deck and come back on reopen."""
+    from datetime import date
+
+    from aqt.qt import QDate
+
+    from recalldrill import pacing
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog, stable_text
+
+    col, did = panel_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    assert d.difficulty_label.text() == (
+        "Difficulty-adjusted: 0 cards +1 rep, 0 cards −1 rep, 0 cards chunk earlier. "
+        "New cards (6): no FSRS data, unchanged."
+    )
+    assert d.difficulty_adjust.isChecked()
+    assert stable_text(0, 30, 5) == "" and stable_text(2, 30, 5).startswith("Stable: 2 cards")
+    assert d.pacing_box.isVisibleTo(d) and not d.use_n_btn.isEnabled()
+    assert d.pace_line.text().startswith("Set a target date")
+
+    today = QDate.currentDate()
+    d.pace_on.setChecked(True)
+    for box in d.pace_days:
+        box.setChecked(True)  # every day, so the count doesn't depend on today's weekday
+    d.pace_early.setValue(1)
+    d.pace_date.setDate(today.addDays(3))  # last drill day: in 2 days -> 3 drill days
+    view = d.pacing_view
+    assert view is not None and view.pace.status == "ok"
+    assert (view.pace.remaining, view.pace.days_left, view.pace.per_day) == (6, 3, 2)
+    assert d.pace_line.text() == view.line()
+    assert "drill time: no estimate yet" in d.pace_line.text()
+    assert "no estimate yet" in d.pace_sources.text()
+    assert d.use_n_btn.isEnabled() and d.use_n_btn.text() == "Use 2 as max cards"
+    d.use_n_btn.click()
+    assert d.max_cards.value() == 2
+    saved = pacing.load(ctx.storage(), did)
+    assert saved.drill_weekdays == frozenset(range(7)) and saved.finish_days_before == 1
+    assert saved.target_date is not None
+    assert saved.target_date == date.fromisoformat(today.addDays(3).toString("yyyy-MM-dd"))
+    d.close()
+
+    again: Any = SetupDialog(ctx, did)
+    assert again.pace_on.isChecked() and again.pace_date.date() == today.addDays(3)
+    again.pace_on.setChecked(False)
+    assert pacing.load(ctx.storage(), did).target_date is None
+    assert not again.use_n_btn.isEnabled()
+    again.close()

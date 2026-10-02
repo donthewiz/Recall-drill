@@ -283,7 +283,7 @@ SessionView isn't a pure view, so its behavior is ported to a Qt-free `DrillCont
 - An append skips a `sessionId` that already has a session line. That covers a crash between the append and the save's `historyWritten`.
 - Phase 4 added `type: "handoff"` lines (a handoff, or a declined one; see "Handoff (Phase 4)").
 - Phase 5 added `history/tuning.jsonl`: one `type: "tuning"` line per applied suggestion (see "Measurement and holdout").
-- **Cold-start estimates:** `estimates.json`, keyed like the saves. It ports `get/saveColdStartHistory` and is updated whenever a session ends (completed or stopped), as SessionView's `finishSession` does.
+- **Cold-start estimates:** `estimates.json`, keyed like the saves. It ports `get/saveColdStartHistory` and is updated whenever a session ends (completed or stopped), as SessionView's `finishSession` does. Since Phase 6 nothing reads it (see "Pacing (Phase 6)").
 
 ## Mid-session edit
 
@@ -360,7 +360,7 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 - **Cards**: class toggles with eligible counts (Phase 2 defaults), max cards (0 = all), an exact tag, order. **Templates**: one checkbox per template of each multi-template standard note type, saved as the deck's `card_ords`; the sibling count is shown. **Ineligible** reasons are summed, with **Edit mapping…** (`ui/mapping_dialog.py`: answer field, Extra field or ineligible per (note type, template), saved to `mappings.json`).
 - **Settings for this deck**: batch size (0 = whole deck), blind typings (`encodeReps`, now a per-deck setting; the config's `encode_reps` is the default), cycle order, strict punctuation, word-ending tolerance (disabled while strict, as the app), hints. While nothing is saved for the deck, the terminology proposal is offered as **Use terminology settings** (one click; it changes the draft, it isn't saved). Settings are saved only by **Save** or **Start**.
 - **Hints**: the flagged prompts, and prompts that already have a manual hint, with the hint editable in place (`hints.json`; an emptied cell removes the hint).
-- **Estimate**: `compute_cold_start_estimate` over the built items with the deck's `encodeReps` and the config's chunk difficulty and ladder; the multiplier is `estimates.json`'s for the scope's key when there is one, else the exposure picker (fresh / once / familiar). Shown as "about N–M min".
+- **Estimate** (until Phase 6): `compute_cold_start_estimate` over the built items with the deck's `encodeReps` and the config's chunk difficulty and ladder; the multiplier is `estimates.json`'s for the scope's key when there is one, else the exposure picker (fresh / once / familiar). Shown as "about N–M min". **Replaced in Phase 6** by the measured drill time (see "Pacing (Phase 6)"); the exposure picker is gone.
 - **Start** goes through `launch.start`: saves the deck's settings, then `sessions.start_session` (`build_items(…, shuffle_within_batch=False)`). Disabled with 0 drillable cards, saying why.
 
 Global config gained `autoplay_question_audio` (default false); `addon_config.parse_config` gives every missing or mistyped key its default.
@@ -529,6 +529,36 @@ Tools → **Recall Drill: tuning report** (`ui/tuning_dialog.py`). `anki_io/revl
 - Drilled and holdout outcomes are not the same event: a drilled card's outcome is its first Anki rating after the drill (B: its first learning step the next day); a holdout card's is its first rating on the day after its introduction. That is the definition chosen in the prompt.
 - Cards deleted since show as "(deleted card)" (their revlog stays), so a deck filter drops them.
 - The Wilson CIs treat cards as independent; repeated drills of one card count once per handoff.
+
+## Pacing (Phase 6)
+
+Pace a deck to a target date (a chapter exam), as the medterm routine does: drill on the chosen weekdays, finish at least a day early. `recalldrill/pacing.py` (pure) does the arithmetic; `recalldrill/anki_io/workload.py` reads the collection; the setup panel's **Pacing** section (deck scopes only) shows it.
+
+**Overlap with `medterm-daily-drill`:** this replaces the skill's pace calculation for anything drilled in the add-on. The skill itself is unchanged.
+
+- **Settings** (`pacing.json`, by deck id, saved as soon as they change): `target_date`, `drill_weekdays` (default Mon–Fri), `finish_days_before` (default 1).
+- **Remaining** (`Selection.pace_remaining`, counted whatever the class switches and Max cards say): the scope's eligible `new` + `suspended_new` cards that pass the template filter, excluding notes tagged `rd::drilled` or `rd::holdout`. `pace_suspended` is the suspended part; `pace_siblings` the suspended new cards the template filter left out whose note has a remaining card (they go to Anki with it).
+- **Drill days left:** the drill weekdays from today through `target_date − finish_days_before`. Today counts unless a session in this scope **completed** today (a `type: "session"` line whose `finishedAt` is on today's Anki day).
+- **Today's N** = `ceil(remaining / days_left)`. Edge cases, each a test: no target; **target passed** ("pick a new date"); **today not a drill day**, or **already done** (today's N is 0; the next drill day and its N are shown); **zero remaining**; **`days_left == 0` with cards left** ("Behind: N cards, no drill days left").
+- **"Use N as max cards"** fills Max cards with N.
+
+**Time figures: only measured data, each labelled with its source.** The web app's cold-start estimate (fixed multipliers, the exposure picker) isn't based on Don's data, so the add-on no longer shows it: the setup panel's "about N–M min" and exposure picker are gone (`tests/test_layering.py` checks that nothing shown imports `engine/estimate.py`, which stays for the parity tests), and the batch interstitial's remaining time is now this session's own active time per card × the cards left.
+
+- **Active drill time** (`controller.py`): the time between consecutive actions (submit, reveal, continue, override, next batch), each gap capped at config `idle_cap_seconds` (120). The clock starts when the window starts the session and stops at Save and stop, so a gap across a saved or closed session never counts. Each gap also goes to the answered card (next batch: the session only). Saved as `addon.activeMs` / `addon.activeMsByItem`; the session line gets `activeMs` and per card `anki[i].activeMs`. Older lines have none and are ignored for timing.
+- **Drill minutes:** the median active seconds per drilled card over the last 10 timed sessions **in this top-level deck** (a line's deck: where most of its cards live), by answer shape (chunked vs whole; a shape with no timed card takes the overall median). Needs ≥ 3 timed sessions in the deck; else the timed sessions of all decks (labelled "all decks"); else "no estimate yet (needs 3 timed sessions)". The next N cards' shapes come from the panel's build (overrides included).
+- **Anki minutes** (tomorrow, and the peak day with its date):
+  1. **FSRS simulator** (`col._backend.simulate_fsrs_review`, the deck options' Simulator). Request: the preset's FSRS params (`fsrsParams6`, else `fsrsParams5`) and desired retention, `search` = the deck, `new_limit` = the planned new cards per day (N + siblings at the scope's ratio, + the holdout share under B), `deck_size` = the remaining suspended cards + their siblings, the deck's review limit, `days_to_simulate` = drill days left + 14, the preset's learning and relearning step counts, max interval, review order, easy days, historical retention, leech suspension.
+  2. **Revlog fallback:** the median `time` of Don's review (types 1, 2) and learning (type 0) ratings over the last 30 days in the top-level deck; per day, the reviews due (`prop:due=N`; tomorrow also counts learning cards due by then) × the review median, plus the cards handed off the day before × learning ratings per new card (measured) × the learning median.
+  3. Fewer than 50 ratings: "no estimate yet".
+- **Facts checked on 26.08.1** (`tests/anki_io/test_workload.py`):
+  - `daily_time_cost` is **seconds** per day; every list has `days_to_simulate` entries; **index 0 is today** (the panel shows index 1 as tomorrow).
+  - **Suspended new cards are not simulated**; `deck_size` adds new cards on top of the search's unsuspended ones.
+  - The total cost grows with `new_limit`.
+  - **The time cost is from the revlog, blended with built-in defaults** (fsrs-rs 6.6.1 `extract_simulator_config`, read in its source): each (state, rating) cost is `w · mean(Don's times) + (1 − w) · default` with `w = n / (50 + n)`; no revlog: the defaults. The test shows the same deck costing more with 60 s ratings than with 2 s ones, and 3 slow ratings barely moving it. So the simulator figure is shown only with **≥ 50 learning and ≥ 50 review ratings** in the deck; otherwise the panel says it would fall back on Anki's default times and goes to (2).
+  - Anki's simulator computes and **stores** a memory state for a searched review card that lacks one (e.g. handed off under A with `set_due_date`), exactly as the deck options' Simulator does. That's the only write a panel read can cause.
+  - The simulator introduces new cards **every day**, not on drill weekdays only, so its new-card days run a little ahead of a Mon–Fri plan.
+- **Ceiling check** (warn with the number held back, never block), on the top-level deck as in the Phase 4 forecast: under **B**, tomorrow's new cards (N + siblings + holdout share) against its new/day; under **A**, N against the room left in its review limit after tomorrow's due reviews (the forecast's `prop:due=1 OR (is:learn prop:due<1)` count).
+- **No daily time budget or minute threshold:** the minutes are information only.
 
 ## Changing the engine now
 

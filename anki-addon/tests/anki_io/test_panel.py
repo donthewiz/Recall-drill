@@ -43,6 +43,7 @@ from recalldrill.anki_io.panel import (
 from recalldrill.anki_io.select import Scope
 from recalldrill.deck_settings import DeckSettings
 from recalldrill.launch import start
+from recalldrill.pacing import NO_DRILL_ESTIMATE
 from recalldrill.storage import DECK_SETTINGS, HINTS, Storage
 
 
@@ -91,8 +92,9 @@ def test_med_term_deck(col: Collection, tmp_path: Path) -> None:
     (nt,) = p.note_types
     assert [name for _, name in nt.templates] == ["Normal", "Reverse"]
     assert "FrontText" in nt.fields
-    assert p.estimate is not None and p.estimate_text().startswith("about ")
-    assert not p.personal_history
+    # Phase 6: no timed sessions yet, so no drill estimate (never the cold-start one).
+    assert p.drill_seconds is None and p.estimate_text() == NO_DRILL_ESTIMATE
+    assert p.card_shapes == [False] * p.drillable
 
     # The proposal applied in the draft: hints on, flagged prompts listed.
     p = _read(col, st, Scope(deck_id=top), dict(p.proposal))  # type: ignore[arg-type]
@@ -222,7 +224,7 @@ def test_nothing_eligible(col: Collection, tmp_path: Path) -> None:
     st = Storage(tmp_path, "p")
     save_override(st, note.mid, 0, MappingOverride(None, None, True))
     p = _read(col, st, Scope(deck_id=did))
-    assert p.drillable == 0 and p.estimate is None
+    assert p.drillable == 0 and p.drill_seconds is None and p.card_shapes == []
     assert p.selection.ineligible["marked_ineligible"] == 1 and p.ineligible_total == 1
 
 
@@ -311,8 +313,8 @@ def test_save_hint_suppress_or_set(tmp_path: Path, hint: str) -> None:
 
 
 def test_panel_holdout_and_threshold(col: Collection, tmp_path: Path) -> None:
-    """Phase 5: the holdout reaches PanelData (for the save), and the estimate
-    uses the config's chunking threshold."""
+    """Phase 5: the holdout reaches PanelData (for the save), and the drill-time
+    shapes use the config's chunking threshold."""
     from dataclasses import replace
 
     from recalldrill.holdout import is_holdout
@@ -342,9 +344,9 @@ def test_panel_holdout_and_threshold(col: Collection, tmp_path: Path) -> None:
     assert all(h["card_class"] == "suspended_new" and h["ord"] == 1 for h in p.holdout)
     assert held.isdisjoint(s.cid for s in p.build.sources)
     assert p.select_options["holdout_pct"] == 50 and p.select_options["exclude_holdout_tag"]
-    # A lower chunking threshold can only raise the estimate's floor.
+    # A lower chunking threshold can only chunk more cards.
     low = read_panel(
         col, st, scope, options, draft, top, replace(DEFAULT_CONFIG, min_words_to_chunk=1)
     )
-    assert low.estimate is not None and p.estimate is not None
-    assert low.estimate["floorTrials"] >= p.estimate["floorTrials"]
+    assert len(low.card_shapes) == len(p.card_shapes) == p.drillable
+    assert sum(low.card_shapes) >= sum(p.card_shapes)

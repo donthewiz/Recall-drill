@@ -61,6 +61,8 @@ class AddonConfig:
     """The ``stable`` class: FSRS stability at least this many days ..."""
     skip_max_difficulty: float = 5
     """... and difficulty at most this."""
+    idle_cap_seconds: int = 120
+    """Active drill time: the most one gap between actions counts (a break doesn't)."""
 
     def difficulty(self, adjust: bool | None = None) -> DifficultySettings:
         """The difficulty rules; ``adjust`` (the deck's toggle) wins over the default."""
@@ -130,4 +132,5 @@ def parse_config(raw: object) -> AddonConfig:
         hard_chunk_shift=_int(d.get("hard_chunk_shift"), dc.hard_chunk_shift, 0, 100),
         skip_min_stability=_float(d.get("skip_min_stability"), dc.skip_min_stability, 0, 1_000_000),
         skip_max_difficulty=_float(d.get("skip_max_difficulty"), dc.skip_max_difficulty, 1, 10),
+        idle_cap_seconds=_int(d.get("idle_cap_seconds"), dc.idle_cap_seconds, 1, 3600),
     )

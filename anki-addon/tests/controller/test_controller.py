@@ -597,7 +597,7 @@ def test_batch_done_view_then_next_batch() -> None:
     assert v.batch_done.items_mastered == 2 and v.batch_done.batch_size == 2
     assert v.batch_done.accuracy_percent == 100
     assert v.batch_done.remaining is not None
-    assert v.batch_done.remaining.startswith("Remaining time, recalibrated from this session: ")
+    assert v.batch_done.remaining.startswith("Remaining time at your pace in this session: ")
     assert v.buttons.next_batch and v.buttons.save and not v.buttons.check
     assert v.progress.is_batched and v.progress.batch_number == 1
     out = h.ctrl.next_batch()

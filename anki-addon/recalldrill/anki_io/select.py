@@ -24,6 +24,12 @@ a deck scope, eligible ``new`` / ``suspended_new`` cards whose hash falls in the
 holdout are set aside (``Selection.holdout``) while walking the ordered list,
 until ``max_cards`` drill cards are picked.
 
+**Pacing** (Phase 6): ``Selection.pace_remaining`` counts, whatever the class
+switches and ``max_cards``, the eligible ``new`` / ``suspended_new`` cards
+that pass the template filter, minus notes tagged ``rd::drilled`` or
+``rd::holdout``; ``pace_siblings`` the suspended new cards the template filter
+left out whose note has one of them (the handoff's siblings).
+
 A card is ineligible, and counted by reason, when (first match wins):
 image occlusion, marked ineligible in mappings.json, unmapped, empty answer,
 or (unless that class is enabled) in a filtered deck or buried. Every other
@@ -38,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
 from anki.collection import Collection, SearchNode
+from anki.consts import QUEUE_TYPE_SUSPENDED
 from anki.decks import DeckId
 
 from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY
@@ -58,6 +65,9 @@ from .handoff import TAG_DRILLED
 from .notetypes import MappingTable, NoteMapping, answer_text, is_io_note
 
 OrderMode = Literal["priority_first", "deck_order"]
+
+PACE_CLASSES: frozenset[CardClass] = frozenset({"new", "suspended_new"})
+"""The classes pacing counts as still to drill."""
 
 PRIORITY_RANK: tuple[CardClass, ...] = (
     "flagged",
@@ -225,6 +235,13 @@ class Selection:
     off as new cards (``apply_holdout``)."""
     holdout_tagged: int = 0
     """Cards left out because their note is tagged ``rd::holdout``."""
+    pace_remaining: int = 0
+    """Pacing: the eligible new cards still to drill (see the module docstring)."""
+    pace_suspended: int = 0
+    """Of ``pace_remaining``, the suspended ones (outside Anki's new queue)."""
+    pace_siblings: int = 0
+    """Pacing: suspended new cards left out by the template filter whose note has a
+    ``pace_remaining`` card (they go to Anki with it, as siblings)."""
 
 
 # ---------------------------------------------------------------------------
@@ -345,8 +362,12 @@ def select_cards(
     template_excluded = 0
     excluded = 0
     holdout_tagged = 0
+    pace_remaining = 0
     met: dict[tuple[int, int], NoteMapping] = {}
     cands: list[Candidate] = []
+    pace_nids: set[int] = set()
+    pace_suspended = 0
+    filtered_new: list[CardSnapshot] = []
 
     for snap in read_snapshots(col, cids, cache):
         mapping = mappings.for_card(snap.ntid, snap.ord)
@@ -360,6 +381,8 @@ def select_cards(
         allowed = options.card_ords.get(snap.ntid)
         if allowed is not None and mapping.template_ord not in allowed:
             template_excluded += 1
+            if snap.type == 0 and snap.queue == QUEUE_TYPE_SUSPENDED:
+                filtered_new.append(snap)
             continue
         card_class = classify(
             snap,
@@ -375,6 +398,14 @@ def select_cards(
             ineligible[reason] += 1
             continue
         eligible[card_class] += 1
+        if (
+            card_class in PACE_CLASSES
+            and not has_tag(snap.tags, TAG_DRILLED)
+            and not has_tag(snap.tags, TAG_HOLDOUT)
+        ):
+            pace_nids.add(snap.nid)
+            pace_remaining += 1
+            pace_suspended += card_class == "suspended_new"
         if card_class in options.enabled:
             cands.append(Candidate(snap, card_class, mapping, answer))
 
@@ -400,5 +431,8 @@ def select_cards(
         excluded=excluded,
         holdout=held,
         holdout_tagged=holdout_tagged,
+        pace_remaining=pace_remaining,
+        pace_suspended=pace_suspended,
+        pace_siblings=sum(1 for s in filtered_new if s.nid in pace_nids),
     )
     return selection
