@@ -43,6 +43,9 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
   - `ui/` stays at standard because PyQt6's stubs leave signals partially `Unknown`, which strict rejects on every `qconnect`.
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
+- **CI** (`.github/workflows/ci.yml`):
+  - `addon-engine` runs the engine tests with no anki installed.
+  - `addon-anki` (Phase 3a) runs `tests/anki_io`, `tests/controller` and `tests/storage` with `anki` and `pytest` only. Tests that import `aqt` skip there (`needs_aqt` in `tests/anki_io/anki_fixtures.py`) and run locally.
 - **Commands** (from the repo root):
   ```
   anki-addon\.venv\Scripts\python -m pytest anki-addon/tests -q
