@@ -9,6 +9,12 @@ Order:
 - **Priority first** (default): by class rank (:data:`PRIORITY_RANK`), then
   deck order.
 
+``exclude_cids`` leaves given cards out before anything else (counted as
+``excluded``): the "my rd::hard cards" entry uses it for the cards of a tagged
+note that weren't hard in their last handoff (``rd::hard`` is a note tag, so
+siblings and cloze siblings share it; the template filter can't tell cloze
+cards apart).
+
 A card is ineligible, and counted by reason, when (first match wins):
 image occlusion, marked ineligible in mappings.json, unmapped, empty answer,
 or (unless that class is enabled) in a filtered deck or buried. Every other
@@ -108,6 +114,8 @@ class SelectOptions:
     order: OrderMode = "priority_first"
     young_ivl: int = YOUNG_IVL
     flag: int = RED_FLAG
+    exclude_cids: frozenset[int] = frozenset()
+    """Cards left out, whatever their class (counted as ``Selection.excluded``)."""
 
 
 def scope_to_json(scope: Scope) -> dict[str, Any]:
@@ -129,6 +137,7 @@ def options_to_json(o: SelectOptions) -> dict[str, Any]:
         "order": o.order,
         "young_ivl": o.young_ivl,
         "flag": o.flag,
+        "exclude_cids": sorted(o.exclude_cids),
     }
 
 
@@ -144,6 +153,7 @@ def options_from_json(d: Mapping[str, Any]) -> SelectOptions:
         order=d.get("order", "priority_first"),
         young_ivl=int(d.get("young_ivl", YOUNG_IVL)),
         flag=int(d.get("flag", RED_FLAG)),
+        exclude_cids=frozenset(int(x) for x in cast(list[Any], d.get("exclude_cids") or [])),
     )
 
 
@@ -175,6 +185,8 @@ class Selection:
     sibling_notes: int
     mappings: dict[tuple[int, int], NoteMapping]
     """Every (note type, template) met in the scope."""
+    excluded: int = 0
+    """Cards left out by ``exclude_cids``."""
 
 
 # ---------------------------------------------------------------------------
@@ -250,12 +262,16 @@ def select_cards(
     eligible: dict[CardClass, int] = dict.fromkeys(CARD_CLASSES, 0)
     ineligible: dict[IneligibleReason, int] = dict.fromkeys(INELIGIBLE_REASONS, 0)
     template_excluded = 0
+    excluded = 0
     met: dict[tuple[int, int], NoteMapping] = {}
     cands: list[Candidate] = []
 
     for snap in read_snapshots(col, cids, cache):
         mapping = mappings.for_card(snap.ntid, snap.ord)
         met[(mapping.ntid, mapping.template_ord)] = mapping
+        if snap.cid in options.exclude_cids:
+            excluded += 1
+            continue
         allowed = options.card_ords.get(snap.ntid)
         if allowed is not None and mapping.template_ord not in allowed:
             template_excluded += 1
@@ -290,5 +306,6 @@ def select_cards(
         sibling_cards=sib_cards,
         sibling_notes=sib_notes,
         mappings=dict(sorted(met.items())),
+        excluded=excluded,
     )
     return apply_holdout(selection)

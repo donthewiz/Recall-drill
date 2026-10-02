@@ -31,11 +31,18 @@ def test_parse_config_defaults_and_bad_values() -> None:
             "ladder_mode": "exhaustive",
             "cycle_order": "random",
             "autoplay_question_audio": True,
+            "handoff_mode": "C",
+            "hard_threshold": 0,
+            "handoff_siblings": "no",
+            "tag_long": True,
         }
     )
     assert cfg.encode_reps == 3 and cfg.batch_size == 5 and cfg.stem_tolerance is True
     assert cfg.ladder_mode == "exhaustive" and cfg.cycle_order == "shuffled"
     assert cfg.autoplay_question_audio is True
+    assert cfg.handoff_mode == "B" and cfg.hard_threshold == 3 and cfg.handoff_siblings is True
+    assert cfg.tag_long is True and cfg.clear_flag_on_handoff is True
+    assert parse_config({"handoff_mode": "A"}).handoff_mode == "A"
 
 
 def test_config_json_matches_the_defaults() -> None:

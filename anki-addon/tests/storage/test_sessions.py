@@ -240,6 +240,47 @@ def test_a_handoff_line_keeps_the_session_line(st: Storage) -> None:
     assert history_store.read_recent(st, "42", 0) == []
 
 
+def test_complete_handoff_writes_the_line_then_deletes_the_save(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT[:1], encodeReps=1)
+    _finish(ctrl)
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    line = {"type": "handoff", "sessionId": store.meta.session_id, "mode": "B"}
+    sessions.complete_handoff(st, "deck-42", saved, line)
+    assert sessions.load(st, "deck-42") is None
+    assert history_store.read_all(st, "42")[-1] == line
+
+
+def test_complete_handoff_deletes_the_save_even_if_the_line_fails(
+    st: Storage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctrl, store = _start(st, SHORT[:1], encodeReps=1)
+    _finish(ctrl)
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+
+    def fail(*_args: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(st, "append_jsonl", fail)
+    with pytest.raises(OSError, match="disk full"):
+        sessions.complete_handoff(st, "deck-42", saved, {"type": "handoff"})
+    assert sessions.load(st, "deck-42") is None
+
+
+def test_decline_handoff(st: Storage) -> None:
+    ctrl, store = _start(st, SHORT[:1], encodeReps=1)
+    _finish(ctrl)
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    sessions.decline_handoff(st, "deck-42", saved, 1_790_000_000_000)
+    assert sessions.load(st, "deck-42") is None
+    session_line, declined = history_store.read_all(st, "42")
+    assert session_line["type"] == "session"
+    assert declined["type"] == "handoff" and declined["declined"] is True
+    assert declined["sessionId"] == store.meta.session_id
+
+
 # ---------------------------------------------------------------------------
 # Drill again
 # ---------------------------------------------------------------------------

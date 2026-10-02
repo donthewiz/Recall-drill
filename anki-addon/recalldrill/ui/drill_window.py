@@ -8,9 +8,8 @@ Behavior lives in the controller (``controller.py``) and HTML in
 - forwards keys and clicks: Enter submits or continues, Esc reveals,
   Ctrl+Enter counts as correct, Ctrl+E edits in Anki, Ctrl+R replays audio;
 - runs the effects: the dwell timer, audio, the flash, clearing the input;
-- opens Anki's Browser for "Edit in Anki" and reads the card back when it closes.
-
-Nothing here writes to the collection.
+- opens Anki's Browser for "Edit in Anki" and reads the card back when it closes;
+- offers the finished session's handoff (``handoff_dialog``, the only write).
 """
 
 from __future__ import annotations
@@ -64,11 +63,12 @@ from ..controller import (
 )
 from ..sessions import SessionStore
 from .context import AddonContext
+from .handoff_dialog import offer_handoff
 
 log = logging.getLogger(__name__)
 
 GEOM_KEY = "recalldrill_drill"
-HANDOFF_TOOLTIP = "Hand off to Anki: coming next (Phase 4). Nothing is written to Anki yet."
+HANDOFF_TOOLTIP = "Hand off to Anki: tag, unsuspend and schedule these cards (one undo step)"
 
 _DOT_COLORS = {
     # (light, night): the web app's --text-muted, --warning, --accent, --success.
@@ -102,6 +102,7 @@ class DrillWindow(QDialog):
         self._edit_browser: Any = None
         self._edit_item: int | None = None
         self._last_mode: str | None = None
+        self._handed_off = False
 
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -193,10 +194,10 @@ class DrillWindow(QDialog):
             (self.next_batch_btn, self._next_batch),
             (self.save_stop_btn, self._end_session),
             (self.again_btn, self._drill_again),
+            (self.handoff_btn, self._handoff),
             (self.close_btn, self.close),
         ):
             qconnect(b.clicked, fn)
-        self.handoff_btn.setEnabled(False)
         for b in (
             self.check_btn,
             self.continue_btn,
@@ -329,7 +330,10 @@ class DrillWindow(QDialog):
             self.again_btn.setText(summary.drill_again_label)
         # A drill-again session has no handoff of its own.
         self.handoff_btn.setVisible(
-            done and self.ctrl.finished == "complete" and not self.store.meta.is_drill_again
+            done
+            and self.ctrl.finished == "complete"
+            and not self.store.meta.is_drill_again
+            and not self._handed_off
         )
         self.close_btn.setVisible(done)
 
@@ -522,6 +526,15 @@ class DrillWindow(QDialog):
         except ValueError:
             return
         self._set_session(ctrl, store)
+
+    def _handoff(self) -> None:
+        if self.ctrl.finished != "complete" or self.store.meta.is_drill_again:
+            return
+        offer_handoff(self.ctx, self, self.store.meta.key, on_done=self._after_handoff)
+
+    def _after_handoff(self) -> None:
+        self._handed_off = True
+        self._render()
 
     # -- closing ----------------------------------------------------------------
 

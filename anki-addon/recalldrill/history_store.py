@@ -6,7 +6,11 @@
   ``sessionId``, the web app's ``buildHistoryEntry`` fields, an ``anki`` block
   (per card ``cid, nid, ord, card_class``), the encode settings used, the scope,
   ``collisions`` and ``holdout: []`` (Phase 5 fills it in).
-- ``type: "handoff"``: Phase 4 appends one per handoff, with the same ``sessionId``.
+- ``type: "handoff"``: one per handoff (``anki_io/handoff.py``, ``handoff_line``),
+  with the same ``sessionId``: mode, timestamp, the card ids per group, what
+  was done, the tag counts, per card ``struggle`` and ``hard``, and the
+  forecast. "Don't hand off" writes ``{"type": "handoff", "declined": true}``
+  instead (:func:`declined_line`).
 
 Lines are never rewritten, and there is no ``MAX_HISTORY_ENTRIES`` cap: Phase 5
 reads the whole log. :func:`read_recent` serves the panel.
@@ -20,6 +24,7 @@ session ended. Setup reads it in place of the exposure-level seed.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, NotRequired, TypedDict, cast
 
 from .engine.estimate import (
@@ -127,6 +132,59 @@ def append_session(storage: Storage, history_key: str, line: Mapping[str, Any]) 
         return False
     storage.append_jsonl(history_name(history_key), dict(line))
     return True
+
+
+def append_handoff(storage: Storage, history_key: str, line: Mapping[str, Any]) -> None:
+    """Appends a ``type: "handoff"`` line (a handoff, or a declined one)."""
+    if line.get("type") != "handoff":
+        raise ValueError("not a handoff line")
+    storage.append_jsonl(history_name(history_key), dict(line))
+
+
+def declined_line(session_id: str, at_ms: float) -> dict[str, Any]:
+    """ "Don't hand off": the session's save is deleted and nothing is written to Anki."""
+    return {
+        "type": "handoff",
+        "sessionId": session_id,
+        "declined": True,
+        "timestamp": js_iso_string(at_ms),
+    }
+
+
+@dataclass(frozen=True)
+class HardCards:
+    """Per card, whether its latest handoff found it hard (``rd::hard`` is a note
+    tag, so a note's other cards share it). Cards never handed off are in neither."""
+
+    hard: frozenset[int]
+    not_hard: frozenset[int]
+
+
+def hard_cards(storage: Storage) -> HardCards:
+    """Every history log's handoff lines (declined ones aside), latest per card."""
+    latest: dict[int, tuple[str, bool]] = {}
+    for name in storage.list_names(HISTORY_DIR, ".jsonl"):
+        for raw in storage.read_jsonl(name):
+            if not isinstance(raw, dict):
+                continue
+            line = cast(dict[str, Any], raw)
+            if line.get("type") != "handoff" or line.get("declined"):
+                continue
+            at = str(line.get("timestamp") or "")
+            for card in cast(list[Any], line.get("cards") or []):
+                if not isinstance(card, dict):
+                    continue
+                c = cast(dict[str, Any], card)
+                cid = c.get("cid")
+                if not isinstance(cid, int) or isinstance(cid, bool):
+                    continue
+                prev = latest.get(cid)
+                if prev is None or at >= prev[0]:
+                    latest[cid] = (at, bool(c.get("hard")))
+    return HardCards(
+        hard=frozenset(cid for cid, (_, h) in latest.items() if h),
+        not_hard=frozenset(cid for cid, (_, h) in latest.items() if not h),
+    )
 
 
 def read_all(storage: Storage, history_key: str) -> list[dict[str, Any]]:

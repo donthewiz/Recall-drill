@@ -27,13 +27,14 @@ from ..engine.estimate import (
     compute_cold_start_estimate,
     format_cold_start_range,
 )
-from ..history_store import get_cold_start_history
+from ..history_store import get_cold_start_history, hard_cards
 from ..launch import session_config
 from ..prompts import parse_hint_overrides
 from ..sessions import SaveStatus
 from ..storage import HINTS, Storage
 from .build import BuildResult, build_session
 from .cards import NoteCache
+from .handoff import HARD_SEARCH
 from .notetypes import MappingTable, field_names, load_overrides
 from .resume import ResumeCheck, check_resume
 from .select import (
@@ -241,6 +242,7 @@ def options_for(
     max_cards: int | None,
     extra_tag: str | None,
     order: Any,
+    exclude_cids: frozenset[int] = frozenset(),
 ) -> SelectOptions:
     """``SelectOptions`` with the template filter taken from the deck settings."""
     return SelectOptions(
@@ -249,7 +251,17 @@ def options_for(
         max_cards=max_cards,
         extra_tag=extra_tag or None,
         order=order,
+        exclude_cids=exclude_cids,
     )
+
+
+def hard_exclusions(storage: Storage, scope: Scope) -> frozenset[int]:
+    """For the ``tag:rd::hard`` scope: the cards whose last handoff found them
+    not hard (their note has the tag through a sibling). Empty for any other
+    scope, and for cards never handed off."""
+    if scope.search is None or scope.search.strip() != HARD_SEARCH:
+        return frozenset()
+    return hard_cards(storage).not_hard
 
 
 def save_hint(storage: Storage, key: str, hint: str | None) -> None:

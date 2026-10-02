@@ -275,13 +275,13 @@ SessionView isn't a pure view, so its behavior is ported to a Qt-free `DrillCont
 - The content is the web app's `SavedSessionState`, written as SessionView builds it, plus `addon`: `sources`, `scope`, `selectOptions`, `deckSettings`, `hints`, `sessionId` (uuid4 hex from Start), `startedAt`, `collisions`, `handoffPending`, `historyWritten`, `drillAgainOf`.
 - Resume (`sessions.resume`) mirrors `App.handleResumeSession`.
 - `anki_io.resume.check_resume(col, saved)` lists `missing` and `changed` cards (answer hash vs what `build` reads now) for "Start fresh" / "Resume with the saved text". Engine state is never patched.
-- **On completion:** history is written once, then `handoffPending` is set and the save is kept. A pending save offers "Hand off finished session", never "Resume". It's deleted after the Phase 4 handoff or on "Don't hand off" (`sessions.discard`).
+- **On completion:** history is written once, then `handoffPending` is set and the save is kept. A pending save offers "Hand off finished session", never "Resume". It's deleted after the handoff (`sessions.complete_handoff`) or on "Don't hand off" (`sessions.decline_handoff`), each after its history line (see "Handoff (Phase 4)").
 - Drill-again sessions write no history and no handoff, and their save is deleted on completion.
 
 **History** (`recalldrill/history_store.py`): `history/<did or search key>.jsonl`, append-only, never rewritten, no 50-entry cap.
 - One `type: "session"` line per completed session: `sessionId`, `buildHistoryEntry`, `anki` (per card `cid, nid, ord, card_class`), `encode` (`encodeReps, chunkDifficulty, MIN_WORDS_TO_CHUNK, ladderMode, batchSize, strictPunctuation, stemTolerance, hints`), `scope`, `collisions`, `holdout: []`.
 - An append skips a `sessionId` that already has a session line. That covers a crash between the append and the save's `historyWritten`.
-- Phase 4 adds `type: "handoff"` lines.
+- Phase 4 added `type: "handoff"` lines (a handoff, or a declined one; see "Handoff (Phase 4)").
 - **Cold-start estimates:** `estimates.json`, keyed like the saves. It ports `get/saveColdStartHistory` and is updated whenever a session ends (completed or stopped), as SessionView's `finishSession` does.
 
 ## Mid-session edit
@@ -346,6 +346,7 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 | Deck gear → **Recall Drill this deck** | `deck_browser_will_show_options_menu(menu, deck_id)` | works |
 | Overview → **Recall Drill** button | `overview_will_render_bottom(link_handler, links)`: the button is added to `links`, and the returned handler answers its `pycmd` | works. **`webview_did_receive_js_message` isn't needed**: the overview's bottom bar sends its messages to the handler this filter returns. |
 | Profile close | `profile_will_close`: each open drill window flushes its dwell, saves and stops, and closes; setup panels close | works |
+| Tools → **Recall Drill: my rd::hard cards** / **Recall Drill: filtered deck for rd::hard** | `mw.form.menuTools` actions (Phase 4) | works (headless test; Don's manual check) |
 
 "Works" is from the installed source and headless tests; Don's manual check confirms it in Anki. The Phase 2 dev preview (`Recall Drill (dev): preview current deck`) is gone; its content is the setup panel's. The About box stays.
 
@@ -353,7 +354,7 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 
 `ui/setup_dialog.py`, reading through `anki_io/panel.py` with `QueryOp` (off the main thread, 300 ms after the last change).
 - **Scope**: the deck (with subdecks), or a **Search…** over the whole collection. A search's settings belong to the deck holding most of what it finds (`deck_settings.settings_deck`, every template counted).
-- **Saved session** for the scope's key: a pending handoff offers **Hand off finished session** (disabled until Phase 4) / **Discard**; a resumable save offers **Resume** / **Start fresh**; a save with missing or changed cards (`check_resume`) lists them and offers **Start fresh (recommended)** / **Resume with saved text**. Start with a save present asks before replacing it.
+- **Saved session** for the scope's key: a pending handoff offers **Hand off finished session** / **Don't hand off** (Phase 4); a resumable save offers **Resume** / **Start fresh**; a save with missing or changed cards (`check_resume`) lists them and offers **Start fresh (recommended)** / **Resume with saved text**. Start with a save present asks before replacing it.
 - **Cards**: class toggles with eligible counts (Phase 2 defaults), max cards (0 = all), an exact tag, order. **Templates**: one checkbox per template of each multi-template standard note type, saved as the deck's `card_ords`; the sibling count is shown. **Ineligible** reasons are summed, with **Edit mapping…** (`ui/mapping_dialog.py`: answer field, Extra field or ineligible per (note type, template), saved to `mappings.json`).
 - **Settings for this deck**: batch size (0 = whole deck), blind typings (`encodeReps`, now a per-deck setting; the config's `encode_reps` is the default), cycle order, strict punctuation, word-ending tolerance (disabled while strict, as the app), hints. While nothing is saved for the deck, the terminology proposal is offered as **Use terminology settings** (one click; it changes the draft, it isn't saved). Settings are saved only by **Save** or **Start**.
 - **Hints**: the flagged prompts, and prompts that already have a manual hint, with the hint editable in place (`hints.json`; an emptied cell removes the hint).
@@ -361,6 +362,74 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 - **Start** goes through `launch.start`: saves the deck's settings, then `sessions.start_session` (`build_items(…, shuffle_within_batch=False)`). Disabled with 0 drillable cards, saying why.
 
 Global config gained `autoplay_question_audio` (default false); `addon_config.parse_config` gives every missing or mistyped key its default.
+
+## Handoff (Phase 4)
+
+`recalldrill/anki_io/handoff.py`, `recalldrill/ui/handoff_dialog.py`. Executable in `tests/anki_io/test_handoff.py` (scratch collection, FSRS on) and the new facts at the end of `tests/anki_io/test_api_facts.py`.
+
+A **complete** session (every card `finalDone`) is handed to Anki in one confirmed, undoable step. From then on Anki owns the cards' scheduling, and the drill's struggles live on as note tags. A saved-and-stopped or abandoned session hands off nothing.
+
+**Plan, then apply.** `plan_handoff(col, saved, settings)` reads a fresh `CardSnapshot` of every session card (and of every card of their notes), then `build_plan` (pure) decides. Cards that no longer exist are skipped and listed. `apply_handoff(col, plan)` is the add-on's **only collection write**. The UI runs it inside `CollectionOp`: one undo step, "Recall Drill handoff", and the main window refreshes.
+
+| Group | Rule | Action |
+|---|---|---|
+| `drilled_new` | `type == 0` now (suspended or not) | **A**: unsuspend, `set_due_date("1")`. **B**: unsuspend, reposition to the front of the new queue in drill order, bury (manual) |
+| `drilled_scheduled` | `type != 0` now (learning, review, relearning; suspended leeches, red-flagged repair cards, and a card studied on the phone since the drill) | unsuspend if suspended; the schedule is **never** changed; buried (manual) if due today or overdue, so its first Anki rating comes tomorrow |
+| `siblings` | `handoff_siblings` on; the drilled notes' other cards that weren't in the session and are new **and** suspended | unsuspend, reposition right after the drilled cards (A: at the front), bury |
+| `holdout` | empty until Phase 5 | — |
+
+"Due today or overdue": a review or day-learning card with `due <= today`, or an intraday learning card due before `col.sched.day_cutoff` (the home deck's due while in a filtered deck).
+
+**Flags and tags.** The red flag is cleared on drilled cards that have it (`clear_flag_on_handoff`, default on; `set_user_flag_for_cards(0, …)`): the last step of the anki-cards repair routine. Tags are note-level, so a note qualifies if any of its drilled cards does: `rd::drilled` always; `rd::hard` when misses + reveals + Final-check misses ≥ `hard_threshold` (3); `rd::final-miss` when a Final-check miss happened; `rd::long` for a chunked answer (`tag_long`, default off). `rd::hard` and `rd::final-miss` are **replaced**: removed from this session's notes that no longer qualify. Other tags (`rd::drill::*`, `Part::*`, `Layer::*`, `leech`) are never touched.
+
+**Every action is planned only where it changes something** (unsuspend only suspended cards, bury only unburied ones, reposition only when the cards aren't already at those positions, tags only where missing or present). So planning again right after a handoff plans nothing (tested for A and B).
+
+**Settings** (`config.json`): `handoff_mode` ("B", from the decision above; "A" is implemented too, so changing it is a setting), `handoff_siblings` (true), `hard_threshold` (3), `clear_flag_on_handoff` (true), `tag_long` (false).
+
+### Facts found in Phase 4 (checked on 26.08.1)
+
+| Fact | Consequence |
+|---|---|
+| **Each backend call commits on its own.** `add_custom_undo_entry` is not a transaction, and `CollectionOp` adds none: a failure partway leaves the earlier calls applied, as separate undo steps ("Update Tag" on top). | **Decision (Don, 2026-10-02): roll back.** On any exception, `apply_handoff` merges what ran into the "Recall Drill handoff" entry, undoes it (only if that entry is on top) and raises `HandoffFailed(rolled_back=True)`. The session stays pending and the error says nothing changed. If the rollback fails too, the message points at Edit → Undo. Tested with a forced failure mid-handoff. |
+| `unsuspend_cards` is `restore_buried_and_suspended_cards`: it **unburies** too. | Only suspended cards are passed to it, and it runs before the buries. |
+| `reposition_new_cards` gives one position **per note**, in the order notes first appear in the list (the cards' current order doesn't matter); a note's cards share it. Other new cards shift by the number of cards passed. | Siblings in the same call would share their drilled card's position. They get a second call starting right after the drilled notes: drilled cards 0…n−1, siblings n…, then the deck's other new cards. Two drilled cards of one note share a position. |
+| `reposition_new_cards` on a new card in a filtered deck sets its home position (`odue`); `bury_cards` works there too; `set_due_date` takes the card out of the filtered deck. | No special case for filtered decks. |
+| `bury_cards(manual=True)` on review, learning and day-learning cards changes only `queue` (due, ivl, memory state untouched). | As the spec assumed. |
+| `prop:due=1` matches review and day-learning cards due tomorrow, not suspended or buried ones. `is:learn prop:due<1` matches intraday learning cards due today. | The forecast's "reviews tomorrow" search. |
+| Missing card or note ids are ignored by every call the handoff makes. | A card deleted between plan and apply can't fail the handoff. |
+| Deck options' "This deck" limits are `newLimit` / `reviewLimit` on the deck (None unless set). | The forecast uses them over the preset's `perDay` when set. |
+| `FilteredDeckConfigDialog(mw, search=…)` and its `reopen(…, search=…)`. | The rd::hard filtered-deck entry. |
+
+### Tomorrow's load (the forecast)
+
+`forecast(col, plan, top_deck_id)`, for the top-level deck of the deck holding most drilled cards:
+- **Reviews tomorrow**: the cards of `deck:"<top>" (prop:due=1 OR (is:learn prop:due<1))`, plus the handed-off cards that will be reviews tomorrow and that search doesn't count yet (A's drilled new cards; scheduled cards buried today). Counted as a set of card ids, so nothing counts twice. Compared with the deck's review limit.
+- **New cards tomorrow**: B's drilled new cards plus the siblings, the ones joining the front of the new queue. Compared with new/day; above it, `new − limit` spill to the following day.
+- **Collection-wide** reviews tomorrow, the same way, as context.
+- **Warnings** (amber, never blocking): new/day exceeded, review limit exceeded, or reviews tomorrow > 1.5 × the deck's average of `prop:due=1` … `prop:due=7`.
+- **When**: `next_day_start(now, rollover)`: today at the rollover hour if that's still ahead (drilling at 1 AM with a 4 AM rollover: that same morning), else tomorrow's. Written "Sat Oct 3, 4:00 AM" (English names whatever the locale). Checked against `col.sched.day_cutoff`.
+
+### The dialog
+
+From the Done screen's **Hand off** or the setup panel's **Hand off finished session** (`offer_handoff`): plan and forecast with `QueryOp`, then the confirmation:
+- the headline "Hand off N cards: tag, unsuspend, <B: stay new, front of the queue, available from …> / <A: become review cards due from … (no learning steps)>";
+- already-scheduled cards that keep their schedule, and those buried until tomorrow; missing cards; siblings; tags +X / −Y with a per-tag breakdown; red flags cleared;
+- the forecast block and its warnings.
+
+Buttons: **Hand off**; **Not now** (the session stays pending); **Don't hand off** (the save goes, with a declined history line). On success: the `type: "handoff"` history line, then the save is deleted, then "Handed off. Edit → Undo "Recall Drill handoff" reverts it." On failure: the session stays pending and the error shows.
+
+The setup panel's other ways out of a pending handoff also write the declined line: its **Don't hand off** button (was "Discard"), and **Start** over it (after the "replaces it" question).
+
+**Undo doesn't bring the save back.** After Edit → Undo "Recall Drill handoff", the cards are back as they were, but the session's save is already deleted, so the panel has no banner. Edit → Redo re-applies the handoff.
+
+**History lines** (`history/<key>.jsonl`): `{"type": "handoff", "sessionId", "mode", "timestamp", "groups": {drilled_new, drilled_scheduled, siblings, holdout, missing}, "actions": {unsuspended, setDue, repositioned: [{cids, start}], buried, flagsCleared}, "tags": {added, removed, byTag}, "hardThreshold", "cards": [{cid, nid, ord, struggle, finalMisses, chunked, hard}], "forecast": {…}}`, or `{"type": "handoff", "sessionId", "declined": true, "timestamp"}`.
+
+### The rd::hard entries (Tools menu)
+
+- **Recall Drill: my rd::hard cards** opens the setup panel with the search `tag:rd::hard` (an exact tag).
+- **Recall Drill: filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. Don builds the deck there; the add-on creates nothing.
+
+**Changed from the prompt: a per-card filter, not the template filter.** `rd::hard` is a note tag, so a hard card's siblings carry it too. The prompt asked to narrow with the template filter, but that works on the template index, which is 0 for every card of a cloze note type ("Reading cards", template filter), so it can't keep c1 and drop c2. And it's a saved deck setting, which Start would save for the deck. Instead, `SelectOptions.exclude_cids` leaves out the cards whose **latest handoff line** says `hard: false` (`history_store.hard_cards`, every history log, declined lines ignored). Cards never handed off (a note tagged by hand) stay in. The panel shows "Only the cards that were hard in their last handoff" (on), and how many were left out. The panel applies this to the `tag:rd::hard` search only. The filtered deck uses the plain tag.
 
 ## Engine extensions beyond the TS engine
 

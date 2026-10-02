@@ -7,7 +7,12 @@ result, and starts or resumes through ``launch``. Saves only:
 - a manual hint, when one is edited (``hints.json``);
 - a mapping, from "Edit mapping…" (``mappings.json``).
 
-Nothing is written to the collection.
+The pending banner's **Hand off finished session** runs the handoff
+(``handoff_dialog``); nothing else here writes to the collection.
+
+The ``tag:rd::hard`` search ("Recall Drill: my rd::hard cards") leaves out, by
+default, the cards whose last handoff found them not hard: the tag is on the
+note, so a hard card's siblings (and cloze siblings) carry it too.
 """
 
 from __future__ import annotations
@@ -48,6 +53,7 @@ from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
 from ..anki_io.panel import (
     PanelData,
     SavedInfo,
+    hard_exclusions,
     initial_settings,
     options_for,
     read_panel,
@@ -62,6 +68,7 @@ from ..deck_settings import DeckSettings
 from ..engine.estimate import ExposureLevel
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
+from .handoff_dialog import offer_handoff
 from .mapping_dialog import MappingDialog
 
 GEOM_KEY = "recalldrill_setup"
@@ -105,6 +112,8 @@ class SetupDialog(QDialog):
         self._updating = False
         self._loading = False
         self._template_boxes: dict[int, list[tuple[int, QCheckBox]]] = {}
+        self.hard_exclude: frozenset[int] = frozenset()
+        """For the ``tag:rd::hard`` scope: cards not hard in their last handoff."""
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -163,13 +172,13 @@ class SetupDialog(QDialog):
         self.resume_saved_btn = QPushButton("Resume with saved text")
         self.fresh_btn = QPushButton("Start fresh")
         self.handoff_btn = QPushButton("Hand off finished session")
-        self.handoff_btn.setEnabled(False)
         self.handoff_btn.setToolTip(HANDOFF_TOOLTIP)
-        self.discard_btn = QPushButton("Discard")
+        self.discard_btn = QPushButton("Don't hand off")
         for b, fn in (
             (self.resume_btn, self._resume),
             (self.resume_saved_btn, self._resume),
             (self.fresh_btn, self._start_fresh),
+            (self.handoff_btn, self._handoff),
             (self.discard_btn, self._discard_saved),
         ):
             b.setAutoDefault(False)
@@ -199,6 +208,15 @@ class SetupDialog(QDialog):
             self.class_boxes[c] = box
             grid.addWidget(box, i // 3, i % 3)
         cl.addLayout(grid)
+        self.hard_only = QCheckBox("Only the cards that were hard in their last handoff")
+        self.hard_only.setChecked(True)
+        self.hard_only.setToolTip(
+            "rd::hard is a note tag, so a hard card's siblings carry it too. "
+            "Untick to drill every card of the tagged notes."
+        )
+        self.hard_only.hide()
+        qconnect(self.hard_only.toggled, self._schedule)
+        cl.addWidget(self.hard_only)
         form = QFormLayout()
         self.max_cards = QSpinBox()
         self.max_cards.setRange(0, 100_000)
@@ -354,21 +372,28 @@ class SetupDialog(QDialog):
         storage = self.ctx.storage()
         self.deck_btn.setEnabled(self.deck_id is not None and scope.deck_id is None)
 
-        def op(col: Any) -> tuple[str, int | None, DeckSettings, SavedInfo | None]:
+        def op(
+            col: Any,
+        ) -> tuple[str, int | None, DeckSettings, SavedInfo | None, frozenset[int]]:
             did = settings_deck(col, storage, scope)
             return (
                 scope_label(col, scope),
                 did,
                 initial_settings(storage, did),
                 read_saved(col, storage, scope_key(scope)),
+                hard_exclusions(storage, scope),
             )
 
-        def done(result: tuple[str, int | None, DeckSettings, SavedInfo | None]) -> None:
+        def done(
+            result: tuple[str, int | None, DeckSettings, SavedInfo | None, frozenset[int]],
+        ) -> None:
             if self._closed or scope != self.scope:
                 return
-            label, did, draft, saved = result
+            label, did, draft, saved, exclude = result
             self.settings_did = did
             self.draft = draft
+            self.hard_exclude = exclude
+            self.hard_only.setVisible(bool(exclude))
             what = "Deck" if scope.deck_id is not None else "Search"
             self.scope_label.setText(f"<b>{what}:</b> {label}")
             self.setWindowTitle(f"Recall Drill: {label}")
@@ -399,6 +424,7 @@ class SetupDialog(QDialog):
             max_cards=self.max_cards.value() or None,
             extra_tag=tag or None,
             order=cast(OrderMode, self.order.currentData()),
+            exclude_cids=self.hard_exclude if self.hard_only.isChecked() else frozenset(),
         )
 
     def _refresh(self) -> None:
@@ -501,6 +527,11 @@ class SetupDialog(QDialog):
             lines.append(f"Ineligible ({data.ineligible_total}): " + ", ".join(reasons) + ".")
         if sel.template_excluded:
             lines.append(f"{sel.template_excluded} left out by the template filter.")
+        if sel.excluded:
+            lines.append(
+                f"{_plural(sel.excluded, 'card')} left out: not hard in "
+                f"{'its' if sel.excluded == 1 else 'their'} last handoff."
+            )
         image_fronts = sum(1 for s in b.sources if s.image_front)
         if image_fronts:
             lines.append(f"{image_fronts} show an image on the front (no hints for them).")
@@ -711,6 +742,11 @@ class SetupDialog(QDialog):
             return
         if self._already_open() or not self._confirm_replace():
             return
+        saved = self.saved_info
+        if saved is not None and saved.status == "handoff":
+            # Starting over a finished session declines its handoff.
+            sessions.decline_handoff(self.ctx.storage(), saved.key, saved.saved, launch.now_ms())
+            self._show_saved(None)
         self._launch_new()
 
     def _launch_new(self) -> None:
@@ -750,20 +786,33 @@ class SetupDialog(QDialog):
         open_drill_window(self.ctx, ctrl, store)
         self.close()
 
-    def _discard_saved(self) -> None:
+    def _handoff(self) -> None:
         saved = self.saved_info
-        if saved is None:
+        if saved is None or saved.status != "handoff":
+            return
+        offer_handoff(self.ctx, self, saved.key, on_done=self._after_handoff)
+
+    def _after_handoff(self) -> None:
+        if self._closed:
+            return
+        self._show_saved(None)
+        self._refresh()
+
+    def _discard_saved(self) -> None:
+        """ "Don't hand off": the finished session goes, nothing is written to Anki."""
+        saved = self.saved_info
+        if saved is None or saved.status != "handoff":
             return
         answer = QMessageBox.question(
             self,
             "Recall Drill",
-            "Discard the finished session without handing it off? Nothing is written to Anki.",
+            "Clear the finished session without handing it off? Nothing is written to Anki.",
             QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
         if answer != QMessageBox.StandardButton.Discard:
             return
-        sessions.discard(self.ctx.storage(), saved.key)
+        sessions.decline_handoff(self.ctx.storage(), saved.key, saved.saved, launch.now_ms())
         self._show_saved(None)
 
     # -- closing ----------------------------------------------------------------

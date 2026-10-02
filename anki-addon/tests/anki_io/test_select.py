@@ -241,6 +241,19 @@ def test_template_filter_and_sibling_warning(col: Collection) -> None:
     assert len(select(col, scope, card_ords={ntid: frozenset({1})}).picked) == 4
 
 
+def test_exclude_cids_leaves_cards_out_whatever_their_class(col: Collection) -> None:
+    """The "my rd::hard cards" entry: a hard card's cloze sibling shares the
+    note tag, and the template filter can't tell cloze cards apart."""
+    did = deck(col, "X")
+    note = add_note(col, "Cloze", did, {"Text": "{{c1::alpha}} and {{c2::beta}}"}, ["rd::hard"])
+    c1, c2 = sorted(note.cards(), key=lambda c: c.ord)
+    scope = Scope(search="tag:rd::hard")
+    assert [c.snap.cid for c in select(col, scope).picked] == [c1.id, c2.id]
+    sel = select(col, scope, exclude_cids=frozenset({c2.id, 999}))
+    assert [c.snap.cid for c in sel.picked] == [c1.id]
+    assert sel.excluded == 1 and sum(sel.eligible_counts.values()) == 1
+
+
 # ---------------------------------------------------------------------------
 # Scope and tags
 # ---------------------------------------------------------------------------

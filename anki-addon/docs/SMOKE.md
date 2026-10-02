@@ -1,8 +1,8 @@
 # Recall Drill add-on: manual smoke check
 
-Run in Anki 26.08.1 with the dev junction (`docs/DECISIONS.md`, "Dev install"), on Don's real collection. Nothing in this check writes to the collection; step 11 confirms it. Phase 7 extends this list.
+Run in Anki 26.08.1 with the dev junction (`docs/DECISIONS.md`, "Dev install"), on Don's real collection. Phase 7 extends this list.
 
-Phase 3b (drill window, setup panel, entry points).
+Phase 3b (drill window, setup panel, entry points): nothing in steps 1–13 writes to the collection; step 11 confirms it. Phase 4 (the handoff) is below: **its handoffs are real**.
 
 ## Setup
 
@@ -28,7 +28,7 @@ Phase 3b (drill window, setup panel, entry points).
 ## Save, resume and finish
 
 - [ ] 9. Click the window's X → **Save**. Quit Anki, reopen it, and Recall Drill this deck again: the panel offers **Resume**, and Resume lands on the same card.
-- [ ] 10. Finish both batches and the Final check, missing one card on purpose. The Done screen lists it under **Missed in final check**; **Hand off** is there but disabled ("coming next"); **Drill these cards again** runs just that card.
+- [ ] 10. Finish both batches and the Final check, missing one card on purpose. The Done screen lists it under **Missed in final check**; **Hand off** is there (don't press it yet: Phase 4 below); **Drill these cards again** runs just that card.
 - [ ] 11. Back in the Browser, the 6 cards are **still suspended and untagged**. Nothing was written to the collection.
 
 ## An anki-cards deck
@@ -48,6 +48,26 @@ Phase 3b (drill window, setup panel, entry points).
   - [ ] no hint is added;
   - [ ] type the label (e.g. `osteon`). On feedback, the verdict and diff are at the top, then the cue, then the back of the card **in place of** the question figure (one figure, that region revealed, its label), then the Extra only once;
   - [ ] the next card starts scrolled to the top.
+
+## Phase 4: hand off to Anki
+
+These handoffs are **real**: the cards show up in your Anki reviews tomorrow. Edit → Undo reverts each one.
+
+- [ ] 14. **Recall Drill this deck** on **Medical Terminology › 3 - Skeletal System**: the banner shows **Hand off finished session** for the 6-card Reverse session from step 10.
+- [ ] 15. Click it. The dialog shows:
+  - [ ] 6 cards, "stay new, front of the queue, available from Sat Oct 3, 4:00 AM" (the date and time of Anki's next day; handoff B);
+  - [ ] Siblings: 6 (their Normal cards);
+  - [ ] Tags: +7 / −0 (rd::drilled +6, rd::final-miss +1), with your own counts;
+  - [ ] tomorrow's new cards and reviews for Medical Terminology, and any amber warning.
+- [ ] 16. **Hand off**: "Handed off. Edit → Undo "Recall Drill handoff" reverts it." Then, in the Browser:
+  - [ ] `tag:rd::drilled` finds exactly those 6 notes; the card missed in the Final check also has `rd::final-miss`;
+  - [ ] `tag:rd::drilled is:buried` finds 12 cards (the 6 Reverse cards and their 6 Normal siblings), all new, none suspended, first when sorted by Due (Reverse 0–5, then Normal).
+- [ ] 17. **Edit → Undo "Recall Drill handoff"**: all 12 are suspended and untagged again. Then **Edit → Redo** (Ctrl+Shift+Z) to hand off again. The banner doesn't come back after an undo: the session's save was deleted on success.
+- [ ] 18. **Tomorrow**: those cards come first in your Med Term new cards.
+- [ ] 19. Tools → **Recall Drill: my rd::hard cards** opens the panel scoped to `tag:rd::hard` (empty if nothing reached 3 misses + reveals; that's fine). Tools → **Recall Drill: filtered deck for rd::hard** opens Anki's filtered-deck dialog with `tag:rd::hard` filled in; close it without building.
+- [ ] 20. **anki-cards deck:** **Search…** `"deck:General Psychology::Psychology Ch7" tag:rd::drill::A`, max **5**. Drill to the end, then **Hand off**:
+  - [ ] those 5 new cards are buried and at the front of the Ch7 new queue;
+  - [ ] their `rd::drill::A`, `Part::*` and `Layer::*` tags are still there, with `rd::drilled` added.
 
 ## Also worth a look
 

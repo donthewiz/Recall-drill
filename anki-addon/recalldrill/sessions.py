@@ -19,8 +19,9 @@ Lifecycle, as App.tsx's ``handleFinishSession`` with the handoff on top:
 - Save and stop / End session: the save stays and resumes later.
 - The Final check completes: history is written once (``historyWritten``),
   then ``handoffPending`` is set and the save is kept. It is deleted only after
-  a successful handoff (Phase 4) or when Don chooses "Don't hand off"
-  (:func:`discard`). A pending save offers "Hand off finished session", never
+  a successful handoff (:func:`complete_handoff`) or when Don chooses "Don't
+  hand off" (:func:`decline_handoff`); each appends a ``type: "handoff"``
+  history line first. A pending save offers "Hand off finished session", never
   "Resume" (:func:`save_status`).
 - A drill-again session writes no history and has no handoff: its save is
   deleted on completion, as the web app clears it.
@@ -46,7 +47,13 @@ from .engine.types import (
     SessionState,
     SessionStats,
 )
-from .history_store import append_session, build_session_line, record_cold_start
+from .history_store import (
+    append_handoff,
+    append_session,
+    build_session_line,
+    declined_line,
+    record_cold_start,
+)
 from .sources import SourceRef, source_from_json
 from .storage import SESSIONS_DIR, Storage
 
@@ -216,6 +223,32 @@ def delete(storage: Storage, key: str) -> bool:
 def discard(storage: Storage, key: str) -> bool:
     """ "Don't hand off" on a finished session (or Start fresh): the save goes."""
     return delete(storage, key)
+
+
+def _pending_meta(key: str, saved: Mapping[str, Any]) -> SessionMeta:
+    return SessionMeta.from_json(key, cast(Mapping[str, Any], saved["addon"]))
+
+
+def complete_handoff(
+    storage: Storage, key: str, saved: Mapping[str, Any], line: Mapping[str, Any]
+) -> None:
+    """After a successful handoff: its history line, then the save goes. The
+    save goes even if the line can't be written (that error is re-raised): the
+    cards are in Anki now, so the session mustn't be offered again."""
+    meta = _pending_meta(key, saved)
+    try:
+        append_handoff(storage, history_key(meta.scope), line)
+    finally:
+        delete(storage, key)
+
+
+def decline_handoff(storage: Storage, key: str, saved: Mapping[str, Any], now_ms: int) -> None:
+    """ "Don't hand off": a declined line in the history, and the save goes."""
+    meta = _pending_meta(key, saved)
+    try:
+        append_handoff(storage, history_key(meta.scope), declined_line(meta.session_id, now_ms))
+    finally:
+        delete(storage, key)
 
 
 def saved_sources(saved: Mapping[str, Any]) -> list[SourceRef]:

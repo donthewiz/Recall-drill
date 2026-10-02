@@ -32,6 +32,7 @@ from recalldrill.anki_io.cards import DEFAULT_ENABLED
 from recalldrill.anki_io.notetypes import MappingOverride, MappingTable, save_override
 from recalldrill.anki_io.panel import (
     PanelData,
+    hard_exclusions,
     initial_settings,
     options_for,
     read_panel,
@@ -166,6 +167,52 @@ def test_search_scope(col: Collection, tmp_path: Path) -> None:
     p = _read(col, st, Scope(search=search))
     assert p.label == search and p.key.startswith("search-") and p.settings_did == did
     assert p.drillable == len(col.find_cards(search))
+
+
+def test_hard_cards_scope_leaves_out_cards_that_werent_hard(
+    col: Collection, tmp_path: Path
+) -> None:
+    from recalldrill import history_store
+    from recalldrill.anki_io.handoff import HARD_SEARCH
+
+    top = _med_term(col)
+    st = Storage(tmp_path, "p")
+    nids = col.find_notes('deck:"Medical Terminology"')[:2]
+    col.tags.bulk_add(nids, "rd::hard")
+    cards = [sorted(col.get_note(n).cards(), key=lambda c: c.ord) for n in nids]
+    # The last handoff: note 0's Reverse card was hard, its Normal card wasn't;
+    # note 1 was tagged by hand (no handoff data): all its cards stay in.
+    history_store.append_handoff(
+        st,
+        str(top),
+        {
+            "type": "handoff",
+            "sessionId": "s",
+            "timestamp": "2026-10-02T10:00:00.000Z",
+            "cards": [
+                {"cid": cards[0][1].id, "hard": True},
+                {"cid": cards[0][0].id, "hard": False},
+            ],
+        },
+    )
+    assert hard_exclusions(st, Scope(deck_id=top)) == frozenset()
+    scope = Scope(search=HARD_SEARCH)
+    exclude = hard_exclusions(st, scope)
+    assert exclude == frozenset({cards[0][0].id})
+    options = options_for(
+        {},
+        enabled=DEFAULT_ENABLED,
+        max_cards=None,
+        extra_tag=None,
+        order="priority_first",
+        exclude_cids=exclude,
+    )
+    p = read_panel(col, st, scope, options, {}, settings_deck(col, st, scope), DEFAULT_CONFIG)
+    assert p.selection.excluded == 1
+    assert sorted(s.cid for s in p.build.sources) == sorted(
+        [cards[0][1].id, cards[1][0].id, cards[1][1].id]
+    )
+    assert p.select_options["exclude_cids"] == [cards[0][0].id]
 
 
 def test_nothing_eligible(col: Collection, tmp_path: Path) -> None:

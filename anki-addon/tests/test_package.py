@@ -30,6 +30,12 @@ def test_config_defaults_match_web_app() -> None:
         "play_audio_on_feedback": True,
         # Add-on only (Phase 3b).
         "autoplay_question_audio": False,
+        # Add-on only (Phase 4): the handoff (docs/DECISIONS.md, "Handoff: A vs B").
+        "handoff_mode": "B",
+        "handoff_siblings": True,
+        "hard_threshold": 3,
+        "clear_flag_on_handoff": True,
+        "tag_long": False,
     }
 
 

@@ -9,3 +9,11 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `collision_catch` (true): add-on only. When a whole-answer trial (full answer, cycle, Final check) is answered with the exact answer of *another* card whose prompt conflicts with this one (same rule as the disambiguation hints), the drill says so and lets you try again. Nothing is graded and nothing is saved for that try.
 - `play_audio_on_feedback` (true): add-on only. Play the card's answer audio when the feedback shows the full answer.
 - `autoplay_question_audio` (false): add-on only. Play a card's question audio when it comes up in the drill (once per card, not on every trial of it).
+
+**Handing off a finished session to Anki** (one undo step: Edit → Undo "Recall Drill handoff"):
+
+- `handoff_mode` ("B"): how drilled *new* cards get their first Anki review. "B": they stay new, go to the front of the new queue and are buried until tomorrow, so Anki's learning steps run and the FSRS optimizer keeps them. "A": they become review cards due tomorrow (no learning steps; the FSRS optimizer never trains on them). Already-scheduled cards keep their schedule either way.
+- `handoff_siblings` (true): also hand off the suspended new cards of the same notes that weren't drilled (e.g. the Normal card of a drilled Reverse card): unsuspended, queued right after the drilled cards, buried until tomorrow.
+- `hard_threshold` (3): a card's misses + reveals + Final-check misses at or above this tags its note `rd::hard`.
+- `clear_flag_on_handoff` (true): remove the red flag from drilled cards that have it.
+- `tag_long` (false): tag notes whose answer was drilled in chunks `rd::long`.

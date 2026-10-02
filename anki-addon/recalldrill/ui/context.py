@@ -20,6 +20,8 @@ class AddonContext:
     """Open drill windows (``DrillWindow``), kept alive and closed with the profile."""
     dialogs: list[Any] = field(default_factory=list[Any])
     """Open setup panels."""
+    handoffs: set[str] = field(default_factory=set[str])
+    """Session keys whose handoff is running, so it can't run twice."""
 
     def storage(self) -> Storage:
         return Storage(self.user_files, mw.pm.name or "")

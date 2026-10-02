@@ -19,12 +19,17 @@ import pytest
 from anki.cards import Card, CardId
 from anki.collection import Collection, SearchNode
 from anki.consts import (
+    CARD_TYPE_LRN,
     CARD_TYPE_NEW,
     CARD_TYPE_REV,
+    QUEUE_TYPE_DAY_LEARN_RELEARN,
+    QUEUE_TYPE_LRN,
     QUEUE_TYPE_MANUALLY_BURIED,
     QUEUE_TYPE_NEW,
     QUEUE_TYPE_REV,
     QUEUE_TYPE_SUSPENDED,
+    CardQueue,
+    CardType,
 )
 from anki.dbproxy import DBProxy
 from anki.decks import DeckId
@@ -656,3 +661,119 @@ def test_browser_close_and_reopen() -> None:
     assert "search" in inspect.signature(Browser.reopen).parameters
     hooks = dir(gui_hooks)
     assert "browser_will_close" not in hooks and "browser_did_close" not in hooks
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: the handoff
+# ---------------------------------------------------------------------------
+
+
+def test_unsuspend_also_unburies(col: Collection) -> None:
+    """unsuspend_cards is restore_buried_and_suspended_cards: the handoff only
+    passes it suspended cards, or it would undo a bury."""
+    did = deck(col, "X")
+    card = first_card(add_basic(col, did))
+    col.sched.bury_cards([card.id], manual=True)
+    col.sched.unsuspend_cards([card.id])
+    card.load()
+    assert card.queue == QUEUE_TYPE_NEW
+
+
+def test_reposition_gives_one_position_per_note_in_list_order(col: Collection) -> None:
+    """Positions follow the list's order of notes, not the cards' current order,
+    and a note's cards share one. Other new cards shift by the number of cards."""
+    did = deck(col, "X")
+    model = col.models.by_name("Basic (and reversed card)")
+    assert model is not None
+    pairs: list[list[Card]] = []
+    for i in range(3):
+        note = col.new_note(model)
+        note["Front"], note["Back"] = f"f{i}", "b"
+        col.add_note(note, did)
+        pairs.append(sorted(note.cards(), key=lambda c: c.ord))
+    reverse = [p[1] for p in pairs][::-1]
+    normal = [p[0] for p in pairs][::-1]
+
+    def dues(cards: Sequence[Card]) -> list[int]:
+        for c in cards:
+            c.load()
+        return [c.due for c in cards]
+
+    col.sched.reposition_new_cards(
+        [c.id for c in reverse + normal], starting_from=0, step_size=1, randomize=False,
+        shift_existing=True,
+    )
+    assert dues(reverse) == dues(normal) == [0, 1, 2]  # siblings share the position
+    col.sched.reposition_new_cards(
+        [c.id for c in normal], starting_from=3, step_size=1, randomize=False,
+        shift_existing=True,
+    )
+    assert (dues(reverse), dues(normal)) == ([0, 1, 2], [3, 4, 5])
+
+
+def test_each_backend_call_commits_on_its_own(col: Collection) -> None:
+    """A custom undo entry is not a transaction: a later failure leaves earlier
+    calls applied, as separate undo steps, until they're merged and undone."""
+    did = deck(col, "X")
+    note = add_basic(col, did)
+    pos = col.add_custom_undo_entry("Recall Drill handoff")
+    col.tags.bulk_add([note.id], "rd::drilled")
+    # (a failure here)
+    note.load()
+    assert note.tags == ["rd::drilled"]
+    assert col.undo_status().undo == "Update Tag"
+    col.merge_undo_entries(pos)
+    assert col.undo().operation == "Recall Drill handoff"
+    note.load()
+    assert note.tags == []
+
+
+def test_prop_due_counts_reviews_and_day_learning_not_suspended_or_buried(
+    col: Collection,
+) -> None:
+    did = deck(col, "X")
+    today = col.sched.today
+
+    def card(type_: CardType, queue: CardQueue, due: int) -> CardId:
+        c = first_card(add_basic(col, did))
+        c.type, c.queue, c.due, c.ivl = type_, queue, due, 5
+        col.update_card(c)
+        return c.id
+
+    rev = card(CARD_TYPE_REV, QUEUE_TYPE_REV, today + 1)
+    day_learn = card(CARD_TYPE_LRN, QUEUE_TYPE_DAY_LEARN_RELEARN, today + 1)
+    susp = card(CARD_TYPE_REV, QUEUE_TYPE_SUSPENDED, today + 1)
+    buried = card(CARD_TYPE_REV, QUEUE_TYPE_MANUALLY_BURIED, today + 1)
+    learn = card(CARD_TYPE_LRN, QUEUE_TYPE_LRN, col.sched.day_cutoff - 60)
+    assert sorted(col.find_cards("prop:due=1")) == sorted([rev, day_learn])
+    assert col.find_cards("is:learn prop:due<1") == [learn]
+    assert susp not in col.find_cards("prop:due<=1") and buried not in col.find_cards("prop:due<=1")
+
+
+def test_clear_flag_with_zero(col: Collection) -> None:
+    did = deck(col, "X")
+    card = first_card(add_basic(col, did))
+    col.set_user_flag_for_cards(1, [card.id])
+    col.set_user_flag_for_cards(0, [card.id])
+    card.load()
+    assert card.user_flag() == 0
+
+
+def test_deck_limit_overrides_are_on_the_deck(col: Collection) -> None:
+    """Deck options' "This deck" limits: None unless set (the forecast reads them)."""
+    deck_dict = col.decks.get(deck(col, "X"))
+    assert deck_dict is not None
+    assert {k: deck_dict[k] for k in ("newLimit", "reviewLimit")} == {
+        "newLimit": None,
+        "reviewLimit": None,
+    }
+
+
+@needs_aqt
+def test_filtered_deck_dialog_takes_a_search() -> None:
+    import inspect
+
+    from aqt.filtered_deck import FilteredDeckConfigDialog
+
+    assert "search" in inspect.signature(FilteredDeckConfigDialog.__init__).parameters
+    assert "search" in inspect.signature(FilteredDeckConfigDialog.reopen).parameters

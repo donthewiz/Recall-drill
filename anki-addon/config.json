@@ -7,5 +7,10 @@
   "cycle_order": "shuffled",
   "collision_catch": true,
   "play_audio_on_feedback": true,
-  "autoplay_question_audio": false
+  "autoplay_question_audio": false,
+  "handoff_mode": "B",
+  "handoff_siblings": true,
+  "hard_threshold": 3,
+  "clear_flag_on_handoff": true,
+  "tag_long": false
 }

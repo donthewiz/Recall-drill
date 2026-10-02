@@ -113,8 +113,10 @@ def test_scope_and_options_round_trip_through_json() -> None:
         order="deck_order",
         young_ivl=14,
         flag=2,
+        exclude_cids=frozenset({7, 3}),
     )
     assert options_from_json(options_to_json(options)) == options
+    assert options_to_json(options)["exclude_cids"] == [3, 7]
     assert options_to_json(options)["card_ords"] == {"12": [0, 1]}
     assert options_from_json({}) == SelectOptions()
     assert options_from_json({"enabled": ["new", "nonsense"]}).enabled == frozenset({"new"})
