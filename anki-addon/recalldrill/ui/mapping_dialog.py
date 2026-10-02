@@ -9,7 +9,6 @@ from collections.abc import Sequence
 
 from aqt.qt import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -23,6 +22,7 @@ from aqt.utils import disable_help_button
 from ..anki_io.notetypes import MappingOverride, NoteMapping, save_override
 from ..anki_io.panel import NoteTypeTemplates
 from ..storage import Storage
+from .widgets import ComboBox
 
 NO_EXTRA = "(no Extra)"
 
@@ -52,13 +52,13 @@ class MappingDialog(QDialog):
             )
         )
         form = QFormLayout()
-        self.which = QComboBox()
+        self.which = ComboBox()
         for m in self.mappings:
             self.which.addItem(f"{m.notetype_name} › {m.template_name}")
         self.why = QLabel()
         self.why.setWordWrap(True)
-        self.answer = QComboBox()
-        self.extra = QComboBox()
+        self.answer = ComboBox()
+        self.extra = ComboBox()
         self.ineligible = QCheckBox("Not drillable (mark this template ineligible)")
         form.addRow("Template", self.which)
         form.addRow("Now", self.why)

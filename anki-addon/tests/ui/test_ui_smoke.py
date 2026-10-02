@@ -375,7 +375,7 @@ def test_setup_panel_reads_filters_and_starts(panel_env: Any, window_env: Path) 
     assert d.class_boxes["suspended_new"].text() == "suspended new (6)"
     assert d.proposal_row.isVisibleTo(d) and d.start_btn.isEnabled()
     # No timed session yet: the measured drill time says so (no cold-start figure).
-    assert d.estimate_label.text() == "no estimate yet (needs 3 timed sessions)"
+    assert d.estimate_label.text() == "Next 6 cards: no estimate yet (needs 3 timed sessions)"
     assert not hasattr(d, "exposure_combo")
     assert d.pacing_box.isVisibleTo(d) and not d.pace_on.isChecked()
     assert "6 picked cards share a note" in d.sibling_label.text()
@@ -885,7 +885,11 @@ def test_setup_panel_difficulty_line_and_pacing(panel_env: Any, window_env: Path
     assert (view.pace.remaining, view.pace.days_left, view.pace.per_day) == (6, 3, 2)
     assert d.pace_line.text() == view.line()
     assert "drill time: no estimate yet" in d.pace_line.text()
-    assert "no estimate yet" in d.pace_sources.text()
+    assert d.pace_sources.text() == (
+        "Drill time: no estimate yet (needs 3 timed sessions). "
+        "Anki time: no estimate yet. The FSRS simulator wasn't used: FSRS is off or the "
+        "preset has no FSRS parameters."
+    )
     assert d.use_n_btn.isEnabled() and d.use_n_btn.text() == "Use 2 as max cards"
     d.use_n_btn.click()
     assert d.max_cards.value() == 2

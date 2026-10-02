@@ -213,6 +213,7 @@ def test_anki_load_falls_back_to_the_revlog_without_params(col: Collection) -> N
     load = anki_load(col, did, today=today, new_per_day=4, deck_size=40, drill_days=days)
     assert load.source == "revlog"
     assert "no FSRS parameters" in load.fallback_reason
+    assert load.fallback_reason.startswith("The FSRS simulator wasn't used")
     assert "180 ratings" in load.note
     # 12 reviews due tomorrow x 8 s, plus today's 4 handed-off cards x 2 learning ratings x 8 s.
     assert load.tomorrow_s == pytest.approx(12 * 8 + 4 * 2 * 8)
@@ -224,9 +225,10 @@ def test_anki_load_skips_the_simulator_when_it_would_use_defaults(col: Collectio
     today, _ = today_for(col)
     load = anki_load(col, did, today=today, new_per_day=4, deck_size=10, drill_days=[today])
     assert load.source == "none"
-    assert "default answer times" in load.fallback_reason and "0 learning and 30 review" in (
+    assert "default answer times" in load.fallback_reason and "you have 0 and 30" in (
         load.fallback_reason
     )
+    assert "(" not in load.fallback_reason.split("(you have")[0]
     assert load.note == pacing.NO_ANKI_ESTIMATE
 
 

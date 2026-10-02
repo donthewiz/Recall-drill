@@ -335,7 +335,17 @@ def test_line_without_estimates() -> None:
     assert view.line() == (
         "Today: 6 cards, drill time: no estimate yet. 57 left over 10 drill days."
     )
-    assert NO_DRILL_ESTIMATE in view.sources() and NO_ANKI_ESTIMATE in view.sources()
+    assert view.sources() == (
+        f"Drill time: {NO_DRILL_ESTIMATE}. Anki time: {NO_ANKI_ESTIMATE}. "
+        "Fewer than 50 of your own ratings in this deck so far."
+    )
+    reason = "The FSRS simulator needs 50 learning and 50 review ratings of yours."
+    view = PacingView(
+        compute_pace(TODAY, EXAM, 57, False),
+        anki=AnkiLoad("none", note=NO_ANKI_ESTIMATE, fallback_reason=reason),
+    )
+    assert view.sources().endswith(f"Anki time: no estimate yet. {reason}")
+    assert "(" not in view.sources().split("(needs")[1].split(")", 1)[1]
 
 
 def test_line_on_an_off_day_and_edge_cases() -> None:

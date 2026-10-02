@@ -47,9 +47,7 @@ from aqt.operations import QueryOp
 from aqt.qt import (
     QCheckBox,
     QCloseEvent,
-    QComboBox,
     QDate,
-    QDateEdit,
     QDialog,
     QFormLayout,
     QFrame,
@@ -61,7 +59,6 @@ from aqt.qt import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSpinBox,
     Qt,
     QTableWidget,
     QTableWidgetItem,
@@ -94,6 +91,7 @@ from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
 from .handoff_dialog import offer_handoff
 from .mapping_dialog import MappingDialog
+from .widgets import ComboBox, DateEdit, SpinBox
 
 GEOM_KEY = "recalldrill_setup"
 REFRESH_MS = 300
@@ -134,6 +132,10 @@ def holdout_text(held: int, pct: int = 1) -> str:
     return (
         f"Holdout: {held} cards skip the drill and go to Anki as new cards (measurement control)."
     )
+
+
+def _next_cards(n: int) -> str:
+    return f"Next {n} card" if n == 1 else f"Next {n} cards"
 
 
 class SetupDialog(QDialog):
@@ -262,12 +264,12 @@ class SetupDialog(QDialog):
         qconnect(self.hard_only.toggled, self._schedule)
         cl.addWidget(self.hard_only)
         form = QFormLayout()
-        self.max_cards = QSpinBox()
+        self.max_cards = SpinBox()
         self.max_cards.setRange(0, 100_000)
         self.max_cards.setSpecialValueText("all")
         self.tag_edit = QLineEdit()
         self.tag_edit.setPlaceholderText("optional, an exact tag (e.g. rd::drill::A1)")
-        self.order = QComboBox()
+        self.order = ComboBox()
         self.order.addItem("Priority first", "priority_first")
         self.order.addItem("Deck order", "deck_order")
         form.addRow("Max cards", self.max_cards)
@@ -294,7 +296,7 @@ class SetupDialog(QDialog):
         hrow.setContentsMargins(0, 0, 0, 0)
         self.holdout_label = QLabel()
         self.holdout_label.setWordWrap(True)
-        self.holdout_pct = QSpinBox()
+        self.holdout_pct = SpinBox()
         self.holdout_pct.setRange(0, deck_settings.HOLDOUT_MAX_PCT)
         self.holdout_pct.setSuffix(" %")
         self.holdout_pct.setToolTip(
@@ -335,12 +337,12 @@ class SetupDialog(QDialog):
         self.proposal_row.setLayout(prow)
         stl.addWidget(self.proposal_row)
         sform = QFormLayout()
-        self.batch_size = QSpinBox()
+        self.batch_size = SpinBox()
         self.batch_size.setRange(0, 50)
         self.batch_size.setSpecialValueText("Whole deck")
-        self.encode_reps = QSpinBox()
+        self.encode_reps = SpinBox()
         self.encode_reps.setRange(1, 10)
-        self.cycle_order = QComboBox()
+        self.cycle_order = ComboBox()
         self.cycle_order.addItem("Shuffled", "shuffled")
         self.cycle_order.addItem("In order", "inOrder")
         self.strict = QCheckBox("Punctuation must match (strict)")
@@ -403,7 +405,7 @@ class SetupDialog(QDialog):
         self.estimate_source = QLabel()
         self.estimate_source.setWordWrap(True)
         self.estimate_source.setStyleSheet("color: gray; font-size: small;")
-        el.addRow("These cards", self.estimate_label)
+        el.addRow(self.estimate_label)
         el.addRow("", self.estimate_source)
         self.body.addWidget(est)
 
@@ -412,10 +414,10 @@ class SetupDialog(QDialog):
         pl = QVBoxLayout(self.pacing_box)
         prow1 = QHBoxLayout()
         self.pace_on = QCheckBox("Pace to a target date")
-        self.pace_date = QDateEdit()
+        self.pace_date = DateEdit()
         self.pace_date.setCalendarPopup(True)
         self.pace_date.setDisplayFormat("ddd d MMM yyyy")
-        self.pace_early = QSpinBox()
+        self.pace_early = SpinBox()
         self.pace_early.setRange(0, 30)
         self.pace_early.setSuffix(" day(s) early")
         self.pace_early.setToolTip("Finish this many days before the target date.")
@@ -740,10 +742,14 @@ class SetupDialog(QDialog):
 
     def _show_estimate(self, data: PanelData) -> None:
         if data.drill_seconds is None:
-            self.estimate_label.setText(data.drill_source if data.drillable else "—")
+            self.estimate_label.setText(
+                f"{_next_cards(data.drillable)}: {data.drill_source}" if data.drillable else "—"
+            )
             self.estimate_source.setText("")
         else:
-            self.estimate_label.setText(data.estimate_text())
+            self.estimate_label.setText(
+                f"{_next_cards(data.drillable)}: {data.estimate_text()}"
+            )
             self.estimate_source.setText(f"From {data.drill_source}.")
 
     # -- pacing -----------------------------------------------------------------
