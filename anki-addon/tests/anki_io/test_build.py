@@ -371,3 +371,28 @@ def test_image_fronts_stay_out_of_other_cards_conflict_pool(col: Collection) -> 
     add_note(col, "Basic", ch1, {"Front": "pain", "Back": "-odynia"})
     _, res = run(col, ch2, STRICT)
     assert res.deck_items[0]["front"] == "pain (-a___)"
+
+
+def test_text_cards_grade_the_full_answer_even_when_it_starts_with_the_prompt(
+    col: Collection,
+) -> None:
+    did = deck(col, "X")
+    add_note(col, "Basic", did, {"Front": "Bone", "Back": "Bone marrow"})
+    add_note(col, "Basic (and reversed card)", did, {"Front": "Bone marrow", "Back": "Bone"})
+    _, res = run(col, did)
+    assert [(i["front"], i["back"]) for i in res.deck_items] == [
+        ("Bone", "Bone marrow"),
+        ("Bone marrow", "Bone"),
+        ("Bone", "Bone marrow"),
+    ]
+
+
+def test_io_lookalike_with_a_different_answer_image_is_graded_in_full(col: Collection) -> None:
+    add_iol_model(col)
+    did = deck(col, "X")
+    question = '<div class="occ-header">Figure 9</div><img src="fig-9.png">'
+    note = add_iol_note(col, did, "<br><b>Femur</b>", question=question)
+    note["Answer"] = '<div class="occ-header">Figure 9</div><img src="fig-9-labelled.png"><br>Femur'
+    col.update_note(note)
+    _, res = run(col, did)
+    assert [i["back"] for i in res.deck_items] == ["Figure 9 Femur"]

@@ -203,7 +203,10 @@ So the name rule only blocked drillable cards. The type-wide sampled-marker rule
   **If nothing is left after the rule**, the fields *before* it that the front doesn't show. That's how the IO lookalike maps to `Answer`.
 
   The first candidate with a non-empty answer in ≥ 50% of up to 50 sampled notes (evenly spread over the note ids) is the answer. None qualifies: unmapped.
-- **Answer delta** (standard): when the answer field's grading text starts with the grading text of the fields the front shows (in `qfmt`, minus `{{type:}}`/TTS references and the answer field itself, joined by a space), the answer is the rest, trimmed. The IO lookalike's Answer is "header + label", so it grades as the label (`Nucleus`, `Goblet cells`, `Hyaline (articular) cartilage`). Empty remainder: "empty answer". A match that ends mid-word doesn't count ("pain" isn't stripped from "painful").
+- **Answer delta, image cards only** (standard): when the answer field and the fields the front shows (in `qfmt`, minus `{{type:}}`/TTS references and the answer field itself) contain the **same `<img src>`**, and the answer field's grading text starts with the front fields' grading text (joined by a space), the answer is the rest, trimmed.
+  - This is the IO lookalike pattern: its Answer is "header + image + label", so it grades as the label (`Nucleus`, `Goblet cells`, `Hyaline (articular) cartilage`).
+  - Empty remainder: "empty answer". A match that ends mid-word doesn't count.
+  - **Text-only cards are graded in full**, even when the answer starts with the prompt: front `Bone`, back `Bone marrow` grades `Bone marrow` (Don, 2026-10-02).
 - Standard Extra: the first of `Extra`, `Back Extra`, `Notes`, `Remarks` that exists, isn't the answer, and has content (text or an image) in a sampled note.
 - Cloze: the field of the first `{{cloze:F}}` (or `{{type:cloze:F}}`) on the front; answer = `extract_cloze_for_typing(field, card.ord + 1)`; Extra = `Extra` or `Back Extra`. Never `FullContext` or `Source`.
 - Overrides in `mappings.json` win, and may name any field (a reference field too). `ineligible: true` excludes the template ("marked ineligible"). No override makes stock IO drillable: it holds shapes, not text. An override naming a missing field leaves the template unmapped, so the panel shows it.
@@ -235,7 +238,6 @@ The front reads `meaning (N forms; hint)`, the skill's order. Default: on when t
 - A note type with several cloze fields is drilled on the first `{{cloze:F}}` of its front template only.
 - The template filter can't pick cloze numbers (c1 vs c2): a cloze note type has one template.
 - The front's `front_html` still holds `[anki:play:q:N]` and `[[type:F]]`; the display layer (Phase 3b) must handle them.
-- The answer delta can also fire on a reversed card whose answer happens to start with its prompt at a word boundary (front `Bone`, answer `Bone marrow` → `marrow`). A `mappings.json` override doesn't turn the delta off. Not seen in the fixtures; watch for it in the preview.
 
 ## Mid-session edit
 
