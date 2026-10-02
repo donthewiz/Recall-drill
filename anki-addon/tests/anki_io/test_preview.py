@@ -20,6 +20,7 @@ from anki_fixtures import (
     add_iol_note,
     add_note,
     deck,
+    needs_aqt,
 )
 
 from recalldrill import deck_settings
@@ -106,6 +107,7 @@ def test_preview_counts_image_fronts(col: Collection, tmp_path: Path) -> None:
     assert "<td>standard</td><td>Answer</td><td>Extra</td>" in html
 
 
+@needs_aqt
 def test_preview_dialog_renders_offscreen(
     col: Collection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

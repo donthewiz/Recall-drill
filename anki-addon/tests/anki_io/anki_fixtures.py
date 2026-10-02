@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping, Sequence
 
 # anki.collection must load before anki.cards (circular import).
@@ -18,6 +19,14 @@ from anki.collection import Collection
 from anki.decks import DeckId
 from anki.models import NotetypeDict
 from anki.notes import Note
+from pytest import mark
+
+needs_aqt = mark.skipif(
+    importlib.util.find_spec("aqt") is None,
+    reason="imports aqt (Anki's GUI package), which isn't installed: "
+    "CI's addon-anki job installs anki only",
+)
+"""For tests that import ``aqt``. Every other anki_io test needs ``anki`` alone."""
 
 BQE = "Basic Quizlet Extended"
 BQE_FIELDS = ["FrontText", "FrontAudio", "BackText", "BackAudio", "Image", "Add Reverse", "Notes"]

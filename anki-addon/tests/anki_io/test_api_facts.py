@@ -8,6 +8,7 @@ docs/DECISIONS.md says so.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from anki.scheduler.v3 import Scheduler as V3Scheduler
 from anki.sound import SoundOrVideoTag, TTSTag
 from anki.template import TemplateRenderOutput
 from anki.utils import strip_html
+from anki_fixtures import needs_aqt
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -203,7 +205,18 @@ def test_fsrs_memory_state_and_search_scale(col: Collection) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _rollover_far_away(col: Collection) -> None:
+    """Moves the day's rollover about 12 hours from now. Within 10 minutes of the
+    cutoff, Anki logs a new card's 10-minute learning step as a 1-day interval
+    (seen at 03:52 with the default 4 a.m. rollover), which isn't what the
+    revlog test is about."""
+    prefs = col.get_preferences()
+    prefs.scheduling.rollover = (time.localtime().tm_hour + 12) % 24
+    col.set_preferences(prefs)
+
+
 def test_revlog_columns_and_codes(col: Collection) -> None:
+    _rollover_far_away(col)
     did = deck(col, "X")
     add_basic(col, did)
     learn = answer_good(col, did)
@@ -561,6 +574,7 @@ def test_current_deck_is_a_dict_with_an_id(col: Collection) -> None:
         "operation_did_execute",
     ],
 )
+@needs_aqt
 def test_gui_hooks_exist(hook: str) -> None:
     import aqt.gui_hooks
 
@@ -568,6 +582,7 @@ def test_gui_hooks_exist(hook: str) -> None:
     assert callable(h.append) and callable(h.remove)
 
 
+@needs_aqt
 def test_collection_op_api() -> None:
     from aqt.operations import CollectionOp
 
@@ -575,6 +590,7 @@ def test_collection_op_api() -> None:
         assert callable(getattr(CollectionOp, name))
 
 
+@needs_aqt
 def test_query_op_api() -> None:
     """The Phase 2 dev preview reads cards off the main thread with QueryOp."""
     import inspect

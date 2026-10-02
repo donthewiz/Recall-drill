@@ -45,3 +45,19 @@ jobs:
       # (npx tsx anki-addon/tools/export_golden.ts) and the Python port passes
       # again against them (the pytest step above), in the same commit.
       - run: npx tsx anki-addon/tools/export_golden.ts && git diff --exit-code anki-addon/tests/golden
+
+  # The add-on's Anki I/O, drill controller and session storage tests. They need
+  # anki (scratch collections, never a real profile) but no Qt: the few tests that
+  # import aqt skip themselves when it isn't installed (tests/anki_io/anki_fixtures.py,
+  # needs_aqt).
+  addon-anki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Anki 26.08.1's bundled Python (anki-addon/docs/DECISIONS.md, Versions).
+          python-version: '3.13.13'
+      # Versions match anki-addon/requirements-dev.txt.
+      - run: pip install anki==26.8.1 pytest==9.1.1
+      - run: pytest anki-addon/tests/anki_io anki-addon/tests/controller anki-addon/tests/storage -q
