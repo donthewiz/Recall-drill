@@ -14,7 +14,7 @@
   "clear_flag_on_handoff": true,
   "tag_long": false,
   "min_words_to_chunk": 8,
-  "holdout_pct": 15,
+  "holdout_pct": 0,
   "holdout_exclude": true,
   "min_n": 30
 }

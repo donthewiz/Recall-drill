@@ -35,6 +35,7 @@ def config_defaults(cfg: AddonConfig) -> ResolvedSettings:
         "encodeReps": cfg.encode_reps,
         "cycleOrder": cfg.cycle_order,
         "card_ords": {},
+        "holdoutPct": cfg.holdout_pct,
     }
 
 

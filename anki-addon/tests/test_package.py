@@ -36,10 +36,10 @@ def test_config_defaults_match_web_app() -> None:
         "hard_threshold": 3,
         "clear_flag_on_handoff": True,
         "tag_long": False,
-        # Add-on only (Phase 5): measurement. holdout_pct is 15 by Don's decision
-        # (docs/DECISIONS.md, "Measurement and holdout"); the code default is 0.
+        # Add-on only (Phase 5): measurement. The holdout is off by default; a
+        # deck turns it on with Holdout % in the setup panel.
         "min_words_to_chunk": 8,
-        "holdout_pct": 15,
+        "holdout_pct": 0,
         "holdout_exclude": True,
         "min_n": 30,
     }

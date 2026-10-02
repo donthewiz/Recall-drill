@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+from .deck_settings import HOLDOUT_MAX_PCT
 from .engine.items import MIN_WORDS_TO_CHUNK
 from .engine.types import CycleOrder, LadderMode
 
@@ -38,16 +39,14 @@ class AddonConfig:
     """Answers with at most this many words are drilled whole (the engine's
     ``MIN_WORDS_TO_CHUNK``, passed per session as ``SessionConfig.minWordsToChunk``)."""
     holdout_pct: int = 0
-    """Percent of eligible new cards held out of the drill as a measurement
-    control (0 = off). Deck scopes only (Phase 5)."""
+    """Default percent of eligible new cards held out of the drill as a
+    measurement control (0 = off). Deck scopes only (Phase 5). A deck's own
+    ``holdoutPct`` (setup panel, Holdout %) wins."""
     holdout_exclude: bool = True
     """Leave cards tagged ``rd::holdout`` out of every selection."""
     min_n: int = 30
     """The tuning report's minimum sample per compared group."""
 
-
-HOLDOUT_MAX_PCT = 50
-"""A higher holdout would leave most new cards undrilled."""
 
 DEFAULT_CONFIG = AddonConfig()
 

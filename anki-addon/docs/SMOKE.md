@@ -73,7 +73,7 @@ These handoffs are **real**: the cards show up in your Anki reviews tomorrow. Ed
 
 - [ ] 21. Tools → **Recall Drill: tuning report**. The header counts your sessions; the cards of the Phase 4 handoffs show as outcomes, or as pending if not reviewed yet. The confound warning is there.
 - [ ] 22. Groups under 30 say "n too small", and no Apply button shows. That's expected for weeks. **Copy as CSV** pastes one row per card.
-- [ ] 23. With `holdout_pct` 15 (this repo's `config.json`): start a new Med Term session; the panel says "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." After the handoff, `tag:rd::holdout` finds them: unsuspended, buried until tomorrow, queued right after the drilled cards, and absent from the next session's selection (the panel counts them as left out).
+- [ ] 23. The card section says "Holdout: off" with **Holdout %** at 0 (the default). Set it to 15: K appears and changes as you change the %. Start a new Med Term session; reopening the panel shows 15 again (saved for the deck). The panel said "Holdout: K cards skip the drill and go to Anki as new cards (measurement control)." After the handoff, `tag:rd::holdout` finds them: unsuspended, buried until tomorrow, queued right after the drilled cards, and absent from the next session's selection (the panel counts them as left out).
 
 ## Also worth a look
 

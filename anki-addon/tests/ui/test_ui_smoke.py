@@ -679,36 +679,70 @@ def test_hard_cards_menu_actions(
 # -- Phase 5: the holdout in the panel, the tuning report ------------------------
 
 
-def test_setup_panel_shows_and_records_the_holdout(panel_env: Any, window_env: Path) -> None:
-    import aqt
-
-    from recalldrill import holdout, sessions
+def test_setup_panel_holdout_percent_per_deck(panel_env: Any, window_env: Path) -> None:
+    """Holdout % in the card section: off (0) by default, K follows the %, the
+    value is saved with the deck's settings and comes back on reopen."""
+    from recalldrill import deck_settings, sessions
+    from recalldrill.holdout import is_holdout
+    from recalldrill.storage import HOLDOUT
     from recalldrill.ui.context import AddonContext
     from recalldrill.ui.setup_dialog import SetupDialog, holdout_text
 
     col, did = panel_env
-    aqt.mw.addonManager = type(  # type: ignore[attr-defined]
-        "AM", (), {"getConfig": lambda self, m: {"holdout_pct": 50}}
-    )()
     ctx = AddonContext("recall_drill", str(window_env))
+    reverse = [int(c) for c in col.db.list("select id from cards where did = ? and ord = 1", did)]
+    assert len(reverse) == 3
+    # A salt that holds out at least one Reverse card at 50% (the hash is the real one).
+    salt = next(f"s{i}" for i in range(1000) if any(is_holdout(f"s{i}", c, 50) for c in reverse))
+    ctx.storage().write_json(HOLDOUT, {"salt": salt})
+
     d: Any = SetupDialog(ctx, did)
-    held = d.data.selection.holdout
-    assert holdout.read_salt(ctx.storage())  # made on first enable
-    assert d.holdout_label.isVisibleTo(d) and d.holdout_label.text() == holdout_text(len(held))
-    assert d.data.drillable + len(held) <= 6
-    assert holdout_text(1).startswith("Holdout: 1 card skips the drill")
-    assert holdout_text(3) == (
+    # 0% (the default): no holdout cards, and the line says so.
+    assert d.holdout_pct.value() == 0 and d.holdout_row.isVisibleTo(d)
+    assert d.holdout_label.text() == "Holdout: off" and d.data.selection.holdout == []
+    assert d.data.drillable == 6
+    # Reverse cards only, so no held-out card has a drilled sibling.
+    (ntid,) = d._template_boxes
+    d._template_boxes[ntid][0][1].setChecked(False)
+    d._refresh()
+
+    def k(pct: int) -> int:
+        d.holdout_pct.setValue(pct)
+        d._refresh()  # what the 300 ms timer runs
+        held = {c.snap.cid for c in d.data.selection.holdout}
+        assert held == {c for c in reverse if is_holdout(salt, c, pct)}
+        assert d.holdout_label.text() == holdout_text(len(held), pct)
+        assert d.data.drillable == 3 - len(held)
+        return len(held)
+
+    assert k(50) >= 1
+    assert d.holdout_label.text().startswith("Holdout: ")
+    assert k(0) == 0 and d.holdout_label.text() == "Holdout: off"
+    assert k(10) <= k(30) <= k(50)  # the same hash: a higher % only adds cards
+    assert holdout_text(1, 15).startswith("Holdout: 1 card skips the drill")
+    assert holdout_text(3, 15) == (
         "Holdout: 3 cards skip the drill and go to Anki as new cards (measurement control)."
     )
+    assert deck_settings.get_saved(ctx.storage(), did) is None  # nothing saved before Start
+
+    held = d.data.holdout
     d._start()
+    saved_settings = deck_settings.get_saved(ctx.storage(), did)
+    assert saved_settings is not None and saved_settings.get("holdoutPct") == 50
     saved = sessions.load(ctx.storage(), sessions.deck_key(did))
-    assert saved is not None and saved["addon"]["holdout"] == d.data.holdout
+    assert saved is not None and saved["addon"]["holdout"] == held and held
     assert saved["minWordsToChunk"] == 8
     ctx.windows[0].save_and_close()
-    # A search scope never holds cards out.
-    d2: Any = SetupDialog(ctx, None, search=f"did:{did}")
-    assert d2.data.selection.holdout == [] and not d2.holdout_label.isVisibleTo(d2)
+
+    # Reopened: 50% comes back from the deck's settings, with the same cards.
+    d2: Any = SetupDialog(ctx, did)
+    assert d2.holdout_pct.value() == 50
+    assert d2.data.holdout == held
     d2.close()
+    # A search scope never holds cards out: no holdout row.
+    d3: Any = SetupDialog(ctx, None, search=f"did:{did}")
+    assert d3.data.selection.holdout == [] and not d3.holdout_row.isVisibleTo(d3)
+    d3.close()
 
 
 def test_tuning_report_dialog(

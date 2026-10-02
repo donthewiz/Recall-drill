@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import fields, replace
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -50,9 +50,7 @@ def test_config_json_matches_the_defaults() -> None:
     import json
 
     raw = json.loads((Path(__file__).parents[2] / "config.json").read_text(encoding="utf-8"))
-    # One exception, Don's decision (docs/DECISIONS.md, "Measurement and holdout"):
-    # the code keeps the holdout off, his config.json turns it on at 15%.
-    assert parse_config(raw) == replace(DEFAULT_CONFIG, holdout_pct=15)
+    assert parse_config(raw) == DEFAULT_CONFIG
     assert set(raw) == {f.name for f in fields(AddonConfig)}
 
 
@@ -66,6 +64,12 @@ def test_parse_config_phase_5_keys() -> None:
     assert (bad.min_words_to_chunk, bad.holdout_pct, bad.min_n) == (8, 0, 30)
     assert bad.holdout_exclude is True
     assert DEFAULT_CONFIG.holdout_pct == 0
+
+
+def test_holdout_pct_resolves_deck_over_config() -> None:
+    assert launch.resolved({}, DEFAULT_CONFIG)["holdoutPct"] == 0  # off by default
+    assert launch.resolved({}, AddonConfig(holdout_pct=10))["holdoutPct"] == 10
+    assert launch.resolved({"holdoutPct": 20}, DEFAULT_CONFIG)["holdoutPct"] == 20
 
 
 def test_session_config_carries_the_chunking_threshold() -> None:

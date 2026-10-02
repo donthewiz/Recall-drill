@@ -1,7 +1,9 @@
 """Per-deck drill settings (pure, plus storage in ``deck_settings.json``).
 
 Keyed by deck id. Keys: ``strictPunctuation``, ``stemTolerance``,
-``batchSize``, ``encodeReps``, ``hints``, ``cycleOrder``, ``card_ords``. A
+``batchSize``, ``encodeReps``, ``hints``, ``cycleOrder``, ``card_ords``,
+``holdoutPct`` (Phase 5: the deck's holdout percentage, 0-50; the config's
+``holdout_pct`` is the default). A
 deck without saved settings uses :data:`DEFAULTS` (or the add-on config's, via
 ``resolve``'s ``base``); for a terminology-looking deck,
 :func:`propose_terminology_settings` suggests better ones, which the setup
@@ -32,6 +34,8 @@ class DeckSettings(TypedDict):
     cycleOrder: NotRequired[CycleOrder]
     card_ords: NotRequired[dict[str, list[int]]]
     """Template filter: note type id (as a string, for JSON) -> template ords."""
+    holdoutPct: NotRequired[int]
+    """Holdout percentage for this deck's sessions (0 = off)."""
 
 
 class ResolvedSettings(TypedDict):
@@ -41,7 +45,11 @@ class ResolvedSettings(TypedDict):
     encodeReps: int
     cycleOrder: CycleOrder
     card_ords: dict[str, list[int]]
+    holdoutPct: int
 
+
+HOLDOUT_MAX_PCT = 50
+"""A higher holdout would leave most new cards undrilled."""
 
 # The web app's defaults (config.json); strict punctuation is off there too.
 DEFAULTS: ResolvedSettings = {
@@ -51,6 +59,7 @@ DEFAULTS: ResolvedSettings = {
     "encodeReps": 3,
     "cycleOrder": "shuffled",
     "card_ords": {},
+    "holdoutPct": 0,
 }
 
 TERMINOLOGY_MAX_WORDS = 3
@@ -77,6 +86,9 @@ def sanitize(raw: object) -> DeckSettings:
         out["encodeReps"] = reps
     if d.get("cycleOrder") in ("shuffled", "inOrder"):
         out["cycleOrder"] = d["cycleOrder"]
+    pct = d.get("holdoutPct")
+    if isinstance(pct, int) and not isinstance(pct, bool) and 0 <= pct <= HOLDOUT_MAX_PCT:
+        out["holdoutPct"] = pct
     ords = d.get("card_ords")
     if isinstance(ords, dict):
         clean: dict[str, list[int]] = {}
@@ -121,6 +133,7 @@ def resolve(settings: DeckSettings | None, base: ResolvedSettings = DEFAULTS) ->
         "encodeReps": s.get("encodeReps", base["encodeReps"]),
         "cycleOrder": s.get("cycleOrder", base["cycleOrder"]),
         "card_ords": dict(s.get("card_ords", base["card_ords"])),
+        "holdoutPct": s.get("holdoutPct", base["holdoutPct"]),
     }
 
 
