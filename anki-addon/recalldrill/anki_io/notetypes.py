@@ -27,9 +27,12 @@ Default mapping for a standard template (pure parts: :func:`field_refs`,
   media. If none is left there, the fields *before* the rule that the front
   doesn't show. The first candidate with a non-empty answer in at least half
   of up to 50 sampled notes wins.
-- The answer is the delta: when the answer field's text starts with the text
-  of the fields the front shows (an Answer that repeats the Question and then
-  adds the label), only the rest is graded (:func:`strip_front`).
+- The answer is the delta on image cards: when the answer field and the
+  fields the front shows contain the same ``<img src>`` (the anki-cards Image
+  Occlusion lookalike: an Answer that repeats the Question and then adds the
+  label), and the answer's text starts with the front's text, only the rest is
+  graded (:func:`shares_image`, :func:`strip_front`). Text-only cards are
+  graded in full, even when the answer starts with the prompt.
 - Extra: the first of ``Extra``, ``Back Extra``, ``Notes``, ``Remarks`` that
   exists, isn't the answer, and has content in a sampled note.
 
@@ -91,6 +94,9 @@ _MEDIA_NAME_RE = re.compile(r"audio|sound|image|picture|photo|mask", re.IGNORECA
 _REF_RE = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
 _ANSWER_HR_RE = re.compile(r"<hr\b[^>]*\bid\s*=\s*[\"']?answer\b[^>]*>", re.IGNORECASE)
 _FIELD_KEY_RE = re.compile(r"[\s_-]+")
+_IMG_SRC_RE = re.compile(
+    r"""<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", re.IGNORECASE
+)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +227,17 @@ def front_fields(model: Mapping[str, Any], tmpl: Mapping[str, Any], answer: str)
         if f in names and f != answer and f not in out and not ref.is_type and not ref.is_tts:
             out.append(f)
     return out
+
+
+def img_srcs(html: str) -> set[str]:
+    """The ``src`` of every ``<img>`` in ``html`` (quoted or not)."""
+    return {a or b or c for a, b, c in _IMG_SRC_RE.findall(html)} - {""}
+
+
+def shares_image(answer_html: str, front_htmls: Iterable[str]) -> bool:
+    """The answer field shows an image the front's fields show too."""
+    front = set[str]().union(*(img_srcs(h) for h in front_htmls))
+    return not img_srcs(answer_html).isdisjoint(front)
 
 
 def strip_front(answer: str, front: str) -> str:
@@ -597,8 +614,14 @@ def front_text(note: Note, fields: Sequence[str]) -> str:
 
 
 def standard_answer(note: Note, answer_field: str, front: Sequence[str]) -> str:
-    """Grading text of the answer field, minus a leading copy of the front."""
-    return strip_front(grading_text(note[answer_field]), front_text(note, front))
+    """Grading text of the answer field. On an image card (the answer field and
+    the front's fields share an ``<img src>``), minus a leading copy of the
+    front's text; a text-only card is graded in full."""
+    raw = note[answer_field]
+    text = grading_text(raw)
+    if not front or not shares_image(raw, (note[f] for f in front)):
+        return text
+    return strip_front(text, front_text(note, front))
 
 
 def answer_text(col: Collection, note: Note, mapping: NoteMapping, card_ord: int) -> str:

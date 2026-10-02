@@ -36,6 +36,7 @@ from recalldrill.anki_io.notetypes import (
     answer_section,
     field_refs,
     front_fields,
+    img_srcs,
     is_reference_field,
     kind_of,
     load_overrides,
@@ -43,6 +44,7 @@ from recalldrill.anki_io.notetypes import (
     parse_overrides,
     sample_nids,
     save_override,
+    shares_image,
     split_answer_template,
     strip_front,
 )
@@ -163,6 +165,35 @@ def test_front_fields() -> None:
     )
     assert front_fields(m, m["tmpls"][0], "Back") == ["Header", "Q"]  # type: ignore[index]
     assert front_fields(m, m["tmpls"][0], "Q") == ["Header"]  # type: ignore[index]
+
+
+def test_img_srcs() -> None:
+    html = (
+        '<img src="fig 4.3.png"><IMG class=x SRC=\'b.jpg\'><img src=c.gif alt="c">'
+        '<img alt="no src"><img src="">'
+    )
+    assert img_srcs(html) == {"fig 4.3.png", "b.jpg", "c.gif"}
+    assert img_srcs("no images") == set()
+
+
+@pytest.mark.parametrize(
+    ("answer", "fronts", "shared"),
+    [
+        (
+            '<div>H</div><img src="fig.png"><b>Nucleus</b>',
+            ['<div>H</div><img src="fig.png">'],
+            True,
+        ),
+        ('<img src="fig.png">x', ["header only", "<img src='fig.png'>"], True),  # 2nd front field
+        ('<img src="other.png">x', ['<img src="fig.png">'], False),
+        ("Bone marrow", ["Bone"], False),  # text only
+        ('<img src="fig.png">', ["Bone"], False),  # image on one side only
+        ("Bone marrow", ['<img src="fig.png">'], False),
+        ('<img src="fig.png">', [], False),
+    ],
+)
+def test_shares_image(answer: str, fronts: list[str], shared: bool) -> None:
+    assert shares_image(answer, fronts) is shared
 
 
 @pytest.mark.parametrize(
