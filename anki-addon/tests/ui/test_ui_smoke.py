@@ -695,8 +695,14 @@ def test_setup_panel_holdout_percent_per_deck(panel_env: Any, window_env: Path) 
     ctx = AddonContext("recall_drill", str(window_env))
     reverse = [int(c) for c in col.db.list("select id from cards where did = ? and ord = 1", did)]
     assert len(reverse) == 3
-    # A salt that holds out at least one Reverse card at 50% (the hash is the real one).
-    salt = next(f"s{i}" for i in range(1000) if any(is_holdout(f"s{i}", c, 50) for c in reverse))
+    # A salt that holds out some but not all Reverse cards at 50% (the hash is the
+    # real one): card ids are time-based, so "at least one" alone could hold out
+    # all three and leave nothing to Start.
+    salt = next(
+        f"s{i}"
+        for i in range(1000)
+        if 0 < sum(is_holdout(f"s{i}", c, 50) for c in reverse) < len(reverse)
+    )
     ctx.storage().write_json(HOLDOUT, {"salt": salt})
 
     d: Any = SetupDialog(ctx, did)
