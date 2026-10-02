@@ -670,6 +670,12 @@ class SetupDialog(QDialog):
                 f"{_plural(sel.excluded, 'card')} left out: not hard in "
                 f"{'its' if sel.excluded == 1 else 'their'} last handoff."
             )
+        if sel.handed_off:
+            lines.append(
+                f"Handed off, waiting for Anki: {sel.handed_off} "
+                f"({'it stays' if sel.handed_off == 1 else 'they stay'} out until Anki "
+                "reviews them)."
+            )
         if sel.holdout_tagged:
             lines.append(
                 f"{_plural(sel.holdout_tagged, 'card')} tagged rd::holdout left out "

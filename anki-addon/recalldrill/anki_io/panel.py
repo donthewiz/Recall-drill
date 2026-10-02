@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 from anki.collection import Collection
@@ -26,7 +26,7 @@ from .. import deck_settings, sessions
 from ..addon_config import AddonConfig
 from ..deck_settings import DeckSettings
 from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY, DifficultySummary, summarize
-from ..history_store import hard_cards
+from ..history_store import handed_off_cids, hard_cards
 from ..launch import resolved, session_config
 from ..pacing import DrillSpeed, minutes_text
 from ..prompts import parse_hint_overrides
@@ -205,6 +205,8 @@ def read_panel(
     template filter is a deck setting); ``settings`` is the panel's draft.
     """
     started = time.perf_counter()
+    if not options.exclude_handed_off:
+        options = replace(options, exclude_handed_off=handed_off_exclusions(storage, scope, cfg))
     table = MappingTable(col, load_overrides(storage))
     notes = NoteCache(col)
     selection = select_cards(col, scope, options, table, notes)
@@ -312,6 +314,17 @@ def hard_exclusions(storage: Storage, scope: Scope) -> frozenset[int]:
     if scope.search is None or scope.search.strip() != HARD_SEARCH:
         return frozenset()
     return hard_cards(storage).not_hard
+
+
+def handed_off_exclusions(storage: Storage, scope: Scope, cfg: AddonConfig) -> frozenset[int]:
+    """The handed-off cards a selection leaves out while still new (config
+    ``exclude_handed_off_new``): every handoff's new cards, for deck scopes and
+    searches, but not the ``tag:rd::hard`` scope (Don asked for those cards)."""
+    if not cfg.exclude_handed_off_new:
+        return frozenset()
+    if scope.search is not None and scope.search.strip() == HARD_SEARCH:
+        return frozenset()
+    return handed_off_cids(storage)
 
 
 def save_hint(storage: Storage, key: str, hint: str | None) -> None:

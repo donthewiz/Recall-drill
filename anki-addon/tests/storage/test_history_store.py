@@ -118,3 +118,26 @@ def test_tuning_lines_and_every_log(st: Storage) -> None:
         history_store.append_tuning(st, {"type": "session"})
     # The rd::hard reader ignores tuning lines.
     assert history_store.hard_cards(st).hard == frozenset()
+
+
+def test_handed_off_cids(st: Storage) -> None:
+    """The new-card groups of every handoff in every log; declined handoffs, A's
+    drilled scheduled cards, skipped and missing cards don't count."""
+    groups = {
+        "drilled_new": [1, 2],
+        "drilled_scheduled": [3],
+        "siblings": [4],
+        "holdout": [5],
+        "holdout_siblings": [6],
+        "holdout_skipped": [7],
+        "missing": [8],
+    }
+    history_store.append_handoff(st, "10", {"type": "handoff", "sessionId": "a", "groups": groups})
+    history_store.append_handoff(
+        st, "20", {"type": "handoff", "sessionId": "b", "groups": {"drilled_new": [9, True]}}
+    )
+    history_store.append_handoff(st, "20", history_store.declined_line("c", 0))
+    history_store.append_handoff(
+        st, "20", {"type": "handoff", "sessionId": "d", "declined": True, "groups": groups}
+    )
+    assert history_store.handed_off_cids(st) == {1, 2, 4, 5, 6, 9}
