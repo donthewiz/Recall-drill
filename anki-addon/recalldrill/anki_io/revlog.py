@@ -9,7 +9,7 @@ their decks and revlog rows, and the rollover hour.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,7 +18,7 @@ from anki.decks import DeckId
 
 from .. import deck_settings
 from ..history_store import read_every_log
-from ..measure import RevlogRow
+from ..measure import RevlogRow, is_counted
 from ..storage import Storage
 from ..tuning import CardInfo, collect_cids
 
@@ -55,6 +55,17 @@ def read_revlog(col: Collection, cids: Iterable[int]) -> list[RevlogRow]:
         out += [RevlogRow(*(int(x) for x in r)) for r in rows]
     out.sort(key=lambda r: r.id)
     return out
+
+
+def waiting_for_anki(col: Collection, handed_at: Mapping[int, int]) -> frozenset[int]:
+    """The handed-off cards (id -> handoff time, ms) Anki hasn't rated since: no
+    counted rating (``measure.is_counted``: ``ease >= 1``, type learn, review or
+    relearn) with a later revlog id. A ``set_due_date`` row (type 4) doesn't count."""
+    rated: set[int] = set()
+    for r in read_revlog(col, handed_at):
+        if is_counted(r) and r.id > handed_at.get(r.cid, 0):
+            rated.add(r.cid)
+    return frozenset(c for c in handed_at if c not in rated)
 
 
 def card_decks(col: Collection, cids: Iterable[int]) -> dict[int, CardInfo]:

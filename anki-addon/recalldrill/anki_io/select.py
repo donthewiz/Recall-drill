@@ -25,12 +25,14 @@ holdout are set aside (``Selection.holdout``) while walking the ordered list,
 until ``max_cards`` drill cards are picked.
 
 ``exclude_handed_off`` (config ``exclude_handed_off_new``) leaves out, per
-card, the cards a handoff sent to Anki as new cards (``history_store.
-handed_off_cids``) **while they are still new** (counted as ``handed_off``):
-under handoff B they sit at the front of the new queue until Anki reviews
-them, and drilling them again would repeat yesterday's session. Once Anki has
-rated a card it is selectable again (lapsed, leech, flagged, …). A note's other
-cards that were never handed off (a cloze sibling) stay selectable.
+card, the handed-off cards that Anki hasn't rated since their handoff
+(``revlog.waiting_for_anki``, which the panel computes), **unless suspended**
+(counted as ``handed_off``): under handoff B they sit at the front of the new
+queue, under A they are reviews due tomorrow, and drilling them again would
+repeat yesterday's session. An undone handoff re-suspends its cards, so they
+are drillable again; once Anki has rated a card it is selectable again in its
+class (lapsed, leech, flagged, …). A note's other cards that were never handed
+off (a cloze sibling) stay selectable.
 
 **Pacing** (Phase 6): ``Selection.pace_remaining`` is the eligible ``new`` +
 ``suspended_new`` count (whatever the class switches and ``max_cards`` say),
@@ -151,7 +153,8 @@ class SelectOptions:
     exclude_holdout_tag: bool = False
     """Leave out notes tagged ``rd::holdout`` (counted as ``Selection.holdout_tagged``)."""
     exclude_handed_off: frozenset[int] = frozenset()
-    """Handed-off cards, left out while still new (counted as ``Selection.handed_off``)."""
+    """Handed-off cards Anki hasn't rated since: left out unless suspended (counted
+    as ``Selection.handed_off``)."""
     holdout_pct: int = 0
     """Holdout percentage (0 = off). Applied to deck scopes only."""
     holdout_salt: str = ""
@@ -250,7 +253,7 @@ class Selection:
     holdout_tagged: int = 0
     """Cards left out because their note is tagged ``rd::holdout``."""
     handed_off: int = 0
-    """Cards left out by ``exclude_handed_off``: handed off, still new, waiting for Anki."""
+    """Cards left out by ``exclude_handed_off``: handed off, waiting for Anki."""
     pace_remaining: int = 0
     """Pacing: the eligible new cards still to drill (see the module docstring)."""
     pace_suspended: int = 0
@@ -401,7 +404,7 @@ def select_cards(
             if snap.type == 0 and snap.queue == QUEUE_TYPE_SUSPENDED:
                 filtered_new.append(snap)
             continue
-        if snap.type == 0 and snap.cid in options.exclude_handed_off:
+        if snap.cid in options.exclude_handed_off and snap.queue != QUEUE_TYPE_SUSPENDED:
             handed_off += 1
             continue
         card_class = classify(

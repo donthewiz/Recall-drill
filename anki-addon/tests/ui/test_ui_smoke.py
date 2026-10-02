@@ -912,6 +912,7 @@ def test_setup_panel_counts_handed_off_cards(panel_env: Any, window_env: Path) -
     col, did = panel_env
     ctx = AddonContext("recall_drill", str(window_env))
     cids = [int(c) for c in col.find_cards(f"did:{did}")]
+    col.sched.unsuspend_cards(cids[:3])  # a handoff unsuspends; the 3rd wasn't handed off
     history_store.append_handoff(
         ctx.storage(),
         str(did),
