@@ -24,11 +24,19 @@ a deck scope, eligible ``new`` / ``suspended_new`` cards whose hash falls in the
 holdout are set aside (``Selection.holdout``) while walking the ordered list,
 until ``max_cards`` drill cards are picked.
 
-**Pacing** (Phase 6): ``Selection.pace_remaining`` counts, whatever the class
-switches and ``max_cards``, the eligible ``new`` / ``suspended_new`` cards
-that pass the template filter, minus notes tagged ``rd::drilled`` or
-``rd::holdout``; ``pace_siblings`` the suspended new cards the template filter
-left out whose note has one of them (the handoff's siblings).
+``exclude_handed_off`` (config ``exclude_handed_off_new``) leaves out, per
+card, the cards a handoff sent to Anki as new cards (``history_store.
+handed_off_cids``) **while they are still new** (counted as ``handed_off``):
+under handoff B they sit at the front of the new queue until Anki reviews
+them, and drilling them again would repeat yesterday's session. Once Anki has
+rated a card it is selectable again (lapsed, leech, flagged, …). A note's other
+cards that were never handed off (a cloze sibling) stay selectable.
+
+**Pacing** (Phase 6): ``Selection.pace_remaining`` is the eligible ``new`` +
+``suspended_new`` count (whatever the class switches and ``max_cards`` say),
+so it follows the same per-card rule as selection; ``pace_siblings`` counts the
+suspended new cards the template filter left out whose note has a remaining
+card (the handoff's siblings).
 
 A card is ineligible, and counted by reason, when (first match wins):
 image occlusion, marked ineligible in mappings.json, unmapped, empty answer,
@@ -142,6 +150,8 @@ class SelectOptions:
     """Cards left out, whatever their class (counted as ``Selection.excluded``)."""
     exclude_holdout_tag: bool = False
     """Leave out notes tagged ``rd::holdout`` (counted as ``Selection.holdout_tagged``)."""
+    exclude_handed_off: frozenset[int] = frozenset()
+    """Handed-off cards, left out while still new (counted as ``Selection.handed_off``)."""
     holdout_pct: int = 0
     """Holdout percentage (0 = off). Applied to deck scopes only."""
     holdout_salt: str = ""
@@ -172,6 +182,7 @@ def options_to_json(o: SelectOptions) -> dict[str, Any]:
         "flag": o.flag,
         "exclude_cids": sorted(o.exclude_cids),
         "exclude_holdout_tag": o.exclude_holdout_tag,
+        "exclude_handed_off": sorted(o.exclude_handed_off),
         "holdout_pct": o.holdout_pct,
         "holdout_salt": o.holdout_salt,
         "skip_min_stability": o.skip_min_stability,
@@ -193,6 +204,9 @@ def options_from_json(d: Mapping[str, Any]) -> SelectOptions:
         flag=int(d.get("flag", RED_FLAG)),
         exclude_cids=frozenset(int(x) for x in cast(list[Any], d.get("exclude_cids") or [])),
         exclude_holdout_tag=bool(d.get("exclude_holdout_tag", False)),
+        exclude_handed_off=frozenset(
+            int(x) for x in cast(list[Any], d.get("exclude_handed_off") or [])
+        ),
         holdout_pct=int(d.get("holdout_pct") or 0),
         holdout_salt=str(d.get("holdout_salt") or ""),
         skip_min_stability=float(d.get("skip_min_stability", SKIP_MIN_STABILITY)),
@@ -235,6 +249,8 @@ class Selection:
     off as new cards (``apply_holdout``)."""
     holdout_tagged: int = 0
     """Cards left out because their note is tagged ``rd::holdout``."""
+    handed_off: int = 0
+    """Cards left out by ``exclude_handed_off``: handed off, still new, waiting for Anki."""
     pace_remaining: int = 0
     """Pacing: the eligible new cards still to drill (see the module docstring)."""
     pace_suspended: int = 0
@@ -362,6 +378,7 @@ def select_cards(
     template_excluded = 0
     excluded = 0
     holdout_tagged = 0
+    handed_off = 0
     pace_remaining = 0
     met: dict[tuple[int, int], NoteMapping] = {}
     cands: list[Candidate] = []
@@ -384,6 +401,9 @@ def select_cards(
             if snap.type == 0 and snap.queue == QUEUE_TYPE_SUSPENDED:
                 filtered_new.append(snap)
             continue
+        if snap.type == 0 and snap.cid in options.exclude_handed_off:
+            handed_off += 1
+            continue
         card_class = classify(
             snap,
             options.young_ivl,
@@ -398,11 +418,7 @@ def select_cards(
             ineligible[reason] += 1
             continue
         eligible[card_class] += 1
-        if (
-            card_class in PACE_CLASSES
-            and not has_tag(snap.tags, TAG_DRILLED)
-            and not has_tag(snap.tags, TAG_HOLDOUT)
-        ):
+        if card_class in PACE_CLASSES:
             pace_nids.add(snap.nid)
             pace_remaining += 1
             pace_suspended += card_class == "suspended_new"
@@ -431,6 +447,7 @@ def select_cards(
         excluded=excluded,
         holdout=held,
         holdout_tagged=holdout_tagged,
+        handed_off=handed_off,
         pace_remaining=pace_remaining,
         pace_suspended=pace_suspended,
         pace_siblings=sum(1 for s in filtered_new if s.nid in pace_nids),

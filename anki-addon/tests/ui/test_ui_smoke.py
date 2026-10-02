@@ -895,3 +895,26 @@ def test_setup_panel_difficulty_line_and_pacing(panel_env: Any, window_env: Path
     assert pacing.load(ctx.storage(), did).target_date is None
     assert not again.use_n_btn.isEnabled()
     again.close()
+
+
+def test_setup_panel_counts_handed_off_cards(panel_env: Any, window_env: Path) -> None:
+    """Cards a handoff sent to Anki, still new: left out and counted."""
+    from recalldrill import history_store
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    col, did = panel_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    cids = [int(c) for c in col.find_cards(f"did:{did}")]
+    history_store.append_handoff(
+        ctx.storage(),
+        str(did),
+        {"type": "handoff", "sessionId": "x", "groups": {"drilled_new": cids[:2]}},
+    )
+    d: Any = SetupDialog(ctx, did)
+    assert d.data.drillable == 4 and d.data.selection.handed_off == 2
+    assert "Handed off, waiting for Anki: 2 (they stay out until Anki reviews them)." in (
+        d.summary_label.text()
+    )
+    d.close()
+

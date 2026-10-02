@@ -61,6 +61,9 @@ class AddonConfig:
     """The ``stable`` class: FSRS stability at least this many days ..."""
     skip_max_difficulty: float = 5
     """... and difficulty at most this."""
+    exclude_handed_off_new: bool = True
+    """Leave handed-off cards out of selections while they are still new (waiting
+    for their first Anki review). Not for "my rd::hard cards"."""
     idle_cap_seconds: int = 120
     """Active drill time: the most one gap between actions counts (a break doesn't)."""
 
@@ -132,5 +135,6 @@ def parse_config(raw: object) -> AddonConfig:
         hard_chunk_shift=_int(d.get("hard_chunk_shift"), dc.hard_chunk_shift, 0, 100),
         skip_min_stability=_float(d.get("skip_min_stability"), dc.skip_min_stability, 0, 1_000_000),
         skip_max_difficulty=_float(d.get("skip_max_difficulty"), dc.skip_max_difficulty, 1, 10),
+        exclude_handed_off_new=_bool(d.get("exclude_handed_off_new"), dc.exclude_handed_off_new),
         idle_cap_seconds=_int(d.get("idle_cap_seconds"), dc.idle_cap_seconds, 1, 3600),
     )

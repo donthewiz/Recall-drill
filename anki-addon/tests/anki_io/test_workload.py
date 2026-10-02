@@ -247,8 +247,6 @@ def _med_term(col: Collection) -> tuple[int, int]:
     did = deck(col, "Med Term::Ch 3")
     for i in range(6):
         add_bqe_note(col, did, f"term{i}", f"meaning {i}")
-    add_bqe_note(col, did, "drilled", "x", tags=["rd::drilled"])
-    add_bqe_note(col, did, "held", "y", tags=["rd::holdout"])
     col.sched.suspend_cards(col.find_cards('deck:"Med Term"'))
     m = col.models.by_name(BQE)
     assert m is not None
@@ -259,7 +257,7 @@ def test_pace_counts_remaining_and_siblings(col: Collection) -> None:
     did, ntid = _med_term(col)
     table = MappingTable(col, {})
     everything = select_cards(col, Scope(deck_id=did), SelectOptions(), table)
-    # 6 notes x 2 cards, minus the two tagged notes; classes off or capped don't matter.
+    # 6 notes x 2 cards; classes off or capped don't matter.
     assert (everything.pace_remaining, everything.pace_suspended) == (12, 12)
     assert everything.pace_siblings == 0
     reverse = SelectOptions(card_ords={ntid: frozenset({1})}, max_cards=2, enabled=frozenset())
@@ -267,7 +265,7 @@ def test_pace_counts_remaining_and_siblings(col: Collection) -> None:
     assert (sel.pace_remaining, sel.pace_siblings) == (6, 6)  # the Normal cards: siblings
     assert sel.picked == []
     # An unsuspended new card still counts (class new); a reviewed one doesn't.
-    cids = col.find_cards('deck:"Med Term" card:2 -tag:rd::*')
+    cids = col.find_cards('deck:"Med Term" card:2')
     col.sched.unsuspend_cards(cids[:1])
     col.sched.set_due_date(cids[1:2], "1")
     sel = select_cards(col, Scope(deck_id=did), reverse, table)
@@ -364,9 +362,9 @@ def test_drill_speed_from_the_history(col: Collection, tmp_path: Path) -> None:
     assert speed is not None and speed.scope == "deck" and speed.full_s == 20.0
     assert speed.source() == "your pace, last 3 timed sessions"
     data, _ = _panel(col, st, did, ntid)
-    assert data.drillable == 8  # the tagged notes' Reverse cards are selectable too
-    assert data.drill_seconds == pytest.approx(8 * 20.0)
-    assert data.estimate_text() == "about 3 min"
+    assert data.drillable == 6
+    assert data.drill_seconds == pytest.approx(6 * 20.0)
+    assert data.estimate_text() == "about 2 min"
 
 
 def test_today_for_uses_the_rollover(col: Collection) -> None:

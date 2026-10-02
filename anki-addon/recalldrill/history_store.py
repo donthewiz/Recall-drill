@@ -229,6 +229,33 @@ def hard_cards(storage: Storage) -> HardCards:
     )
 
 
+HANDED_OFF_GROUPS = ("drilled_new", "siblings", "holdout", "holdout_siblings")
+"""The handoff line's groups that go to Anki as new cards (handoff B's drilled
+cards stay new; siblings and holdout cards always do)."""
+
+
+def handed_off_cids(storage: Storage) -> frozenset[int]:
+    """Every card a handoff (declined ones aside) sent to Anki as a new card, in
+    any history log. Selection leaves out the ones still new (``SelectOptions.
+    exclude_handed_off``): they are waiting for their first Anki review."""
+    out: set[int] = set()
+    for name in storage.list_names(HISTORY_DIR, ".jsonl"):
+        for raw in storage.read_jsonl(name):
+            if not isinstance(raw, dict):
+                continue
+            line = cast(dict[str, Any], raw)
+            if line.get("type") != "handoff" or line.get("declined"):
+                continue
+            groups = line.get("groups")
+            if not isinstance(groups, dict):
+                continue
+            for key in HANDED_OFF_GROUPS:
+                for cid in cast(list[Any], cast(dict[str, Any], groups).get(key) or []):
+                    if isinstance(cid, int) and not isinstance(cid, bool):
+                        out.add(cid)
+    return frozenset(out)
+
+
 TUNING_KEY = "tuning"
 """``history/tuning.jsonl``: one ``type: "tuning"`` line per applied suggestion."""
 
