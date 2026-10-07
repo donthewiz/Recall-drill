@@ -1,6 +1,6 @@
 # Partial handoff: design (Phase 8)
 
-Status: **design for review. Nothing is implemented.** Written 2026-10-07 against `main` at
+Status: **Decided 2026-10-07: recommendations 1–3 accepted; implemented in Phase 8.** Written 2026-10-07 against `main` at
 8117244 ("fix(addon): show (dev) in the menu and About text only from the dev folder").
 
 ## The idea in one paragraph
