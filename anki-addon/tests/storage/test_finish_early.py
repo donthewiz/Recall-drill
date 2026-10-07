@@ -256,3 +256,78 @@ def test_cut_survives_persist_resume_and_persist(st: Storage, saved: dict[str, A
 
 def test_an_uncut_save_has_no_cut_block(saved: dict[str, Any]) -> None:
     assert "cut" not in saved["addon"]
+
+
+# --- the button and the confirmation text ---------------------------------------------
+
+
+def _counts(**kw: int) -> sessions.FinishEarlyCounts:
+    base = {"total": 10, "kept": 4, "returned": 6, "part_way": 0, "changed": 0, "missing": 0}
+    return sessions.FinishEarlyCounts(**{**base, **kw})
+
+
+@pytest.mark.parametrize(
+    ("screen", "show"),
+    [
+        ("batch_done", True),
+        ("stopped", True),
+        ("panel", True),
+        ("trial", False),  # a card is on screen: end the session first
+        ("complete", False),
+    ],
+)
+def test_the_button_shows_only_on_the_offered_screens(screen: Any, show: bool) -> None:
+    assert sessions.finish_early_button(_counts(), screen).show is show
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [
+        _counts(kept=0, returned=10),  # nothing mastered
+        _counts(kept=10, returned=0),  # all kept
+        _counts(kept=9, returned=0, missing=1),  # a missing card alone isn't a cut
+    ],
+)
+def test_the_button_is_hidden_when_there_is_nothing_to_cut(counts: Any) -> None:
+    for screen in ("batch_done", "stopped", "panel"):
+        assert not sessions.finish_early_button(counts, screen).show
+
+
+def test_the_button_is_hidden_in_drill_again_and_in_the_final_check() -> None:
+    assert not sessions.finish_early_button(_counts(), "stopped", drill_again=True).show
+    assert not sessions.finish_early_button(_counts(), "stopped", final_check=True).show
+    assert sessions.finish_early_button(_counts(), "stopped").show
+
+
+def test_the_button_labels() -> None:
+    assert sessions.finish_early_button(_counts(), "stopped").label == "Finish with 4 cards"
+    assert sessions.finish_early_button(_counts(kept=1), "batch_done").label == (
+        "Finish with 1 card"
+    )
+    assert sessions.finish_early_button(_counts(), "panel").label == (
+        "Finish with 4 mastered cards"
+    )
+    assert sessions.finish_early_button(_counts(kept=1), "panel").label == (
+        "Finish with 1 mastered card"
+    )
+
+
+def test_the_confirmation_text() -> None:
+    assert sessions.finish_early_confirmation(_counts(kept=20, returned=60)) == (
+        "Finish with 20 cards? They get the Final check now, then you can hand them off. "
+        "The other 60 stay suspended and are picked first next time."
+    )
+    assert sessions.finish_early_confirmation(_counts(kept=20, returned=60, part_way=3)).endswith(
+        " 3 of them were part-way through the current batch: that progress is dropped."
+    )
+    one = sessions.finish_early_confirmation(_counts(kept=1, returned=1, part_way=1))
+    assert one == (
+        "Finish with 1 card? They get the Final check now, then you can hand them off. "
+        "The other card stays suspended and is picked first next time. "
+        "1 of them was part-way through the current batch: that progress is dropped."
+    )
+    full = sessions.finish_early_confirmation(_counts(changed=2, missing=1))
+    assert "2 cards changed in Anki since the drill, so they go back too" in full
+    assert full.endswith("1 card no longer exists in Anki: left out.")
+    assert "changed" not in sessions.finish_early_confirmation(_counts())
+    assert "no longer" not in sessions.finish_early_confirmation(_counts())

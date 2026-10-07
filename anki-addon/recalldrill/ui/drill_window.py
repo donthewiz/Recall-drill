@@ -15,12 +15,13 @@ Behavior lives in the controller (``controller.py``) and HTML in
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import aqt
 from anki.cards import CardId
 from anki.errors import NotFoundError
 from aqt import mw
+from aqt.operations import QueryOp
 from aqt.qt import (
     QCloseEvent,
     QDialog,
@@ -42,12 +43,13 @@ from aqt.qt import (
 )
 from aqt.sound import av_player, play_clicked_audio
 from aqt.theme import theme_manager
-from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
+from aqt.utils import disable_help_button, restoreGeom, saveGeom, showWarning, tooltip
 from aqt.webview import AnkiWebView
 
 from .. import drill_view, launch, sessions
 from ..anki_io.build import rebuild_card
 from ..anki_io.notetypes import MappingTable, load_overrides
+from ..anki_io.resume import ResumeCheck, check_resume
 from ..controller import (
     FLASH_MS,
     ClearInput,
@@ -63,11 +65,15 @@ from ..controller import (
 )
 from ..sessions import SessionStore
 from .context import AddonContext
-from .handoff_dialog import offer_handoff
+from .handoff_dialog import confirm_finish_early, offer_handoff
 
 log = logging.getLogger(__name__)
 
 GEOM_KEY = "recalldrill_drill"
+FINISH_TOOLTIP = (
+    "Give the cards that aren't mastered back to the pool and finish with the mastered ones: "
+    "they get the Final check now, then you can hand them off"
+)
 HANDOFF_TOOLTIP = "Hand off to Anki: tag, unsuspend and schedule these cards (one undo step)"
 
 _DOT_COLORS = {
@@ -77,6 +83,17 @@ _DOT_COLORS = {
     "ready": ("#2563EB", "#3B82F6"),
     "mastered": ("#16A34A", "#22C55E"),
 }
+
+
+def _finish_screen(
+    mode: str, finished: str | None
+) -> Literal["trial", "batch_done", "stopped", "complete"]:
+    """Which screen the window is on, as ``sessions.finish_early_button`` names it."""
+    if mode == "batch_done" and finished is None:
+        return "batch_done"
+    if mode == "done":
+        return "stopped" if finished == "stopped" else "complete"
+    return "trial"
 
 
 def _button(text: str, tip: str = "") -> QPushButton:
@@ -103,6 +120,7 @@ class DrillWindow(QDialog):
         self._edit_item: int | None = None
         self._last_mode: str | None = None
         self._handed_off = False
+        self._finishing = False  # a "Finish with N cards" check is running
 
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -179,6 +197,9 @@ class DrillWindow(QDialog):
         self.end_btn = _button("End session", "Save and stop")
         self.next_batch_btn = _button("Next batch →", "Enter")
         self.save_stop_btn = _button("Save and stop")
+        self.finish_btn = _button(
+            "Finish with these cards", FINISH_TOOLTIP
+        )
         self.again_btn = _button("Drill these cards again")
         self.handoff_btn = _button("Hand off", HANDOFF_TOOLTIP)
         self.close_btn = _button("Close")
@@ -193,6 +214,7 @@ class DrillWindow(QDialog):
             (self.end_btn, self._end_session),
             (self.next_batch_btn, self._next_batch),
             (self.save_stop_btn, self._end_session),
+            (self.finish_btn, self._finish_early),
             (self.again_btn, self._drill_again),
             (self.handoff_btn, self._handoff),
             (self.close_btn, self.close),
@@ -205,6 +227,7 @@ class DrillWindow(QDialog):
             self.override_btn,
             self.next_batch_btn,
             self.save_stop_btn,
+            self.finish_btn,
             self.again_btn,
             self.handoff_btn,
         ):
@@ -326,6 +349,7 @@ class DrillWindow(QDialog):
         summary = self.ctrl.done_summary() if done else None
         again = summary is not None and bool(summary.drill_again)
         self.again_btn.setVisible(again)
+        self._render_finish_button(v)
         if summary is not None and again:
             self.again_btn.setText(summary.drill_again_label)
         # A drill-again session has no handoff of its own.
@@ -356,6 +380,22 @@ class DrillWindow(QDialog):
             self.input.setFocus()
         else:
             self.setFocus()
+
+    def _render_finish_button(self, v: ViewModel) -> None:
+        screen = _finish_screen(v.mode, self.ctrl.finished)
+        show = False
+        if screen in ("batch_done", "stopped"):
+            counts = sessions.finish_early_counts(self.ctrl.saved_dict(), (), ())
+            btn = sessions.finish_early_button(
+                counts,
+                screen,
+                drill_again=self.store.meta.is_drill_again,
+                final_check=self.ctrl.state["phase"] == "final",
+            )
+            show = btn.show
+            self.finish_btn.setText(btn.label)
+        self.finish_btn.setVisible(show)
+        self.finish_btn.setEnabled(not self._finishing)
 
     # -- input --------------------------------------------------------------
 
@@ -524,6 +564,66 @@ class DrillWindow(QDialog):
                 self.ctx.storage(), self.ctrl, self.store, self.ctx.config()
             )
         except ValueError:
+            return
+        self._set_session(ctrl, store)
+
+    def _finish_early(self) -> None:
+        """"Finish with K cards": from the interstitial, stop first (flush the
+        dwell, save), then check the cards against Anki, confirm and cut."""
+        if self._finishing or self.store.meta.is_drill_again:
+            return
+        if self.ctrl.finished is None:
+            if self.ctrl.view().mode != "batch_done":
+                return
+            self._flush_dwell()
+            self._run(self.ctrl.save_and_stop())
+        if self.ctrl.finished != "stopped":
+            return
+        storage, key = self.ctx.storage(), self.store.meta.key
+        saved = sessions.load(storage, key)
+        if saved is None:
+            tooltip("This session's save isn't there any more.")
+            return
+        self._finishing = True
+        self._render()
+
+        def op(col: Any) -> ResumeCheck:
+            return check_resume(col, saved, MappingTable(col, load_overrides(storage)))
+
+        def done(check: ResumeCheck) -> None:
+            self._finishing = False
+            if not self._closing:
+                self._confirm_finish_early(saved, check)
+
+        def failed(exc: Exception) -> None:
+            self._finishing = False
+            if not self._closing:
+                self._render()
+                showWarning(f"Recall Drill couldn't check the cards against Anki: {exc}")
+
+        QueryOp(parent=self, op=op, success=done).failure(failed).run_in_background()
+
+    def _confirm_finish_early(self, saved: dict[str, Any], check: ResumeCheck) -> None:
+        counts = sessions.finish_early_counts(saved, check.missing, check.changed)
+        if not sessions.finish_early_button(counts, "stopped").show:
+            self._render()
+            tooltip("Nothing to finish early: no mastered card, or nothing to give back.")
+            return
+        if not confirm_finish_early(self, counts):
+            self._render()
+            return
+        try:
+            ctrl, store = launch.finish_early(
+                self.ctx.storage(),
+                self.store.meta.key,
+                saved,
+                self.ctx.config(),
+                check.missing,
+                check.changed,
+            )
+        except ValueError as exc:
+            self._render()
+            showWarning(f"Recall Drill couldn't finish the session early: {exc}")
             return
         self._set_session(ctrl, store)
 

@@ -155,3 +155,27 @@ def test_resume_lands_on_the_same_card(st: Storage) -> None:
     resumed = select_trial(again.state)
     assert resumed is not None and resumed["itemId"] == trial["itemId"]
     assert again.settings.deck_name == "Ch 3"
+
+
+def test_finish_early_writes_the_cut_and_opens_the_final_check(st: Storage) -> None:
+    from finish_early_support import KEY, stopped_mid_batch
+
+    _ctrl, _store, saved = stopped_mid_batch(st)
+    ctrl, store = launch.finish_early(st, KEY, saved, DEFAULT_CONFIG, (), [1002], Clock())
+    on_disk = sessions.load(st, KEY)
+    assert on_disk is not None and on_disk["addon"]["cut"] == store.meta.cut
+    assert [r["cid"] for r in on_disk["addon"]["cut"]["returned"]] == [1002, 1003, 1004, 1005]
+    assert on_disk["addon"]["cut"]["returned"][0]["reason"] == "changed"
+    assert len(on_disk["items"]) == 2 and ctrl.state["phase"] == "final"
+
+
+def test_finish_early_with_nothing_to_cut_writes_nothing(st: Storage) -> None:
+    from finish_early_support import KEY, start
+
+    ctrl, _ = start(st)
+    ctrl.save_and_stop()
+    before = sessions.load(st, KEY)
+    assert before is not None
+    with pytest.raises(ValueError):
+        launch.finish_early(st, KEY, before, DEFAULT_CONFIG, (), (), Clock())
+    assert sessions.load(st, KEY) == before

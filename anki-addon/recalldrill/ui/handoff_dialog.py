@@ -19,7 +19,17 @@ from typing import Any, Literal, cast
 
 from aqt import mw
 from aqt.operations import CollectionOp, QueryOp
-from aqt.qt import QDialog, QHBoxLayout, QLabel, QPushButton, Qt, QVBoxLayout, QWidget, qconnect
+from aqt.qt import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    Qt,
+    QVBoxLayout,
+    QWidget,
+    qconnect,
+)
 from aqt.theme import theme_manager
 from aqt.utils import disable_help_button, showWarning, tooltip
 
@@ -193,3 +203,17 @@ def _run(
     CollectionOp(parent=parent, op=lambda col: apply_handoff(col, plan)).success(success).failure(
         failure
     ).run_in_background()
+
+
+def confirm_finish_early(parent: QWidget | None, counts: sessions.FinishEarlyCounts) -> bool:
+    """"Finish with K cards?" (the drill window's and the setup panel's button):
+    **Finish** cuts the save, **Cancel** leaves it as it is."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Recall Drill")
+    box.setText(sessions.finish_early_confirmation(counts))
+    finish = box.addButton("Finish", QMessageBox.ButtonRole.AcceptRole)
+    cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(cancel)
+    box.exec()
+    return box.clickedButton() is finish
