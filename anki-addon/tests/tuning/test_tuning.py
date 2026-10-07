@@ -368,3 +368,33 @@ def test_per_card_reps_drive_the_encode_reps_rows_and_adjustment() -> None:
     assert adjust == {"+1": 1, "0": 1, "−1": 1, "unknown": 1}
     first = dict(zip(CSV_COLUMNS, list(csv.reader(io.StringIO(to_csv(r, UTC))))[1], strict=True))
     assert (first["encode_reps"], first["adjustment"]) == ("4", "1")
+
+
+def test_a_session_line_with_a_cut_reads_like_one_without() -> None:
+    """Phase 8: ``cut.returned`` cards are not in ``cards``/``anki``, so they are never
+    drilled outcomes, and the rest of the report is the same."""
+    lines, revlog, cards = scenario()
+    cut = {
+        "at": "2026-10-01T16:00:00.000Z",
+        "total": 6,
+        "missing": [],
+        "returned": [
+            {"cid": 901, "nid": 1, "ord": 0, "did": 1, "card_class": "suspended_new",
+             "status": "ready", "attempts": 3, "misses": 1, "reveals": 0, "nearMisses": 0,
+             "activeMs": 9000, "reason": "unfinished"},
+            {"cid": 902, "nid": 2, "ord": 0, "did": 1, "card_class": "suspended_new",
+             "status": "new", "attempts": 0, "misses": 0, "reveals": 0, "nearMisses": 0,
+             "activeMs": 0, "reason": "changed"},
+        ],
+    }  # fmt: skip
+    plain = build_report(lines, revlog, None, cards=cards, rollover=ROLLOVER,
+                         settings=ReportSettings(min_n=1), tz=UTC)  # fmt: skip
+    with_cut = [{**ln, "cut": cut} if ln["type"] == "session" else ln for ln in lines]
+    cards_with_returned = cards | {901: CH1, 902: CH1}
+    got = build_report(with_cut, revlog, None, cards=cards_with_returned, rollover=ROLLOVER,
+                       settings=ReportSettings(min_n=1), tz=UTC)  # fmt: skip
+    assert render_text(got) == render_text(plain)
+    assert sorted(r.cid for r in got.group("drilled")) == [101, 102, 103, 104]
+    assert {r.cid for g in ("drilled", "holdout", "baseline") for r in got.group(g)}.isdisjoint(
+        {901, 902}
+    )

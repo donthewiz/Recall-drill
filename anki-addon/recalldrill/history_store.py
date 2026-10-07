@@ -13,6 +13,9 @@
   session's active drill time; lines before Phase 6 have none), the
   encode settings used, the scope, ``collisions`` and
   ``holdout`` (the cards held out as the measurement control, Phase 5).
+  A session finished early (Phase 8) also has ``cut`` (``sessions.finish_early``):
+  ``cards`` and ``anki`` are the kept cards only, ``cut.returned`` has each
+  returned card's own counters, and ``stats`` / ``activeMs`` are the whole sitting's.
 - ``type: "handoff"``: one per handoff (``anki_io/handoff.py``, ``handoff_line``),
   with the same ``sessionId``: mode, timestamp, the card ids per group, what
   was done, the tag counts, per card ``struggle`` and ``hard``, and the
@@ -30,6 +33,7 @@ session ended. Setup reads it in place of the exposure-level seed.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, NotRequired, TypedDict, cast
@@ -119,10 +123,13 @@ def build_session_line(
     holdout: Sequence[Mapping[str, Any]] = (),
     active_ms: int = 0,
     active_ms_by_item: Mapping[int, int] | None = None,
+    cut: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One ``type: "session"`` history line. ``anki`` follows ``state["items"]``,
     so it is parallel to the entry's ``cards`` (the add-on never reorders items,
-    so that is item id order too)."""
+    so that is item id order too). ``cut``: the save's ``addon.cut`` of a session
+    finished early (Phase 8), written on the line as it is: ``cards`` and ``anki``
+    hold the kept cards only, and ``cut.returned`` the others' own counters."""
     entry = build_history_entry(state, finished_at)
     config = state["config"]
     session_min_words = config.get("minWordsToChunk", MIN_WORDS_TO_CHUNK)
@@ -145,7 +152,7 @@ def build_session_line(
                 "activeMs": (active_ms_by_item or {}).get(item["id"], 0),
             }
         )
-    return {
+    line: dict[str, Any] = {
         "type": "session",
         "sessionId": session_id,
         **entry,
@@ -156,6 +163,9 @@ def build_session_line(
         "holdout": [dict(h) for h in holdout],
         "activeMs": active_ms,
     }
+    if cut is not None:
+        line["cut"] = copy.deepcopy(dict(cut))
+    return line
 
 
 def has_session_line(storage: Storage, history_key: str, session_id: str) -> bool:
