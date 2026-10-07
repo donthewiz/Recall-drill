@@ -58,9 +58,8 @@ def test_counts_with_changed_and_missing_cards(saved: dict[str, Any]) -> None:
     c = finish_early_counts(saved, missing=[1001], changed=[1002, 1004])
     # 1001 gone; 1002 (mastered) and 1004 (untouched) changed: back to the pool.
     assert (c.total, c.kept, c.returned, c.changed, c.missing) == (6, 1, 4, 2, 1)
-    # 1003 was part-way, and so was 1002 (mastered, then sent back: its progress is dropped).
-    # 1004 never started.
-    assert c.part_way == 2
+    # Only 1003 was part-way: 1002 is mastered but changed (its own line), 1004 never started.
+    assert c.part_way == 1
 
 
 # --- the cut -------------------------------------------------------------------
