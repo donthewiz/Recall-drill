@@ -315,7 +315,10 @@ class SessionStore:
         """The controller's ``on_finish`` (SessionView's ``finishSession`` plus
         App's ``handleFinishSession``)."""
         state = ctrl.state
-        record_cold_start(self.storage, self.meta.key, state, self._now_ms())
+        if self.meta.cut is None:
+            # A cut session's multiplier would set the sitting's attempts against
+            # the kept cards' minimum: overstated, so the stop's value stays.
+            record_cold_start(self.storage, self.meta.key, state, self._now_ms())
         if not complete:
             return  # the controller already saved the state as it stands
         if self.meta.is_drill_again:
@@ -336,6 +339,7 @@ class SessionStore:
                     holdout=self.meta.holdout,
                     active_ms=ctrl.active_ms,
                     active_ms_by_item=ctrl.active_ms_by_item,
+                    cut=self.meta.cut,
                 ),
             )
             self.meta.history_written = True

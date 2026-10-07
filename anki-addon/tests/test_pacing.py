@@ -359,3 +359,14 @@ def test_minutes_and_dates() -> None:
     assert minutes_text(20) == "under 1 min" and minutes_text(89) == "about 1 min"
     assert minutes_text(90) == "about 2 min"
     assert short_date(date(2026, 10, 5)) == "Mon Oct 5"
+
+
+def test_a_session_line_with_a_cut_paces_like_one_without() -> None:
+    """Phase 8: a finished-early line is one timed session; ``cut`` changes nothing."""
+    plain = [session(ms(2026, 9, d), [(0, 20_000), (0, 40_000), (3, 120_000)]) for d in (1, 2, 3)]
+    cut = {"at": "x", "total": 6, "missing": [], "returned": [{"cid": 9, "activeMs": 50_000}]}
+    cut_lines = [{**ln, "cut": cut} for ln in plain]
+    assert timed_session(cut_lines[0]) is not None
+    a, b = drill_speed(plain, plain), drill_speed(cut_lines, cut_lines)
+    assert a is not None and b is not None and a == b
+    assert (b.sessions, b.full_s, b.chunked_s) == (3, 30.0, 120.0)

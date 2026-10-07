@@ -24,6 +24,9 @@ Groups (``docs/DECISIONS.md``, "Handoff (Phase 4)"):
   notes' suspended new cards, by the same siblings rule (queued after the
   holdout cards, buried), so a holdout note enters Anki exactly like a drilled
   note except for the drill itself.
+- ``returned`` (Phase 8): the cards a session finished early gave back to the
+  pool (``addon.cut``). Never handed off, never siblings: they stay suspended
+  and selection picks them again.
 
 ``reposition_new_cards`` gives one position **per note**, in the order the
 notes first appear in the list, to the cards it's given (a note's cards share
@@ -147,6 +150,9 @@ class HandoffInput:
     """The session's held-out cards (in the save's order) still in the collection;
     their snapshots and their notes' cards are in ``snapshots`` / ``note_cards``."""
     holdout_missing: tuple[int, ...] = ()
+    returned: tuple[int, ...] = ()
+    """Cards a session finished early gave back to the pool (``addon.cut``): not
+    drilled here, so never siblings; they stay suspended."""
 
 
 @dataclass(frozen=True)
@@ -189,6 +195,8 @@ class HandoffPlan:
     holdout_siblings: tuple[int, ...] = ()
     holdout_skipped: tuple[int, ...] = ()
     """Held-out cards left alone: gone, or no longer new (studied since)."""
+    returned: tuple[int, ...] = ()
+    """Cards the session gave back to the pool (finished early): left alone."""
 
     @property
     def cards(self) -> int:
@@ -334,7 +342,7 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
     )
     holdout_skipped = tuple(c for c in inp.holdout if c not in holdout) + inp.holdout_missing
     holdout_notes = list(dict.fromkeys(snaps[c].nid for c in holdout))
-    taken = in_session | set(holdout)
+    taken = in_session | set(holdout) | set(inp.returned)
     siblings: list[int] = []
     holdout_siblings: list[int] = []
     if settings.siblings:
@@ -417,6 +425,7 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
         day_cutoff=inp.day_cutoff,
         holdout_siblings=tuple(holdout_siblings),
         holdout_skipped=holdout_skipped,
+        returned=inp.returned,
     )
 
 
@@ -443,6 +452,21 @@ def saved_holdout(saved: Mapping[str, Any]) -> tuple[int, ...]:
     out: list[int] = []
     for h in cast(list[Any], addon.get("holdout") or []):
         cid = cast(Mapping[str, Any], h).get("cid") if isinstance(h, dict) else None
+        if isinstance(cid, int) and not isinstance(cid, bool):
+            out.append(cid)
+    return tuple(dict.fromkeys(out))
+
+
+def saved_returned(saved: Mapping[str, Any]) -> tuple[int, ...]:
+    """The card ids a session finished early gave back to the pool
+    (``addon.cut.returned``), in order; none for an uncut save."""
+    addon = cast(Mapping[str, Any], saved.get("addon") or {})
+    cut = addon.get("cut")
+    if not isinstance(cut, dict):
+        return ()
+    out: list[int] = []
+    for r in cast(list[Any], cast(Mapping[str, Any], cut).get("returned") or []):
+        cid = cast(Mapping[str, Any], r).get("cid") if isinstance(r, dict) else None
         if isinstance(cid, int) and not isinstance(cid, bool):
             out.append(cid)
     return tuple(dict.fromkeys(out))
@@ -490,6 +514,7 @@ def read_input(col: Collection, saved: Mapping[str, Any]) -> HandoffInput:
         day_cutoff=col.sched.day_cutoff,
         holdout=tuple(holdout),
         holdout_missing=tuple(holdout_missing),
+        returned=saved_returned(saved),
     )
 
 
@@ -775,6 +800,11 @@ def describe(plan: HandoffPlan, fc: Forecast | None, when: datetime) -> HandoffT
             f"unsuspended, queued after the drilled cards, available from {w}, "
             f"tagged {TAG_HOLDOUT}" + (f"; with {_n(hs, 'sibling')}." if hs else ".")
         )
+    if plan.returned:
+        lines.append(
+            f"{_n(len(plan.returned), 'card')} from this session went back to the pool: "
+            "not handed off, still suspended."
+        )
     lines.append(f"Tags: +{plan.tags_added} / −{plan.tags_removed}{_tag_breakdown(plan)}.")
     if plan.clear_flags:
         lines.append(f"Red flag cleared on {_n(len(plan.clear_flags), 'card')}.")
@@ -819,6 +849,7 @@ def handoff_line(plan: HandoffPlan, fc: Forecast | None, at_ms: float) -> dict[s
             "holdout": list(plan.holdout),
             "holdout_siblings": list(plan.holdout_siblings),
             "holdout_skipped": list(plan.holdout_skipped),
+            "returned": list(plan.returned),
             "missing": list(plan.missing),
         },
         "actions": {
