@@ -366,8 +366,9 @@ class FinishEarlyCounts:
     returned: int
     """Back to the pool: unfinished, or changed in Anki."""
     part_way: int
-    """Of the returned cards, those with some progress (encoding, ready, or a
-    correct cycle answer): that progress is dropped."""
+    """Of the unfinished returned cards, those with some progress (encoding, ready,
+    or a correct cycle answer): that progress is dropped. A changed card has its
+    own line and isn't counted."""
     changed: int
     """Cards whose answer changed (a subset of :attr:`returned`)."""
     missing: int
@@ -418,7 +419,9 @@ def finish_early_counts(
         total=len(_items_of(saved)),
         kept=len(cut.kept),
         returned=len(cut.returned),
-        part_way=sum(1 for item, _, _ in cut.returned if _had_progress(item)),
+        part_way=sum(
+            1 for item, _, why in cut.returned if why == "unfinished" and _had_progress(item)
+        ),
         changed=sum(1 for _, _, why in cut.returned if why == "changed"),
         missing=len(cut.missing),
     )

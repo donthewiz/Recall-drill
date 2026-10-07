@@ -1099,3 +1099,39 @@ def test_the_panel_hides_finish_for_a_pending_handoff(
     d: Any = SetupDialog(ctx, env.did)
     assert d.handoff_btn.isVisibleTo(d) and not d.finish_btn.isVisibleTo(d)
     d.close()
+
+
+def test_the_panel_hides_finish_for_a_save_in_the_final_check(
+    finish_env: Any, window_env: Path
+) -> None:
+    from anki.cards import CardId
+
+    from recalldrill import sessions
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    env = finish_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    w = _start_batched(ctx, env.did)
+    key = w.store.meta.key
+    _to_batch_done(w)
+    w.save_and_close()
+    d: Any = SetupDialog(ctx, env.did)
+    assert d.finish_btn.isVisibleTo(d)
+    d.close()
+
+    # Put the save in the Final check and change one card: nothing may be offered.
+    saved = sessions.load(ctx.storage(), key)
+    assert saved is not None
+    saved["phase"] = "final"
+    ctx.storage().write_json(sessions.save_name(key), saved)
+    # An unmastered card, so without the Final-check guard the button would show.
+    (idx,) = [i for i, it in enumerate(saved["items"]) if it["status"] == "new"][:1]
+    cid = sessions.saved_sources(saved)[idx].cid
+    note = env.col.get_note(env.col.get_card(CardId(cid)).nid)
+    note["FrontText"] = "changed text"
+    env.col.update_note(note)
+    d = SetupDialog(ctx, env.did)
+    assert d.saved_info is not None and d.saved_info.check is not None
+    assert d.saved_info.check.changed and not d.finish_btn.isVisibleTo(d)
+    d.close()

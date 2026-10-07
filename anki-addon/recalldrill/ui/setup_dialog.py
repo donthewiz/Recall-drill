@@ -908,7 +908,10 @@ class SetupDialog(QDialog):
         addon = cast(dict[str, Any], saved.saved.get("addon") or {})
         counts = self._finish_counts(saved)
         button = sessions.finish_early_button(
-            counts, "panel", drill_again=addon.get("drillAgainOf") is not None
+            counts,
+            "panel",
+            drill_again=addon.get("drillAgainOf") is not None,
+            final_check=saved.saved.get("phase") == "final",
         )
         shown = saved.status == "resume" and saved.check is not None
         return sessions.FinishEarlyButton(button.show and shown, button.label)
