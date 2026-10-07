@@ -82,6 +82,8 @@ How the cards enter Anki depends on `handoff_mode`:
 
 Cards that already have a schedule keep it either way.
 
+**Finishing early.** To hand off before the whole session is mastered, press **Finish with N cards** (on the batch screen, on the Session Saved screen, or **Finish with N mastered cards** in the deck's panel next to Resume). The mastered cards get the Final check and are then handed off as usual. The other cards go back to the pool: they stay suspended and the next session picks them first. Progress on a card that was part-way through its batch is dropped, and a card you edited in Anki since the drill goes back too. Their trials and time stay in the session's history.
+
 ## Tags
 
 | Tag | Meaning |

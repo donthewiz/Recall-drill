@@ -567,6 +567,33 @@ Pace a deck to a target date (a chapter exam), as the medterm routine does: dril
 - **Ceiling check** (warn with the number held back, never block), on the top-level deck as in the Phase 4 forecast: under **B**, tomorrow's new cards (N + siblings + holdout share) against its new/day; under **A**, N against the room left in its review limit after tomorrow's due reviews (the forecast's `prop:due=1 OR (is:learn prop:due<1)` count).
 - **No daily time budget or minute threshold:** the minutes are information only.
 
+## Partial handoff (Phase 8)
+
+Design: `docs/PARTIAL_HANDOFF_DESIGN.md`. Code: `sessions.finish_early` (pure), `launch.finish_early`, the `cut` block in the save and the history line, `anki_io/handoff.py` (`returned`), the buttons in `ui/drill_window.py` and `ui/setup_dialog.py`. Tests: `tests/storage/test_finish_early*.py`, `tests/anki_io/test_partial_handoff.py`, and the finish-early tests at the end of `tests/ui/test_ui_smoke.py`. No engine change.
+
+**Don's decisions (2026-10-07).** He accepted the design's three recommendations:
+
+1. **Unfinished cards go back to the pool.** They stay suspended and untouched, and the next selection picks them. There is no continuation session.
+2. **The kept cards get the normal Final check** before the handoff.
+3. **Done means mastered**, including the mastered cards of the batch in progress. A returned note-mate of a kept card stays suspended and isn't handed off as a sibling. Changed cards (`check_resume`) go back to the pool. Missing cards are left out and listed.
+
+**The cut save** (`sessions.finish_early(saved, missing, changed, now_ms)`, one atomic save write):
+- The kept cards (mastered, still in Anki, unchanged) keep their order and are renumbered 0…k−1. `addon.sources` and `addon.activeMsByItem` are remapped the same way, so ids still index sources and `check_resume` walks only kept cards.
+- The engine position is `phase: "cycle"`, `queue: []`, `batchIndex` = the last batch of the kept cards (under the save's batch size), `currentId` = complete, `finalCheckStartAttempts` dropped. `init_session` then enters the Final check through the engine's own path.
+- `addon.cut` = `{at, total, missing: [cid], returned: [{cid, nid, ord, did, card_class, status, attempts, misses, reveals, nearMisses, activeMs, reason}]}`, with `reason` `unfinished` or `changed` (a changed card goes back whatever its status). The values are the cards' own counters, nothing allocated. `SessionMeta.cut` round-trips it, because `SessionStore.persist` rebuilds `addon` from the controller's dict plus the meta.
+- Refused (`ValueError`): nothing kept, nothing returned, a drill-again save, a save waiting for its handoff, and a save in the Final check.
+- Unchanged: `stats`, `addon.activeMs`, `sessionId`, `startedAt`, `scope`, `selectOptions`, `deckSettings`, `hints`, `holdout`, `collisions`, and every kept item's counters, `hardSpans` and overrides.
+
+**History.** One session, one `sessionId`, one session line and one handoff line. The session line gets the save's `cut` block as it is: `cards` and `anki` are the kept cards, `cut.returned` holds the others' counters. Tuning joins per-card values by `sessionId` and pacing reads `anki[i].activeMs`, so a returned card is never a drilled outcome and the readers are unchanged (a test for each).
+
+**Siblings.** `build_plan`'s `taken` adds the save's returned card ids, so a returned note-mate of a kept card is not a sibling: it stays suspended. The note still gets `rd::drilled` (a note tag), which doesn't stop the returned card being selected (selection is per card). The handoff line has `groups.returned` (not in `HANDED_OFF_GROUPS`, so those cards stay selectable), and the dialog says "N cards from this session went back to the pool: not handed off, still suspended." An uncut save plans as before (`returned` is empty).
+
+**Holdout.** The session's held-out cards go with this handoff, unchanged: their outcome is measured from their own introduction, so going in before some of the cards they were selected beside doesn't bias it.
+
+**Stats and cold start.** `stats` and `activeMs` stay the sitting's totals; nothing is split. Nothing reads the line's `stats`, and pacing uses `activeMs` only as a "this line is timed" test. `record_cold_start` is skipped for a session with a cut (on stop and on completion): its multiplier would set the sitting's attempts against the kept cards' minimum. The value written at the first stop stays, and nothing reads `estimates.json` anyway.
+
+**Where the button shows** (`sessions.finish_early_button`, pure): "Finish with K cards" on the batch interstitial and on the stopped screen ("Finish with K mastered cards" in the setup panel's banner, beside Resume and Start fresh). Never while a card is on screen, in the Final check, in a drill-again session, when nothing is mastered or nothing would go back, or while another window drives the save (the panel refuses through `_already_open()`, like Resume). On the interstitial it flushes the dwell and saves and stops first; both windows then check the cards against Anki (`check_resume`, in a `QueryOp`), confirm (`finish_early_confirmation`: Finish / Cancel) and cut. A missing card alone makes no cut (nothing returned), so the button isn't offered for it.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
