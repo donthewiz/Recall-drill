@@ -67,7 +67,7 @@ from aqt.qt import (
     QWidget,
     qconnect,
 )
-from aqt.utils import disable_help_button, restoreGeom, saveGeom, tooltip
+from aqt.utils import disable_help_button, restoreGeom, saveGeom, showWarning, tooltip
 
 from .. import deck_settings, holdout, launch, pacing, sessions
 from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
@@ -89,7 +89,7 @@ from ..anki_io.workload import read_pacing
 from ..deck_settings import DeckSettings
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
-from .handoff_dialog import offer_handoff
+from .handoff_dialog import confirm_finish_early, offer_handoff
 from .mapping_dialog import MappingDialog
 from .widgets import ComboBox, DateEdit, SpinBox
 
@@ -217,6 +217,11 @@ class SetupDialog(QDialog):
         self.resume_btn = QPushButton("Resume")
         self.resume_saved_btn = QPushButton("Resume with saved text")
         self.fresh_btn = QPushButton("Start fresh")
+        self.finish_btn = QPushButton("Finish with mastered cards")
+        self.finish_btn.setToolTip(
+            "Give the cards that aren't mastered back to the pool and finish with the "
+            "mastered ones: they get the Final check, then you can hand them off"
+        )
         self.handoff_btn = QPushButton("Hand off finished session")
         self.handoff_btn.setToolTip(HANDOFF_TOOLTIP)
         self.discard_btn = QPushButton("Don't hand off")
@@ -224,6 +229,7 @@ class SetupDialog(QDialog):
             (self.resume_btn, self._resume),
             (self.resume_saved_btn, self._resume),
             (self.fresh_btn, self._start_fresh),
+            (self.finish_btn, self._finish_early),
             (self.handoff_btn, self._handoff),
             (self.discard_btn, self._discard_saved),
         ):
@@ -233,6 +239,7 @@ class SetupDialog(QDialog):
             self.resume_btn,
             self.fresh_btn,
             self.resume_saved_btn,
+            self.finish_btn,
             self.handoff_btn,
             self.discard_btn,
         ):
@@ -883,7 +890,28 @@ class SetupDialog(QDialog):
         self.resume_saved_btn.setVisible(resume and problems)
         self.fresh_btn.setVisible(resume)
         self.fresh_btn.setText("Start fresh (recommended)" if problems else "Start fresh")
+        finish = self._finish_button(saved)
+        self.finish_btn.setVisible(finish.show)
+        self.finish_btn.setText(finish.label)
         self.banner.show()
+
+    @staticmethod
+    def _finish_counts(saved: SavedInfo) -> sessions.FinishEarlyCounts:
+        check = saved.check
+        return sessions.finish_early_counts(
+            saved.saved,
+            check.missing if check is not None else (),
+            check.changed if check is not None else (),
+        )
+
+    def _finish_button(self, saved: SavedInfo) -> sessions.FinishEarlyButton:
+        addon = cast(dict[str, Any], saved.saved.get("addon") or {})
+        counts = self._finish_counts(saved)
+        button = sessions.finish_early_button(
+            counts, "panel", drill_again=addon.get("drillAgainOf") is not None
+        )
+        shown = saved.status == "resume" and saved.check is not None
+        return sessions.FinishEarlyButton(button.show and shown, button.label)
 
     # -- edits ------------------------------------------------------------------
 
@@ -1033,6 +1061,32 @@ class SetupDialog(QDialog):
         if saved is None or saved.status != "resume" or self._already_open():
             return
         ctrl, store = launch.resume(self.ctx.storage(), saved.key, saved.saved, self.ctx.config())
+        open_drill_window(self.ctx, ctrl, store)
+        self.close()
+
+    def _finish_early(self) -> None:
+        """"Finish with K mastered cards": confirm, cut the save, and open the
+        drill window on its Final check (refused while a window drives the save)."""
+        saved = self.saved_info
+        if saved is None or not self._finish_button(saved).show or self._already_open():
+            return
+        counts = self._finish_counts(saved)
+        if not confirm_finish_early(self, counts):
+            return
+        check = saved.check
+        assert check is not None
+        try:
+            ctrl, store = launch.finish_early(
+                self.ctx.storage(),
+                saved.key,
+                saved.saved,
+                self.ctx.config(),
+                check.missing,
+                check.changed,
+            )
+        except ValueError as exc:
+            showWarning(f"Recall Drill couldn't finish the session early: {exc}")
+            return
         open_drill_window(self.ctx, ctrl, store)
         self.close()
 

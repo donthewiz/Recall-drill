@@ -9,7 +9,7 @@ saved; the panel's Save is the other), and ``sessions`` starts or resumes.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any
 
 from . import deck_settings, sessions
@@ -137,3 +137,20 @@ def drill_again(
     """DoneView's "Drill these cards again": session-only, same settings."""
     settings = controller_settings(cfg, parent.settings.deck_name, drill_again=True)
     return sessions.start_drill_again(storage, parent, parent_store, settings, clock)
+
+
+def finish_early(
+    storage: Storage,
+    key: str,
+    saved: Mapping[str, Any],
+    cfg: AddonConfig,
+    missing: Collection[int],
+    changed: Collection[int],
+    clock: Callable[[], int] = now_ms,
+) -> tuple[DrillController, SessionStore]:
+    """"Finish with N cards": cut the save down to its mastered cards (one atomic
+    write; ``ValueError`` if there is nothing to cut), then open it. The session
+    starts in its Final check."""
+    cut = sessions.finish_early(saved, missing, changed, clock())
+    storage.write_json(sessions.save_name(key), cut)
+    return resume(storage, key, cut, cfg, clock)

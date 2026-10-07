@@ -929,3 +929,173 @@ def test_setup_panel_counts_handed_off_cards(panel_env: Any, window_env: Path) -
     )
     d.close()
 
+
+
+# -- finish early (Phase 8) -------------------------------------------------------
+
+
+def _start_batched(ctx: Any, did: int) -> Any:
+    """The three Reverse cards from the setup panel, one per batch, encodeReps 1."""
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    d: Any = SetupDialog(ctx, did)
+    (ntid,) = d._template_boxes
+    d._template_boxes[ntid][0][1].setChecked(False)
+    d._refresh()
+    d.encode_reps.setValue(1)
+    d.batch_size.setValue(1)
+    d._refresh()
+    d._start()
+    (w,) = ctx.windows
+    return w
+
+
+def _to_batch_done(w: Any) -> None:
+    from recalldrill.engine.session import select_trial
+
+    for _ in range(100):
+        if w.ctrl.view().mode == "batch_done":
+            return
+        if w.ctrl.view().buttons.continue_:
+            w._enter()
+            continue
+        trial = select_trial(w.ctrl.state)
+        assert trial is not None
+        w.input.setText(trial["target"])
+        w._enter()
+        w._flush_dwell()
+    raise AssertionError("no interstitial")
+
+
+@pytest.fixture
+def finish_env(handoff_env: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
+    from recalldrill.ui import drill_window, setup_dialog
+
+    env = handoff_env
+    env.confirms = []
+    env.answers = []
+
+    def confirm(_parent: object, counts: Any) -> bool:
+        env.confirms.append(counts)
+        return env.answers.pop(0)
+
+    monkeypatch.setattr(drill_window, "QueryOp", _SyncQueryOp)
+    for module in (drill_window, setup_dialog):
+        monkeypatch.setattr(module, "confirm_finish_early", confirm)
+    monkeypatch.setattr(
+        drill_window, "showWarning", lambda msg, *a, **k: env.warnings.append(msg)
+    )
+    monkeypatch.setattr(setup_dialog, "showWarning", lambda msg, *a, **k: env.warnings.append(msg))
+    return env
+
+
+def test_finish_early_from_the_interstitial_and_the_stopped_screen(
+    finish_env: Any, window_env: Path
+) -> None:
+    from recalldrill import sessions
+    from recalldrill.ui.context import AddonContext
+
+    env = finish_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    w = _start_batched(ctx, env.did)
+    key = w.store.meta.key
+    assert not w.finish_btn.isVisible()  # a card is on screen
+    _to_batch_done(w)
+    assert w.finish_btn.isVisible() and w.finish_btn.text() == "Finish with 1 card"
+
+    # Cancel: the session is stopped (saved), the button is still offered, nothing is cut.
+    env.answers = [False, True]
+    w.finish_btn.click()
+    assert w.ctrl.finished == "stopped" and len(env.confirms) == 1
+    c = env.confirms[0]
+    assert (c.kept, c.returned, c.part_way, c.changed, c.missing) == (1, 2, 0, 0, 0)
+    saved = sessions.load(ctx.storage(), key)
+    assert saved is not None and "cut" not in saved["addon"] and len(saved["items"]) == 3
+    assert w.finish_btn.isVisible() and w.again_btn.isVisible() is False
+
+    # Finish, from the stopped screen: the same window now drills the Final check.
+    w.finish_btn.click()
+    assert w.ctrl.finished is None and w.ctrl.state["phase"] == "final"
+    assert len(w.ctrl.state["items"]) == 1 and not w.finish_btn.isVisible()
+    cut = sessions.load(ctx.storage(), key)
+    assert cut is not None and len(cut["items"]) == 1
+    assert [r["reason"] for r in cut["addon"]["cut"]["returned"]] == ["unfinished"] * 2
+    w.save_and_close()
+
+
+def test_finish_early_offers_nothing_when_the_mastered_card_changed(
+    finish_env: Any, window_env: Path
+) -> None:
+    from anki.cards import CardId
+
+    from recalldrill.ui.context import AddonContext
+
+    env = finish_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    w = _start_batched(ctx, env.did)
+    _to_batch_done(w)
+    (kept,) = [
+        s.cid
+        for i, s in enumerate(w.ctrl.sources)
+        if w.ctrl.state["items"][i]["status"] == "mastered"
+    ]
+    note = env.col.get_note(env.col.get_card(CardId(kept)).nid)
+    note["FrontText"] = "something else entirely"  # the Reverse card's answer
+    env.col.update_note(note)
+    # The only mastered card changed: nothing would be kept, so nothing is offered.
+    w.finish_btn.click()
+    assert env.confirms == [] and "Nothing to finish early" in env.tips[-1]
+    assert w.ctrl.finished == "stopped"
+    w.save_and_close()
+
+
+def test_finish_early_from_the_panel_banner(finish_env: Any, window_env: Path) -> None:
+    from recalldrill import sessions
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    env = finish_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    w = _start_batched(ctx, env.did)
+    key = w.store.meta.key
+    _to_batch_done(w)
+
+    # A window is driving this save: the panel's button is refused, like Resume.
+    d: Any = SetupDialog(ctx, env.did)
+    assert d.finish_btn.isVisibleTo(d) and d.finish_btn.text() == "Finish with 1 mastered card"
+    d.finish_btn.click()
+    assert env.confirms == [] and sessions.load(ctx.storage(), key) is not None
+    assert "already open" in env.tips[-1]
+    d.close()
+
+    w.save_and_close()
+    d = SetupDialog(ctx, env.did)
+    assert d.finish_btn.isVisibleTo(d) and d.resume_btn.isVisibleTo(d)
+    env.answers = [False, True]
+    d.finish_btn.click()  # Cancel
+    assert ctx.windows == [] and "cut" not in sessions.load(ctx.storage(), key)["addon"]  # type: ignore[index]
+    d.finish_btn.click()  # Finish: the drill window opens on the cut session, the panel closes
+    (w2,) = ctx.windows
+    assert w2.ctrl.state["phase"] == "final" and len(w2.ctrl.state["items"]) == 1
+    assert d._closed
+    w2.save_and_close()
+
+    # The cut session is all mastered: no Finish button on its banner.
+    d3: Any = SetupDialog(ctx, env.did)
+    assert d3.resume_btn.isVisibleTo(d3) and not d3.finish_btn.isVisibleTo(d3)
+    d3.close()
+
+
+def test_the_panel_hides_finish_for_a_pending_handoff(
+    finish_env: Any, window_env: Path
+) -> None:
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    env = finish_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    w = _finish_in_window(ctx, env.did)
+    w.close()
+    d: Any = SetupDialog(ctx, env.did)
+    assert d.handoff_btn.isVisibleTo(d) and not d.finish_btn.isVisibleTo(d)
+    d.close()

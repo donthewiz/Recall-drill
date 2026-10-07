@@ -502,6 +502,70 @@ def finish_early(
     return out
 
 
+def _cards(n: int) -> str:
+    return f"{n} card" if n == 1 else f"{n} cards"
+
+
+@dataclass(frozen=True)
+class FinishEarlyButton:
+    show: bool
+    label: str
+    """"Finish with K cards" ("… K mastered cards" in the setup panel)."""
+
+
+def finish_early_button(
+    counts: FinishEarlyCounts,
+    screen: Literal["trial", "batch_done", "stopped", "complete", "panel"],
+    *,
+    drill_again: bool = False,
+    final_check: bool = False,
+) -> FinishEarlyButton:
+    """Whether "Finish with K cards" is offered, and its label. It is offered at the
+    batch interstitial, on the stopped screen and in the panel's banner, and never
+    while a card is on screen, after the Final check, in the Final check, in a
+    drill-again session, or when nothing would be kept or nothing returned.
+    (The panel must also not offer it while a window drives the save.)"""
+    noun = ("mastered " if screen == "panel" else "") + ("card" if counts.kept == 1 else "cards")
+    label = f"Finish with {counts.kept} {noun}"
+    show = (
+        screen in ("batch_done", "stopped", "panel")
+        and not drill_again
+        and not final_check
+        and counts.kept > 0
+        and counts.returned > 0
+    )
+    return FinishEarlyButton(show, label)
+
+
+def finish_early_confirmation(counts: FinishEarlyCounts) -> str:
+    """The confirmation before the save is cut (buttons: Finish, Cancel)."""
+    r = counts.returned
+    other = "The other card stays" if r == 1 else f"The other {r} stay"
+    text = (
+        f"Finish with {_cards(counts.kept)}? They get the Final check now, then you can "
+        f"hand them off. {other} suspended and {'is' if r == 1 else 'are'} picked first "
+        "next time."
+    )
+    if counts.part_way:
+        n = counts.part_way
+        text += (
+            f" {n} of them {'was' if n == 1 else 'were'} part-way through the current batch: "
+            "that progress is dropped."
+        )
+    if counts.changed:
+        text += (
+            f"\n\n{_cards(counts.changed)} changed in Anki since the drill, so "
+            f"{'it goes' if counts.changed == 1 else 'they go'} back too: the next drill "
+            "rebuilds them with the new text."
+        )
+    if counts.missing:
+        m = counts.missing
+        text += (
+            f"\n\n{_cards(m)} no longer {'exists' if m == 1 else 'exist'} in Anki: left out."
+        )
+    return text
+
+
 # ---------------------------------------------------------------------------
 # Start and resume
 # ---------------------------------------------------------------------------
