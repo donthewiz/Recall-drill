@@ -15,6 +15,8 @@ A save is the web app's ``SavedSessionState`` exactly as SessionView builds it
 - ``holdout``: the cards the selection held out as the measurement control
   (Phase 5: ``cid, nid, ord, did, card_class`` each). They aren't drilled; the
   handoff hands them to Anki as new cards, tagged ``rd::holdout``.
+- ``cut`` (Phase 8, only after "Finish with N cards"): ``{at, total, missing,
+  returned}``, what :func:`finish_early` dropped from the session (see there).
 
 Lifecycle, as App.tsx's ``handleFinishSession`` with the handoff on top:
 
@@ -34,17 +36,24 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from .controller import ControllerSettings, DrillController
-from .engine.items import MIN_WORDS_TO_CHUNK, build_items, normalize_item, resolve_batch_config
-from .engine.jscompat import truthy
+from .engine.items import (
+    MIN_WORDS_TO_CHUNK,
+    build_items,
+    normalize_item,
+    partition_into_batches,
+    resolve_batch_config,
+)
+from .engine.jscompat import js_iso_string, truthy
 from .engine.session import SESSION_COMPLETE_ID, empty_stats, init_session
 from .engine.types import (
     CycleOrder,
     DeckItem,
+    DrillItem,
     ItemOverrides,
     LadderMode,
     SessionConfig,
@@ -156,13 +165,15 @@ class SessionMeta:
     handoff_pending: bool = False
     history_written: bool = False
     holdout: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    cut: dict[str, Any] | None = None
+    """The save's ``addon.cut`` (:func:`finish_early`); None for a session never cut."""
 
     @property
     def is_drill_again(self) -> bool:
         return self.drill_again_of is not None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "scope": dict(self.scope),
             "selectOptions": self.select_options,
             "deckSettings": self.deck_settings,
@@ -174,6 +185,9 @@ class SessionMeta:
             "drillAgainOf": self.drill_again_of,
             "holdout": self.holdout,
         }
+        if self.cut is not None:
+            out["cut"] = self.cut
+        return out
 
     @classmethod
     def from_json(cls, key: str, addon: Mapping[str, Any]) -> SessionMeta:
@@ -194,7 +208,12 @@ class SessionMeta:
                 for h in cast(list[Any], addon.get("holdout") or [])
                 if isinstance(h, dict)
             ],
+            cut=_cut_block(addon.get("cut")),
         )
+
+
+def _cut_block(raw: object) -> dict[str, Any] | None:
+    return dict(cast(Mapping[str, Any], raw)) if isinstance(raw, dict) else None
 
 
 def new_session_id() -> str:
@@ -322,6 +341,161 @@ class SessionStore:
             self.meta.history_written = True
         self.meta.handoff_pending = True
         self.persist(ctrl.saved_dict())
+
+
+# ---------------------------------------------------------------------------
+# Finishing early (Phase 8)
+# ---------------------------------------------------------------------------
+
+_RETURNED_COUNTERS = ("attempts", "misses", "reveals", "nearMisses")
+
+
+@dataclass(frozen=True)
+class FinishEarlyCounts:
+    """What :func:`finish_early` would do to a save (the panel, the window and
+    the confirmation all read this)."""
+
+    total: int
+    """Cards in the save."""
+    kept: int
+    """Mastered, still in Anki and unchanged: they get the Final check."""
+    returned: int
+    """Back to the pool: unfinished, or changed in Anki."""
+    part_way: int
+    """Of the returned cards, those with some progress (encoding, ready, or a
+    correct cycle answer): that progress is dropped."""
+    changed: int
+    """Cards whose answer changed (a subset of :attr:`returned`)."""
+    missing: int
+    """Cards gone from Anki: left out of both."""
+
+
+@dataclass(frozen=True)
+class _Cut:
+    kept: list[DrillItem]
+    returned: list[tuple[DrillItem, SourceRef, Literal["unfinished", "changed"]]]
+    missing: list[int]
+    """Card ids, in session order."""
+
+
+def _items_of(saved: Mapping[str, Any]) -> list[DrillItem]:
+    return [cast(DrillItem, it) for it in cast(list[Any], saved.get("items") or [])]
+
+
+def _split(saved: Mapping[str, Any], missing: Collection[int], changed: Collection[int]) -> _Cut:
+    sources = saved_sources(saved)
+    kept: list[DrillItem] = []
+    returned: list[tuple[DrillItem, SourceRef, Literal["unfinished", "changed"]]] = []
+    gone: list[int] = []
+    for item in _items_of(saved):
+        src = sources[item["id"]]
+        if src.cid in missing:
+            gone.append(src.cid)
+        elif src.cid in changed:
+            returned.append((item, src, "changed"))
+        elif item["status"] == "mastered":
+            kept.append(item)
+        else:
+            returned.append((item, src, "unfinished"))
+    return _Cut(kept, returned, gone)
+
+
+def _had_progress(item: DrillItem) -> bool:
+    streak = cast(Mapping[str, Any], item).get("cycleStreak")
+    return item["status"] in ("encoding", "ready") or (isinstance(streak, int) and streak > 0)
+
+
+def finish_early_counts(
+    saved: Mapping[str, Any], missing: Collection[int], changed: Collection[int]
+) -> FinishEarlyCounts:
+    """``missing`` and ``changed`` are card ids (``check_resume``'s answer)."""
+    cut = _split(saved, missing, changed)
+    return FinishEarlyCounts(
+        total=len(_items_of(saved)),
+        kept=len(cut.kept),
+        returned=len(cut.returned),
+        part_way=sum(1 for item, _, _ in cut.returned if _had_progress(item)),
+        changed=sum(1 for _, _, why in cut.returned if why == "changed"),
+        missing=len(cut.missing),
+    )
+
+
+def finish_early(
+    saved: Mapping[str, Any],
+    missing: Collection[int],
+    changed: Collection[int],
+    now_ms: float,
+) -> dict[str, Any]:
+    """The save of a stopped session, cut down to its mastered cards.
+
+    The kept cards keep their order and are renumbered 0…k-1; ``addon.sources``
+    and ``addon.activeMsByItem`` are remapped the same way (ids still index
+    sources, and ``check_resume`` walks only kept cards). The engine position is
+    set so ``init_session`` moves straight into the Final check. The returned
+    cards (unfinished, or ``changed``) are recorded in ``addon.cut``; missing
+    cards are left out and listed there. Everything else, the sitting's
+    ``stats`` and ``activeMs`` included, is unchanged.
+
+    Raises ``ValueError`` for a drill-again save, a save waiting for its handoff
+    or in the Final check, and when no card would be kept or none returned."""
+    addon = cast(Mapping[str, Any], saved.get("addon") or {})
+    if addon.get("drillAgainOf") is not None:
+        raise ValueError("a drill-again session can't be finished early")
+    if save_status(saved) == "handoff":
+        raise ValueError("this session is finished and waiting for its handoff")
+    if saved.get("phase") == "final":
+        raise ValueError("the Final check has started: resume it instead")
+    cut = _split(saved, missing, changed)
+    if not cut.kept:
+        raise ValueError("no mastered card to finish with")
+    if not cut.returned:
+        raise ValueError("every card is mastered: nothing to give back")
+
+    remap = {item["id"]: new for new, item in enumerate(cut.kept)}
+    by_item = {
+        int(k): _int(v)
+        for k, v in cast(Mapping[str, Any], addon.get("activeMsByItem") or {}).items()
+        if str(k).isdigit()
+    }
+    sources = cast(list[Any], addon.get("sources") or [])
+    size = saved.get("batchSize")
+    batches = partition_into_batches(cut.kept, size if isinstance(size, int) else None)
+
+    returned: list[dict[str, Any]] = []
+    for item, src, reason in cut.returned:
+        returned.append(
+            {
+                "cid": src.cid,
+                "nid": src.nid,
+                "ord": src.ord,
+                "did": src.did,
+                "card_class": src.card_class,
+                "status": item["status"],
+                **{k: _int(item.get(k)) for k in _RETURNED_COUNTERS},
+                "activeMs": by_item.get(item["id"], 0),
+                "reason": reason,
+            }
+        )
+
+    out = dict(saved)
+    out["items"] = [{**item, "id": remap[item["id"]]} for item in cut.kept]
+    out["phase"] = "cycle"
+    out["queue"] = []
+    out["batchIndex"] = len(batches) - 1
+    out["currentId"] = SESSION_COMPLETE_ID
+    out.pop("finalCheckStartAttempts", None)
+    out["addon"] = {
+        **addon,
+        "sources": [sources[old] for old in remap],
+        "activeMsByItem": {str(new): by_item[old] for old, new in remap.items() if old in by_item},
+        "cut": {
+            "at": js_iso_string(now_ms),
+            "total": len(_items_of(saved)),
+            "missing": cut.missing,
+            "returned": returned,
+        },
+    }
+    return out
 
 
 # ---------------------------------------------------------------------------
