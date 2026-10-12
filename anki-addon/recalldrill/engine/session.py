@@ -65,6 +65,7 @@ from .items import (
     build_item,
     chunk_text,
     culprit_half,
+    cycle_reps_to_master,
     find_all_culprit_chunks,
     item_overrides,
     join_window,
@@ -1045,7 +1046,8 @@ def _grade_and_advance(
 
     if is_ok_cycle:
         it["cycleStreak"] += 1
-        if it["cycleStreak"] >= 2:
+        # 2026-10-12: 1 correct answer masters a clean card, 2 in a row any other.
+        if it["cycleStreak"] >= cycle_reps_to_master(it):
             it["status"] = "mastered"
             feedback = _success_feedback(
                 gr,

@@ -14,6 +14,7 @@ TS name                       Python name
 ``chunkText``                 ``chunk_text``
 ``renderFirstLetterCue``      ``render_first_letter_cue``
 ``buildCombineSequence``      ``build_combine_sequence``
+``cycleRepsToMaster``         ``cycle_reps_to_master``
 ``requiredRepsForWindow``     ``required_reps_for_window``
 ``splitInHalf``               ``split_in_half``
 ``culpritHalf``               ``culprit_half``
@@ -244,6 +245,15 @@ def min_words_for(item: Mapping[str, Any], session_min_words: int) -> int:
     when set, else the session's."""
     override = item.get("minWordsToChunkOverride")
     return session_min_words if override is None else override
+
+
+def cycle_reps_to_master(item: Mapping[str, Any]) -> int:
+    """Correct cycle answers in a row that master the card (2026-10-12): 1 for a
+    clean card (no miss and no reveal on it this session; near misses don't
+    count, and an overridden miss was never recorded), else 2. A restarted card
+    has fresh counters, so it is clean again."""
+    clean = item.get("misses", 0) == 0 and item.get("reveals", 0) == 0
+    return 1 if clean else 2
 
 
 def required_reps_for_window(seq_item: CombineSequenceItem, n: int, encode_reps: int) -> int:

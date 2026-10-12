@@ -2129,7 +2129,9 @@ const SCENARIOS: Scenario[] = [
           'whole-answer 2nd rep',
           s => enc(s) && s.currentId === LONG && itemIn(s, LONG).stage === 'combine' && itemIn(s, LONG).combineSeqIdx === 1 && itemIn(s, LONG).combineStreak === 1,
         ],
-        ['cycle mastering answer', s => s.phase === 'cycle' && curIn(s)!.cycleStreak === 1],
+        // 2026-10-12: the cards stay clean (an override records no miss), so the
+        // first cycle answer is the mastering one.
+        ['cycle mastering answer', s => s.phase === 'cycle' && curIn(s)!.cycleStreak === 0],
         ['final check', s => s.phase === 'final'],
       ]);
       d.do('probe');
@@ -2193,8 +2195,8 @@ const SCENARIOS: Scenario[] = [
     script: d => {
       d.do('near:wait for bus at the station today please');
       d.do('correct');
+      // A near answer masters the clean card (2026-10-12): straight to the Final check.
       d.do('near:wait for bus at the station today please').do('next');
-      d.do('correct').do('next');
       d.do('near:wait for the bus at station today please').do('next');
       d.finish().do('probe');
     },
@@ -2319,14 +2321,18 @@ const SCENARIOS: Scenario[] = [
       d.do(saveResume());
       if (d.cur.anyOrder !== true) throw new Error(`${d.name}: anyOrder lost on resume`);
       reversedLearner(d, s => s.phase === 'cycle');
-      // The cycle: card 1 (ordered) reversed is wrong; card 2 typed with
-      // whitespace only is exact, then with a stopword on one item near.
-      const todo = new Set(['ordered', 'spaces', 'near', 'edit']);
+      // The cycle: card 1 (ordered) reversed is wrong; card 2 missed once (so
+      // it needs 2 correct answers), then typed with whitespace only is exact,
+      // then with a stopword on one item near.
+      const todo = new Set(['ordered', 'miss', 'spaces', 'near', 'edit']);
       while (todo.size && d.state.phase === 'cycle') {
         const id = d.state.currentId;
         if (id === 1 && todo.has('ordered')) {
           todo.delete('ordered');
           d.do('wrong:coccygeal, sacral, lumbar, thoracic, cervical').do('next');
+        } else if (id === 2 && todo.has('miss')) {
+          todo.delete('miss');
+          d.do('wrong:nervous, muscle').do('next');
         } else if (id === 2 && todo.has('spaces')) {
           todo.delete('spaces');
           d.do('type:nervous muscle connective epithelial');
@@ -2517,6 +2523,17 @@ SCENARIOS.push(
       ],
       setup: { deck: EDIT_DECK, config: cfg(1, CHUNK_DIFFICULTY, { cycleOrder }), shuffleWithinBatch: false },
       script: d => {
+        // One miss on every card while encoding, so each needs 2 correct cycle
+        // answers (a clean card masters with 1, 2026-10-12) and some card sits
+        // at cycleStreak 1 when another is mastered.
+        const missed = new Set<number>();
+        while (d.state.phase === 'encode') {
+          if (d.needsNext) d.do('next');
+          else if (!missed.has(d.state.currentId) && d.trial().cue.kind !== 'present') {
+            missed.add(d.state.currentId);
+            d.do('wrong:zzz wrong').do('next');
+          } else d.auto();
+        }
         d.until((s, dr) => {
           if (s.phase !== 'cycle' || dr.needsNext) return false;
           const others = s.items.filter(i => i.id !== s.currentId);

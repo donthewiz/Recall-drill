@@ -100,7 +100,7 @@ def compute_minimum_trials(
                 total += len(combine_seq) * reps
         else:
             total += reps
-        total += 2  # cycle: exactly 2 corrects to reach mastered
+        total += 1  # cycle: a clean card's one correct answer masters it (2026-10-12)
         if include_final_check:
             total += 1  # Phase 3: one Final-check answer
     return total

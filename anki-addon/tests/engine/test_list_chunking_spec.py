@@ -93,4 +93,4 @@ def test_min_trials_follow_list_chunks() -> None:
     item = build_item({"front": "Q", "back": "a, b, c, d, e, f"}, 0, 35, "cumulative", 8)
     assert item["stage"] == "chunks"
     assert item["chunks"] == ["a, b", "c, d", "e, f"]
-    assert compute_minimum_trials([item], 1) == 3 + 1 + 1 + 2 + 1
+    assert compute_minimum_trials([item], 1) == 3 + 1 + 1 + 1 + 1

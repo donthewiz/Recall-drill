@@ -33,11 +33,14 @@ const MENIERES = 1;
 const PRE_OP = 2;
 const TREES = 3;
 
+// `unclean`: every card starts with one recorded miss, so it needs 2 correct
+// cycle answers (a clean card is mastered by its first, 2026-10-12).
 function freshState(
-  opts: { encodeReps?: number; strict?: boolean; cycleOrder?: CycleOrder; batchSize?: number } = {}
+  opts: { encodeReps?: number; strict?: boolean; cycleOrder?: CycleOrder; batchSize?: number; unclean?: boolean } = {}
 ): SessionState {
+  const items = buildItems(deck, CHUNK_DIFFICULTY, 'cumulative', opts.batchSize, undefined, false);
   return initSession({
-    items: buildItems(deck, CHUNK_DIFFICULTY, 'cumulative', opts.batchSize, undefined, false),
+    items: opts.unclean ? items.map(i => ({ ...i, misses: 1 })) : items,
     phase: 'encode',
     queue: [],
     stats: { ...zeroStats },
@@ -246,7 +249,7 @@ describe('editCurrentItem -- restart', () => {
       // Pass 1 gives every card cycleStreak 1; in pass 2 the first cards
       // master. Edit whichever unmastered card is up once at least one card
       // is mastered and at least one other still sits at cycleStreak 1.
-      const s0 = stepUntil(freshState({ encodeReps: 1, cycleOrder }), s => {
+      const s0 = stepUntil(freshState({ encodeReps: 1, cycleOrder, unclean: true }), s => {
         if (s.phase !== 'cycle') return false;
         const others = s.items.filter(i => i.id !== s.currentId);
         const cur = itemOf(s, s.currentId);

@@ -56,6 +56,8 @@ Open the setup panel on a deck. It reads the collection but writes nothing until
 - **Adjust reps by difficulty** changes the drill for *reviewed* cards only: high FSRS difficulty (≥ 7) gets one more blind typing and chunks earlier; low (≤ 3) gets one fewer. **New cards have no FSRS data and are unchanged.**
 - **Holdout %** (0–50, **default 0 = off**): that share of new cards skips the drill and goes to Anki as plain new cards (tagged `rd::holdout`), as a fair comparison for the drilled ones.
 
+**The review cycle.** After a batch is encoded, each card comes back in a shuffled review cycle. A card you have never missed or revealed in this session is **mastered by one correct answer**; a card you missed or revealed needs **two correct answers in a row**, with other cards in between (a near miss counts as correct and doesn't make a card need two). This holds whatever "Blind typings" is set to. The Final check at the end is unchanged: one correct answer per card.
+
 **Drill time** reads "Next N cards: …". It comes from **your own drill sessions**: until you have **3 timed sessions** it says "no estimate yet".
 
 **Pacing to a target date** (deck scopes): tick **Pace to a target date**, pick the date and the drill weekdays. The panel shows today's N, drill and Anki minutes, and the peak day. **Use N as max cards** fills Max cards with today's N.

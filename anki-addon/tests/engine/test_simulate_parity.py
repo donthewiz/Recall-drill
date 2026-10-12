@@ -99,9 +99,9 @@ def test_settings_section_is_byte_identical_to_npm_run_simulate() -> None:
 @pytest.mark.parametrize(
     "row",
     [
-        "| shortDeck | perfect | 72.0 \u00b1 0.0 |",
-        "| proseDeck | perfect | 146.0 \u00b1 0.0 |",
-        "| mediumDeck | perfect | 72.0 \u00b1 0.0 |",
+        "| shortDeck | perfect | 60.0 \u00b1 0.0 |",
+        "| proseDeck | perfect | 134.0 \u00b1 0.0 |",
+        "| mediumDeck | perfect | 60.0 \u00b1 0.0 |",
     ],
 )
 def test_perfect_learner_rows(row: str) -> None:

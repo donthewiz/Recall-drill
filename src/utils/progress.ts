@@ -3,6 +3,7 @@
 import {
   DrillItem,
 } from '../types';
+import { cycleRepsToMaster } from './items';
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -18,9 +19,15 @@ function clamp01(n: number): number {
 // requiredRepsForWindow's doc comment for why encodeReps is still the right
 // denominator in the cases where a combine window's streak is ever actually
 // observed above 0 (the final window, and every window under 'exhaustive').
+//
+// 2026-10-12: a 'ready' card's cycle counts too, 0.7 plus the 0.3 band times
+// its cycle streak over what it needs (1 for a clean card, 2 otherwise --
+// cycleRepsToMaster). A clean card is mastered by its first correct answer,
+// so it reads 0.7 until then; a miss resets the streak and makes the card
+// need 2, so it can lower the card's progress.
 export function computeItemProgress(item: DrillItem, encodeReps: number): number {
   if (item.status === 'mastered') return 1;
-  if (item.status === 'ready') return 0.7;
+  if (item.status === 'ready') return 0.7 + 0.3 * clamp01(item.cycleStreak / cycleRepsToMaster(item));
   if (item.status === 'new') return 0;
 
   // status === 'encoding'

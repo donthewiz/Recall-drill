@@ -12,7 +12,7 @@ import {
   CycleOrder,
 } from '../types';
 import { exactMatch, GradeResult, grade } from './grading';
-import { MIN_WORDS_TO_CHUNK, chunkText, joinWindow, renderFirstLetterCue, requiredRepsForWindow, splitInHalf, culpritHalf, findAllCulpritChunks, shuffle, selectNextEncodeItem, partitionIntoBatches, buildItem } from './items';
+import { MIN_WORDS_TO_CHUNK, chunkText, cycleRepsToMaster, joinWindow, renderFirstLetterCue, requiredRepsForWindow, splitInHalf, culpritHalf, findAllCulpritChunks, shuffle, selectNextEncodeItem, partitionIntoBatches, buildItem } from './items';
 
 // ---------------------------------------------------------------------------
 // Phase 0 extraction: pure session state machine (selectTrial / applyAnswer /
@@ -967,7 +967,10 @@ function gradeAndAdvance(
 
   if (isOkCycle) {
     it.cycleStreak++;
-    if (it.cycleStreak >= 2) {
+    // 2026-10-12: 1 correct answer masters a clean card, 2 in a row any other
+    // (cycleRepsToMaster). `it` still holds the counters from before this
+    // answer, which, being correct, adds no miss.
+    if (it.cycleStreak >= cycleRepsToMaster(it)) {
       it.status = 'mastered';
       feedback = successFeedback(gr, {
         text: 'Mastered! Item retired.',

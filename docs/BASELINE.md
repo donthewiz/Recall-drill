@@ -977,3 +977,94 @@ scripted session.
 | listDeck | realistic | 129.1 ± 8.6 | 5947.2 ± 471.6 | 1515.2 ± 115.0 | chunks:52 cycle:34 final:18 combine:11 full:6 remediate:4 |
 | listDeck | struggling | 214.1 ± 22.9 | 9772.6 ± 915.4 | 2492.8 ± 232.8 | cycle:67 chunks:60 final:28 remediate:22 combine:18 full:9 |
 ```
+
+## Clean cards master the cycle with one correct answer (2026-10-12)
+
+Engine change (TS, goldens, Python port in one commit). In the cycle a
+**clean** card (no miss and no reveal on it this session; near misses don't
+count, nor does a miss overridden with "Count as correct", which is never
+recorded) is mastered by **one** correct answer; any other card still needs 2 in
+a row. Whatever `encodeReps` is (and with any `encodeRepsOverride`). The Final
+check is unchanged. `computeMinimumTrials` counts 1 cycle trial per card (a
+perfect learner is always clean) and still equals a perfect run's attempts;
+progress counts a ready card's cycle streak against 1 or 2.
+
+Trial delta (mean total trials), "Your settings": shortDeck perfect 48.0 →
+36.0, realistic 74.4 → 65.5, struggling 113.3 → 108.1; mediumDeck 48.0 → 36.0,
+74.0 → 65.1, 115.6 → 108.4; proseDeck 122.0 → 110.0, 185.8 → 183.4, 315.4 →
+314.5; listDeck 85.0 → 73.0 (7.1 → 6.1 per card), 129.1 → 124.3 (10.8 → 10.4),
+214.1 → 211.9 (17.8 → 17.7). "Current engine": shortDeck perfect 72.0 → 60.0,
+realistic 110.5 → 105.9, struggling 177.2 → 175.9; proseDeck 146.0 → 134.0,
+257.8 → 256.4, 726.5 → 726.5; mediumDeck 72.0 → 60.0, 111.2 → 106.8, 182.4 →
+181.8. A perfect learner saves exactly one trial per card; the struggling
+learner's cards are rarely clean, so it saves almost nothing.
+
+**Before:**
+
+```
+=== Current engine, 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 72.0 ± 0.0 | 462.0 ± 0.0 | 210.7 ± 0.0 | full:36 cycle:24 final:12 |
+| shortDeck | realistic | 110.5 ± 6.9 | 699.4 ± 50.1 | 321.2 ± 20.7 | full:59 cycle:34 final:16 |
+| shortDeck | struggling | 177.2 ± 11.3 | 1131.2 ± 77.1 | 517.1 ± 32.6 | full:87 cycle:62 final:34 |
+| proseDeck | perfect | 146.0 ± 0.0 | 10870.0 ± 0.0 | 2634.6 ± 0.0 | chunks:64 combine:43 cycle:24 final:12 full:3 |
+| proseDeck | realistic | 257.8 ± 25.2 | 18138.7 ± 1480.7 | 4417.6 ± 363.3 | remediate:84 chunks:76 combine:62 cycle:43 final:18 full:6 |
+| proseDeck | struggling | 726.5 ± 85.7 | 39026.6 ± 3306.3 | 9762.3 ± 848.8 | remediate:313 chunks:122 combine:96 cycle:63 final:28 full:6 |
+| mediumDeck | perfect | 72.0 ± 0.0 | 2946.0 ± 0.0 | 762.7 ± 0.0 | full:36 cycle:24 final:12 |
+| mediumDeck | realistic | 111.2 ± 7.3 | 4551.5 ± 297.1 | 1178.3 ± 76.8 | full:58 cycle:42 final:18 |
+| mediumDeck | struggling | 182.4 ± 10.8 | 7455.2 ± 459.8 | 1930.3 ± 118.2 | full:84 cycle:59 final:39 |
+
+=== Your settings (encodeReps 1, batchSize 10, cycleOrder shuffled), 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 48.0 ± 0.0 | 308.0 ± 0.0 | 140.4 ± 0.0 | cycle:24 full:12 final:12 |
+| shortDeck | realistic | 74.4 ± 5.5 | 480.5 ± 41.3 | 218.4 ± 16.7 | cycle:46 final:17 full:14 |
+| shortDeck | struggling | 113.3 ± 9.4 | 730.1 ± 75.7 | 332.2 ± 30.2 | cycle:57 final:28 full:21 |
+| mediumDeck | perfect | 48.0 ± 0.0 | 1964.0 ± 0.0 | 508.4 ± 0.0 | cycle:24 full:12 final:12 |
+| mediumDeck | realistic | 74.0 ± 5.3 | 3034.3 ± 219.3 | 785.3 ± 56.6 | cycle:42 final:20 full:16 |
+| mediumDeck | struggling | 115.6 ± 8.0 | 4721.0 ± 342.0 | 1222.5 ± 87.8 | cycle:64 final:35 full:20 |
+| proseDeck | perfect | 122.0 ± 0.0 | 7952.0 ± 0.0 | 1950.1 ± 0.0 | chunks:64 cycle:24 combine:21 final:12 full:1 |
+| proseDeck | realistic | 185.8 ± 11.9 | 12316.6 ± 767.1 | 3015.7 ± 186.5 | chunks:88 cycle:38 combine:28 final:22 remediate:14 full:2 |
+| proseDeck | struggling | 315.4 ± 24.5 | 20214.9 ± 1445.1 | 4965.3 ± 353.5 | chunks:132 cycle:78 remediate:52 combine:34 final:33 full:1 |
+| listDeck | perfect | 85.0 ± 0.0 | 3912.0 ± 0.0 | 996.8 ± 0.0 | chunks:34 cycle:24 final:12 combine:10 full:5 |
+| listDeck | realistic | 129.1 ± 8.6 | 5947.2 ± 471.6 | 1515.2 ± 115.0 | chunks:52 cycle:34 final:18 combine:11 full:6 remediate:4 |
+| listDeck | struggling | 214.1 ± 22.9 | 9772.6 ± 915.4 | 2492.8 ± 232.8 | cycle:67 chunks:60 final:28 remediate:22 combine:18 full:9 |
+```
+
+**After:**
+
+```
+=== Current engine, 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 60.0 ± 0.0 | 385.0 ± 0.0 | 175.6 ± 0.0 | full:36 cycle:12 final:12 |
+| shortDeck | realistic | 105.9 ± 8.2 | 667.4 ± 57.3 | 307.1 ± 24.1 | full:59 cycle:29 final:16 |
+| shortDeck | struggling | 175.9 ± 11.7 | 1124.7 ± 75.5 | 513.8 ± 32.4 | full:87 cycle:62 final:34 |
+| proseDeck | perfect | 134.0 ± 0.0 | 9406.0 ± 0.0 | 2291.2 ± 0.0 | chunks:64 combine:43 cycle:12 final:12 full:3 |
+| proseDeck | realistic | 256.4 ± 24.7 | 17955.7 ± 1452.3 | 4374.8 ± 356.0 | remediate:84 chunks:76 combine:62 cycle:42 final:18 full:6 |
+| proseDeck | struggling | 726.5 ± 85.7 | 39031.0 ± 3296.8 | 9763.2 ± 846.7 | remediate:313 chunks:122 combine:96 cycle:63 final:28 full:6 |
+| mediumDeck | perfect | 60.0 ± 0.0 | 2455.0 ± 0.0 | 635.6 ± 0.0 | full:36 cycle:12 final:12 |
+| mediumDeck | realistic | 106.8 ± 8.6 | 4372.3 ± 350.6 | 1131.8 ± 90.6 | full:58 cycle:40 final:18 |
+| mediumDeck | struggling | 181.8 ± 11.5 | 7440.7 ± 489.6 | 1926.3 ± 125.7 | full:84 cycle:59 final:39 |
+
+=== Your settings (encodeReps 1, batchSize 10, cycleOrder shuffled), 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 36.0 ± 0.0 | 231.0 ± 0.0 | 105.3 ± 0.0 | full:12 cycle:12 final:12 |
+| shortDeck | realistic | 65.5 ± 6.9 | 426.0 ± 48.6 | 192.9 ± 20.3 | cycle:36 final:20 full:16 |
+| shortDeck | struggling | 108.1 ± 7.8 | 692.7 ± 62.1 | 316.0 ± 24.4 | cycle:57 final:28 full:21 |
+| mediumDeck | perfect | 36.0 ± 0.0 | 1473.0 ± 0.0 | 381.3 ± 0.0 | full:12 cycle:12 final:12 |
+| mediumDeck | realistic | 65.1 ± 6.6 | 2666.3 ± 273.2 | 690.1 ± 70.4 | cycle:28 final:21 full:16 |
+| mediumDeck | struggling | 108.4 ± 10.9 | 4428.4 ± 444.8 | 1146.7 ± 114.9 | cycle:62 final:35 full:20 |
+| proseDeck | perfect | 110.0 ± 0.0 | 6488.0 ± 0.0 | 1606.8 ± 0.0 | chunks:64 combine:21 cycle:12 final:12 full:1 |
+| proseDeck | realistic | 183.4 ± 11.6 | 12028.0 ± 785.2 | 2948.0 ± 189.5 | chunks:88 cycle:38 combine:28 final:22 remediate:14 full:2 |
+| proseDeck | struggling | 314.5 ± 24.6 | 20124.9 ± 1516.8 | 4943.9 ± 369.5 | chunks:132 cycle:78 remediate:52 combine:34 final:33 full:1 |
+| listDeck | perfect | 73.0 ± 0.0 | 3116.0 ± 0.0 | 801.9 ± 0.0 | chunks:34 cycle:12 final:12 combine:10 full:5 |
+| listDeck | realistic | 124.3 ± 9.6 | 5634.2 ± 527.7 | 1438.5 ± 129.5 | chunks:50 cycle:30 final:16 combine:11 full:6 remediate:4 |
+| listDeck | struggling | 211.9 ± 24.8 | 9687.6 ± 963.6 | 2470.7 ± 244.7 | chunks:66 cycle:63 final:28 remediate:19 combine:18 full:11 |
+```

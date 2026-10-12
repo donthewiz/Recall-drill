@@ -151,6 +151,7 @@ def test_breakdowns() -> None:
         "adjustment (+1 / 0 / −1)",
         "card class",
         "handoff mode",
+        "cycle rule",
         "deck",
     ]
     words = {s.label: s for s in dict(r.breakdowns)["answer words"]}
@@ -398,3 +399,36 @@ def test_a_session_line_with_a_cut_reads_like_one_without() -> None:
     assert {r.cid for g in ("drilled", "holdout", "baseline") for r in got.group(g)}.isdisjoint(
         {901, 902}
     )
+
+
+def test_cycle_rule_breakdown_splits_sessions_before_and_after() -> None:
+    """2026-10-12: session lines record encode.cycleRule ("clean-one"); older lines
+    have none and count as "two"."""
+    old = [Drilled(101), Drilled(102)]
+    new = [Drilled(103)]
+    lines = [
+        session_line("s1", ms(2026, 10, 1, 14), old),
+        handoff_line("s1", ms(2026, 10, 1, 15), old),
+        session_line("s2", ms(2026, 10, 3, 14), new, cycle_rule="clean-one"),
+        handoff_line("s2", ms(2026, 10, 3, 15), new),
+    ]
+    revlog = [
+        rating(101, ms(2026, 10, 2, 10), ease=1),
+        rating(102, ms(2026, 10, 2, 10), ease=3),
+        rating(103, ms(2026, 10, 4, 10), ease=3),
+    ]
+    cards = {101: CH1, 102: CH1, 103: CH1}
+    r = build_report(
+        lines,
+        revlog,
+        None,
+        cards=cards,
+        rollover=ROLLOVER,
+        settings=ReportSettings(min_n=1),
+        tz=UTC,
+    )
+    rows = by_cid(r.group("drilled"))
+    assert (rows[101].cycle_rule, rows[103].cycle_rule) == ("two", "clean-one")
+    split = {s.label: s for s in dict(r.breakdowns)["cycle rule"]}
+    assert (split["two"].n, split["two"].again) == (2, 1)
+    assert (split["clean-one"].n, split["clean-one"].again) == (1, 0)

@@ -81,6 +81,13 @@ class EncodeSettings(TypedDict):
     strictPunctuation: bool
     stemTolerance: bool
     hints: bool
+    cycleRule: NotRequired[str]
+    """The cycle's mastery rule (2026-10-12): ``"clean-one"`` (a clean card masters
+    with one correct answer). Lines without it were drilled under ``"two"``."""
+
+
+CYCLE_RULE = "clean-one"
+"""The engine's cycle rule since 2026-10-12, recorded in each session line."""
 
 
 class ColdStartHistory(TypedDict):
@@ -104,6 +111,7 @@ def encode_settings(state: SessionState, hints: bool) -> EncodeSettings:
         "strictPunctuation": c.get("strictPunctuation", False),
         "stemTolerance": c["stemTolerance"],
         "hints": hints,
+        "cycleRule": CYCLE_RULE,
     }
     batch = c.get("batchSize")
     if batch is not None:
