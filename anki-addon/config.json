@@ -25,5 +25,7 @@
   "skip_min_stability": 30,
   "skip_max_difficulty": 5,
   "exclude_handed_off_new": true,
-  "idle_cap_seconds": 120
+  "idle_cap_seconds": 120,
+  "auto_advance_correct": true,
+  "extra_display": "first_and_misses"
 }

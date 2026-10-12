@@ -94,6 +94,20 @@ def test_controller_settings_from_config() -> None:
     assert not launch.controller_settings(cfg, "Deck", drill_again=True).source_deck_editable
 
 
+def test_fewer_clicks_keys() -> None:
+    """2026-10-12: auto_advance_correct and extra_display, parsed and passed on."""
+    assert (DEFAULT_CONFIG.auto_advance_correct, DEFAULT_CONFIG.extra_display) == (
+        True,
+        "first_and_misses",
+    )
+    cfg = parse_config({"auto_advance_correct": False, "extra_display": "always"})
+    assert (cfg.auto_advance_correct, cfg.extra_display) == (False, "always")
+    bad = parse_config({"auto_advance_correct": "no", "extra_display": "never"})
+    assert (bad.auto_advance_correct, bad.extra_display) == (True, "first_and_misses")
+    s = launch.controller_settings(cfg, "Deck")
+    assert (s.auto_advance_correct, s.extra_display) == (False, "always")
+
+
 def _start(st: Storage, settings_did: int | None = 42) -> tuple[DrillController, SessionStore]:
     return launch.start(
         st,

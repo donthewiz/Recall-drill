@@ -54,6 +54,9 @@ def test_config_defaults_match_web_app() -> None:
         "exclude_handed_off_new": True,
         # Add-on only (Phase 6): active drill time for the measured estimates.
         "idle_cap_seconds": 120,
+        # Add-on only (v0.2): fewer clicks per trial.
+        "auto_advance_correct": True,
+        "extra_display": "first_and_misses",
     }
 
 

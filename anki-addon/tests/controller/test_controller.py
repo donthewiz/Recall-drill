@@ -175,8 +175,12 @@ def test_double_submit_is_ignored_while_processing() -> None:
     assert h.ctrl.state["stats"]["attempts"] == 1
 
 
+# SessionView's manual cycle advance (config auto_advance_correct off).
+MANUAL = ControllerSettings(deck_name="Test deck", auto_advance_correct=False)
+
+
 def test_double_continue_applies_next_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    h = make(state=phase_state(SHORT, "cycle"))
+    h = make(state=phase_state(SHORT, "cycle"), settings=MANUAL)
     calls: list[SessionState] = []
     real = controller_module.apply_next
 
@@ -255,7 +259,7 @@ def test_override_is_only_offered_after_a_wrong_verdict() -> None:
 
 
 def test_override_in_the_cycle_waits_for_continue() -> None:
-    h = make(state=phase_state(SHORT, "cycle"))
+    h = make(state=phase_state(SHORT, "cycle"), settings=MANUAL)
     h.ctrl.submit("nope")
     out = h.ctrl.override()
     assert out == [Flash(True), Persisted()]  # the cycle is always a manual advance

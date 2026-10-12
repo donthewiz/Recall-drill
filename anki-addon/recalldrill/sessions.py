@@ -435,8 +435,8 @@ def finish_early(
 ) -> dict[str, Any]:
     """The save of a stopped session, cut down to its mastered cards.
 
-    The kept cards keep their order and are renumbered 0…k-1; ``addon.sources``
-    and ``addon.activeMsByItem`` are remapped the same way (ids still index
+    The kept cards keep their order and are renumbered 0…k-1; ``addon.sources``,
+    ``addon.activeMsByItem`` and ``addon.extraSeen`` are remapped the same way (ids still index
     sources, and ``check_resume`` walks only kept cards). The engine position is
     set so ``init_session`` moves straight into the Final check. The returned
     cards (unfinished, or ``changed``) are recorded in ``addon.cut``; missing
@@ -495,6 +495,7 @@ def finish_early(
         **addon,
         "sources": [sources[old] for old in remap],
         "activeMsByItem": {str(new): by_item[old] for old, new in remap.items() if old in by_item},
+        "extraSeen": sorted(remap[old] for old in _ids(addon.get("extraSeen")) if old in remap),
         "cut": {
             "at": js_iso_string(now_ms),
             "total": len(_items_of(saved)),
@@ -779,8 +780,16 @@ def open_saved(
             for k, v in cast(Mapping[str, Any], addon.get("activeMsByItem") or {}).items()
             if str(k).isdigit()
         },
+        extra_seen=_ids(addon.get("extraSeen")),
     )
     return ctrl, store
+
+
+def _ids(v: object) -> list[int]:
+    """A saved list of item ids (``addon.extraSeen``); anything else is empty."""
+    if not isinstance(v, list):
+        return []
+    return [i for i in cast(list[Any], v) if isinstance(i, int) and not isinstance(i, bool)]
 
 
 def _int(v: object) -> int:
