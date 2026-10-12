@@ -121,7 +121,8 @@ def test_header_and_comparison() -> None:
     assert (r.first_day, r.last_day) == (date(2026, 10, 1), date(2026, 10, 3))
     assert r.counts("drilled") == (4, 2, 1, 1)
     assert r.counts("holdout") == (2, 1, 0, 1)
-    drilled, holdout, baseline = r.comparison
+    drilled, holdout, baseline, released = r.comparison
+    assert released.label == "Released undrilled" and released.cards == 0
     assert (drilled.n, drilled.again, drilled.pending, drilled.late) == (2, 1, 1, 1)
     assert drilled.trials == (6 + 6 + 6 + 20) / 4 and drilled.struggle == 3 / 4
     assert (holdout.n, holdout.again, holdout.trials) == (1, 1, None)
@@ -432,3 +433,42 @@ def test_cycle_rule_breakdown_splits_sessions_before_and_after() -> None:
     split = {s.label: s for s in dict(r.breakdowns)["cycle rule"]}
     assert (split["two"].n, split["two"].again) == (2, 1)
     assert (split["clean-one"].n, split["clean-one"].again) == (1, 0)
+
+
+def test_released_cards_get_their_own_row_and_never_count_as_drilled() -> None:
+    """2026-10-12: cards sent to Anki undrilled are measured from their own
+    introduction, in a "Released undrilled" row; not drilled, not baseline."""
+    lines, revlog, cards = scenario()
+    lines.append(
+        {
+            "type": "release",
+            "timestamp": "2026-10-04T12:00:00.000Z",
+            "deckId": 1,
+            "groups": {"released": [501, 502], "released_siblings": [503]},
+            "tags": {"added": 2, "byTag": {"rd::undrilled": 2}},
+        }
+    )
+    revlog = [
+        *revlog,
+        rating(501, ms(2026, 10, 5, 10), ease=3),  # introduced
+        rating(501, ms(2026, 10, 6, 10), ease=1, type_=1),  # next day: Again
+        rating(503, ms(2026, 10, 5, 10), ease=3),
+    ]
+    cards |= {501: CH1, 502: CH1, 503: CH1}
+    r = build_report(
+        lines,
+        revlog,
+        None,
+        cards=cards,
+        rollover=ROLLOVER,
+        settings=ReportSettings(min_n=1),
+        tz=UTC,
+    )
+    released = by_cid(r.group("released"))
+    assert sorted(released) == [501, 502]
+    assert released[501].outcome.again is True and released[502].outcome.status == "pending"
+    assert not {501, 502, 503} & set(by_cid(r.group("drilled")))
+    assert not {501, 502, 503} & set(by_cid(r.group("baseline")))
+    row = r.comparison[-1]
+    assert row.label == "Released undrilled" and (row.n, row.again) == (1, 1)
+    assert "not a random control" in render_text(r)

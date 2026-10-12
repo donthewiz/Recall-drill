@@ -4,7 +4,8 @@ and closing drill windows with the profile.
 Tools also has the ``rd::hard`` entries: the setup panel scoped to
 ``tag:rd::hard``, and Anki's own filtered-deck dialog pre-filled with that
 search (Don builds the deck there; the add-on creates nothing by itself). And
-the tuning report (Phase 5).
+the tuning report (Phase 5), and the waiting drill cards (2026-10-12), with
+their once-a-day notice after the profile opens.
 
 Checked on 26.08.1 (docs/DECISIONS.md, "Entry points"):
 
@@ -14,6 +15,7 @@ Checked on 26.08.1 (docs/DECISIONS.md, "Entry points"):
   bottom bar routes its messages to that handler, so
   ``webview_did_receive_js_message`` isn't needed.
 - ``profile_will_close()``: open drill windows save and close.
+- ``profile_did_open()``: the waiting-cards notice (read in a ``QueryOp``).
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ TOOLS_LABEL = "Recall Drill…"
 HARD_LABEL = "Recall Drill: my rd::hard cards"
 HARD_FILTERED_LABEL = "Recall Drill: filtered deck for rd::hard"
 TUNING_LABEL = "Recall Drill: tuning report"
+WAITING_LABEL = "Recall Drill: waiting cards"
 GEAR_LABEL = "Recall Drill this deck"
 OVERVIEW_LABEL = "Recall Drill"
 OVERVIEW_CMD = "recalldrill:setup"
@@ -77,6 +80,23 @@ def open_tuning() -> None:
     from .tuning_dialog import open_tuning_report
 
     open_tuning_report(_ctx)
+
+
+def open_waiting_cards() -> None:
+    """The drill cards still suspended and waiting, per deck."""
+    if _ctx is None or mw.col is None:
+        return
+    from .waiting_dialog import open_waiting
+
+    open_waiting(_ctx, open_setup_for)
+
+
+def on_profile_did_open() -> None:
+    if _ctx is None:
+        return
+    from .waiting_dialog import maybe_notify
+
+    maybe_notify(_ctx)
 
 
 def _current_deck() -> int | None:
@@ -128,6 +148,7 @@ def register(module: str, user_files: str) -> None:
         (HARD_LABEL, open_hard_cards),
         (HARD_FILTERED_LABEL, open_hard_filtered_deck),
         (TUNING_LABEL, open_tuning),
+        (WAITING_LABEL, open_waiting_cards),
     ):
         action = QAction(label, mw)
         qconnect(action.triggered, fn)
@@ -135,3 +156,4 @@ def register(module: str, user_files: str) -> None:
     gui_hooks.deck_browser_will_show_options_menu.append(on_gear_menu)
     gui_hooks.overview_will_render_bottom.append(on_overview_bottom)
     gui_hooks.profile_will_close.append(on_profile_will_close)
+    gui_hooks.profile_did_open.append(on_profile_did_open)

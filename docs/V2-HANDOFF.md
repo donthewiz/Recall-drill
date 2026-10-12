@@ -723,7 +723,7 @@ Drill Don's own Anki cards, not a pasted copy of them: pick cards by state from 
 `anki-addon/recalldrill/`, enforced by `tests/test_layering.py` (static `ast` checks):
 - `engine/`: pure Python, a step-for-step port of `src/utils/`. No `anki`, `aqt` or Qt, and nothing from the other layers.
 - Pure helpers (storage, prompts, deck settings, the drill controller and its saves and history, card HTML, drill view, launch, holdout, measure, tuning, card state, difficulty, pacing): no `anki`, no Qt. They may use `engine/` and each other.
-- `anki_io/`: may import `anki` and `aqt.operations`, never Qt. Reads cards, selects, builds, and does the handoff (its **only** collection write).
+- `anki_io/`: may import `anki` and `aqt.operations`, never Qt. Reads cards, selects, builds, and does the add-on's two collection writes: the handoff and (since 2026-10-12) the release of waiting drill cards.
 - `ui/`: the only layer with Qt.
 
 Nothing shown to the user imports `engine/estimate.py` (the cold-start estimate stays for the parity tests only).

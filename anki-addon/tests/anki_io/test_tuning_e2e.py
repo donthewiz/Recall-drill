@@ -154,7 +154,7 @@ def test_report_from_a_real_handoff(col: Collection, tmp_path: Path) -> None:
     )
     assert r.sessions == 1 and r.decks == ["Med Term"]
     assert r.counts("drilled") == (4, 3, 0, 1)
-    drilled_stat, holdout_stat, baseline_stat = r.comparison
+    drilled_stat, holdout_stat, baseline_stat, _released = r.comparison
     assert (drilled_stat.n, drilled_stat.again, drilled_stat.trials) == (3, 2, 4.0)
     assert (holdout_stat.n, holdout_stat.again) == (2, 1)
     assert (baseline_stat.n, baseline_stat.again) == (2, 2)

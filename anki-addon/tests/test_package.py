@@ -57,6 +57,9 @@ def test_config_defaults_match_web_app() -> None:
         # Add-on only (v0.2): fewer clicks per trial.
         "auto_advance_correct": True,
         "extra_display": "first_and_misses",
+        # Add-on only (v0.2): drill cards left waiting too long.
+        "stale_drill_days": 7,
+        "waiting_notice": True,
     }
 
 

@@ -20,7 +20,7 @@ from .. import deck_settings
 from ..history_store import read_every_log
 from ..measure import RevlogRow, is_counted
 from ..storage import Storage
-from ..tuning import CardInfo, collect_cids
+from ..tuning import CardInfo, collect_cids, collect_released
 
 BATCH = 500
 """Card ids per ``IN (…)`` list."""
@@ -100,6 +100,7 @@ class ReportInputs:
 def read_report_inputs(col: Collection, storage: Storage) -> ReportInputs:
     lines = read_every_log(storage)
     drilled, holdout = collect_cids(lines)
+    holdout |= collect_released(lines)  # read like the holdout: deck and revlog
     cards = card_decks(col, drilled | holdout)
     tops = sorted({c.top for c in cards.values()})
     pool: set[int] = set(cards)

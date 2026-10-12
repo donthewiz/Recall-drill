@@ -52,6 +52,11 @@ CONFOUND_WARNING = (
 T_CAVEAT = (
     "These groups differ in answer length, not just chunking; treat this as a hint, not proof."
 )
+RELEASED_NOTE = (
+    "Released undrilled: drill cards sent to Anki without the drill (Tools → Recall "
+    "Drill: waiting cards), measured from their own introduction like the holdout. They "
+    "are the cards that waited longest, not a random control."
+)
 TOO_SMALL = "n too small"
 COST_MARGIN = 1.25
 """Chunked cards must cost at least this many times the trials per word."""
@@ -60,7 +65,7 @@ T_WINDOW = 3
 T_STEP = 2
 DELETED = "(deleted card)"
 
-Group = Literal["drilled", "holdout", "baseline"]
+Group = Literal["drilled", "holdout", "baseline", "released"]
 Parameter = Literal["min_words_to_chunk", "encode_reps"]
 PARAM_LABELS: dict[Parameter, str] = {
     "min_words_to_chunk": "MIN_WORDS_TO_CHUNK",
@@ -311,6 +316,15 @@ def _session(line: Mapping[str, Any]) -> _Session:
     )
 
 
+def collect_released(history_lines: Iterable[Mapping[str, Any]]) -> set[int]:
+    """Card ids a release line sent to Anki undrilled (its ``released`` group)."""
+    out: set[int] = set()
+    for line in history_lines:
+        if line.get("type") == "release":
+            out.update(_ints(_key(line.get("groups"), "released")))
+    return out
+
+
 def collect_cids(history_lines: Iterable[Mapping[str, Any]]) -> tuple[set[int], set[int]]:
     """(drilled, holdout) card ids the history's handoffs name: the cards whose
     revlog and deck the report needs (plus the baseline's)."""
@@ -419,12 +433,35 @@ def card_rows(
                 )
             )
 
+    # 2026-10-12: cards a release sent to Anki undrilled. Never drilled outcomes;
+    # measured from their own introduction, like the holdout.
+    released_ids: set[int] = set()
+    for line in history_lines:
+        if line.get("type") != "release":
+            continue
+        for cid in _ints(_key(line.get("groups"), "released")):
+            if cid in released_ids or cid in drilled_ids or cid in holdout_ids:
+                continue
+            released_ids.add(cid)
+            ci = info(cid)
+            rows.append(
+                CardRow(
+                    group="released",
+                    cid=cid,
+                    deck=ci.deck,
+                    top=ci.top,
+                    outcome=introduced_outcome(by_cid.get(cid, ()), rollover, tz),
+                )
+            )
+
     cut = first_session_ms(history_lines)
     tops = {r.top for r in rows if r.group == "drilled" and r.top != DELETED}
     if cut is not None:
         for cid in sorted(cards):
             ci = cards[cid]
             if ci.top not in tops or cid in drilled_ids or cid in holdout_ids:
+                continue
+            if cid in released_ids:
                 continue
             card_revlog = by_cid.get(cid, ())
             intro = introduction_ms(card_revlog)
@@ -644,6 +681,7 @@ def build_report(
         stat("Drilled", drilled, m),
         stat("Holdout", [r for r in rows if r.group == "holdout"], m),
         stat("Baseline", [r for r in rows if r.group == "baseline"], m),
+        stat("Released undrilled", [r for r in rows if r.group == "released"], m),
     ]
     breakdowns = [
         ("answer words", _breakdown(drilled, lambda r: words_bucket(r.words), m, WORD_BUCKETS)),
@@ -776,6 +814,7 @@ def render_text(r: Report) -> str:
     out = ["Recall Drill: tuning report", "", *header_lines(r), "", CONFOUND_WARNING, ""]
     out += _table(COMPARISON_COLUMNS, [comparison_cells(s) for s in r.comparison])
     out.append("(n: next-day outcomes, 1–2 days after t0. Costs are per handed-off card.)")
+    out.append(RELEASED_NOTE)
     for title, stats in r.breakdowns:
         out += ["", f"Drilled cards by {title}:"]
         out += _table(BREAKDOWN_COLUMNS, [breakdown_cells(s) for s in stats])
@@ -805,6 +844,7 @@ def render_html(r: Report) -> str:
         _html_table(COMPARISON_COLUMNS, [comparison_cells(s) for s in r.comparison]),
         "<p><small>n: next-day outcomes (1–2 Anki days after t0). Trials and misses + "
         "reveals are per handed-off card.</small></p>",
+        f"<p><small>{html.escape(RELEASED_NOTE)}</small></p>",
     ]
     for title, stats in r.breakdowns:
         parts.append(f"<h4>Drilled cards by {html.escape(title)}</h4>")
