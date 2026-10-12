@@ -34,6 +34,16 @@ What the add-on adds on top of SessionView (none of it reaches the engine):
   :meth:`DrillController.start` and stops at Save and stop, so a gap across a
   saved or closed session never counts. Both are saved in the ``addon`` block.
 
+- **fewer clicks** (2026-10-12): with ``ControllerSettings.auto_advance_correct``
+  an exact or near answer (or "Count as correct") in the cycle and the Final
+  check dwells (:data:`CORRECT_DWELL_MS`) and moves on by itself, as the encode
+  stage does, unless the Extra holds the screen or the card's answer audio is
+  about to play; with ``extra_display`` "first_and_misses" a card's Extra shows
+  (and holds the screen) the first time its full answer is on screen in the
+  session and after a wrong answer or a reveal, else only on "Show Extra"
+  (:meth:`DrillController.show_extra`). The cards whose Extra has been seen are
+  saved (``addon.extraSeen``).
+
 Where this deliberately differs from SessionView:
 
 - After "Count as correct" auto-advances, SessionView leaves its Continue
@@ -52,7 +62,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -65,6 +75,7 @@ from .engine.progress import compute_session_progress
 from .engine.session import (
     DWELL_MS,
     SESSION_COMPLETE_ID,
+    ApplyAnswerResult,
     advance_to_next_batch,
     apply_answer,
     apply_next,
@@ -188,6 +199,8 @@ class Flash:
 
 FLASH_MS = 400
 
+ExtraDisplay = Literal["first_and_misses", "always"]
+
 Effect = (
     StartDwell
     | PlayAnswerAudio
@@ -223,6 +236,17 @@ class ControllerSettings:
     """Play a card's question audio when it comes up (config ``autoplay_question_audio``)."""
     idle_cap_ms: int = 120_000
     """Active time: the most one gap between actions counts (config ``idle_cap_seconds``)."""
+    auto_advance_correct: bool = True
+    """A correct cycle or Final-check answer moves on by itself after a dwell
+    (config ``auto_advance_correct``). False: it waits for Enter, as SessionView."""
+    extra_display: ExtraDisplay = "first_and_misses"
+    """When the Extra shows and holds the screen (config ``extra_display``):
+    "first_and_misses" or "always" (SessionView: every full-back feedback)."""
+
+
+CORRECT_DWELL_MS: dict[str, int] = {"exact": 600, "near": 1200}
+"""The dwell after a correct cycle or Final-check answer that moves on by itself.
+Controller-side: the engine's ``DWELL_MS`` has no keys for these."""
 
 
 Mode = Literal["trial", "feedback", "batch_done", "done"]
@@ -259,6 +283,8 @@ class Buttons:
     next_batch: bool
     save: bool
     """End session / Save and stop: ``save_and_stop``."""
+    show_extra: bool = False
+    """Show Extra (Ctrl+I): ``show_extra``, on a feedback screen that hides the card's Extra."""
 
 
 @dataclass(frozen=True)
@@ -463,6 +489,7 @@ class DrillController:
         collisions: int = 0,
         active_ms: int = 0,
         active_ms_by_item: dict[int, int] | None = None,
+        extra_seen: Iterable[int] | None = None,
     ) -> None:
         """``state`` comes from ``init_session`` (a new or resumed session).
 
@@ -505,6 +532,10 @@ class DrillController:
         self._finished: Literal["complete", "stopped"] | None = None
         self._last_persisted: SessionState | None = None
         self._shown_item: int | None = None  # the card of the last trial on screen
+        # 2026-10-12: cards whose Extra has been on screen (item ids), and whether
+        # the feedback now showing displays it.
+        self._extra_seen: set[int] = set(extra_seen or ())
+        self._extra_visible = False
 
     # -- read-only accessors ------------------------------------------------
 
@@ -537,6 +568,11 @@ class DrillController:
     def active_ms(self) -> int:
         """Active drill time so far (resumed sessions included), in ms."""
         return self._active_ms
+
+    @property
+    def extra_seen(self) -> frozenset[int]:
+        """Item ids whose Extra has been on screen this session (``addon.extraSeen``)."""
+        return frozenset(self._extra_seen)
 
     @property
     def active_ms_by_item(self) -> dict[int, int]:
@@ -589,9 +625,26 @@ class DrillController:
         seq = item["combineSeq"]
         return seq is not None and item["combineSeqIdx"] == len(seq) - 1
 
-    def _should_pause_for_extra(self) -> bool:
-        # shouldPauseForExtra
-        return self._shows_full_back() and self._has_extra(self._current_item())
+    def _extra_on_feedback(self, verdict: Verdict) -> bool:
+        """Whether the feedback for this answer shows the Extra (and holds the
+        screen): SessionView's shouldPauseForExtra under "always"; under
+        "first_and_misses" only the first time the card's full answer is on
+        screen, or after a wrong answer or a reveal. Marks the card's Extra seen."""
+        item = self._current_item()
+        if item is None or not self._shows_full_back() or not self._has_extra(item):
+            return False
+        show = (
+            self.settings.extra_display == "always"
+            or item["id"] not in self._extra_seen
+            or verdict in ("wrong", "revealed")
+        )
+        if show:
+            self._extra_seen.add(item["id"])
+        return show
+
+    def _waits_for_audio(self, item_id: int) -> bool:
+        """The answer audio would be cut off by moving on: wait for Enter."""
+        return self.settings.play_audio_on_feedback and self._sources[item_id].has_audio
 
     def _is_presentation(self) -> bool:
         trial = self._trial()
@@ -651,6 +704,7 @@ class DrillController:
             "collisions": self.collisions,
             "activeMs": self._active_ms,
             "activeMsByItem": {str(k): v for k, v in sorted(self._active_by_item.items())},
+            "extraSeen": sorted(self._extra_seen),
         }
         return out
 
@@ -721,6 +775,7 @@ class DrillController:
         self._revealed = False
         self._feedback = None
         self._last_verdict = None
+        self._extra_visible = False
 
     # -- actions ------------------------------------------------------------
 
@@ -772,9 +827,9 @@ class DrillController:
 
         self._notice = None
         self._processing = True
-        pause_for_extra = self._should_pause_for_extra()  # this render's value
         pre = self._state
         result = apply_answer(pre, typed, revealed=self._revealed)
+        self._extra_visible = self._extra_on_feedback(result["verdict"])
         self._pre_wrong_state = pre if result["verdict"] == "wrong" else None
         self._feedback = result["feedback"]
         self._last_verdict = result["verdict"]
@@ -782,7 +837,7 @@ class DrillController:
         if result["verdict"] != "presented":
             effects.append(Flash(result["verdict"] in ("exact", "near")))
         self._persist(result["state"], effects)
-        self._after_answer(result["state"], result["advance"], pause_for_extra, effects)
+        self._after_answer(pre, result, effects)
         return effects
 
     def _colliding_answer(self, typed: str, trial: Trial) -> str | None:
@@ -796,14 +851,29 @@ class DrillController:
         return None
 
     def _after_answer(
-        self,
-        new_state: SessionState,
-        advance: Literal["auto", "manual"],
-        pause_for_extra: bool,
-        effects: list[Effect],
+        self, pre: SessionState, result: ApplyAnswerResult, effects: list[Effect]
     ) -> None:
-        """The three branches shared by handleCheck and handleOverride."""
-        if advance == "auto" and not pause_for_extra:
+        """The branches shared by handleCheck and handleOverride, plus (2026-10-12)
+        a correct cycle or Final-check answer moving on by itself."""
+        new_state = result["state"]
+        advance = result["advance"]
+        hold = self._extra_visible
+        trial = select_trial(pre)
+        self_advance = (
+            advance == "manual"
+            and self.settings.auto_advance_correct
+            and pre["phase"] in ("cycle", "final")
+            and result["verdict"] in ("exact", "near")
+            and not hold
+            and trial is not None
+            and not self._waits_for_audio(trial["itemId"])
+        )
+        if self_advance:
+            # Moves on as the encode stage does: dwell, then Continue's applyNext.
+            self._pending_dwell_state = apply_next(new_state)
+            self._audio_effect(effects)
+            effects.append(StartDwell(CORRECT_DWELL_MS[result["verdict"]]))
+        elif advance == "auto" and not hold:
             assert self._feedback is not None
             self._pending_dwell_state = new_state
             self._audio_effect(effects)
@@ -846,15 +916,41 @@ class DrillController:
         effects: list[Effect] = []
         self._processing = True
         self._pre_wrong_state = None
-        pause_for_extra = self._should_pause_for_extra()
+        # The Extra the wrong answer showed stays (and holds) on this trial.
         # The trial that was answered, on the pre-answer snapshot.
         result = apply_answer(pre, pre_trial["target"], revealed=False, override=True)
         self._feedback = result["feedback"]
         self._last_verdict = result["verdict"]
         effects.append(Flash(True))
         self._persist(result["state"], effects)
-        self._after_answer(result["state"], result["advance"], pause_for_extra, effects)
+        self._after_answer(pre, result, effects)
         return effects
+
+    def show_extra(self) -> list[Effect]:
+        """"Show Extra" (Ctrl+I): the card's Extra on a feedback screen that hides
+        it. From then on it holds the screen until Enter, a dwell under way
+        included."""
+        item = self._current_item()
+        if (
+            self._finished is not None
+            or self._editing
+            or self._feedback is None
+            or self._extra_visible
+            or item is None
+            or not self._shows_full_back()
+            or not self._has_extra(item)
+        ):
+            return []
+        self._tick(item["id"])
+        self._extra_visible = True
+        self._extra_seen.add(item["id"])
+        if self._pending_dwell_state is not None:
+            # Hold what the dwell would have committed until Continue.
+            self._pending_advance_state = self._pending_dwell_state
+            self._pending_dwell_state = None
+            self._show_next = True
+            self._processing = False
+        return []
 
     def continue_(self) -> list[Effect]:
         # handleNext (B5: guarded against a double Enter)
@@ -968,6 +1064,11 @@ class DrillController:
         if before is None:
             return self.cancel_edit()
         effects: list[Effect] = []
+        # A changed Extra counts as unseen again.
+        old_extra = (before.get("extra", ""), self._sources[before["id"]].extra_html)
+        new_extra = (js_trim(extra), (source or self._sources[before["id"]]).extra_html)
+        if old_extra != new_extra:
+            self._extra_seen.discard(before["id"])
         if source is not None:
             self._sources[before["id"]] = source
         result = edit_current_item(self._state, {"front": front, "back": back, "extra": extra})
@@ -1046,7 +1147,7 @@ class DrillController:
         shows_full_back = self._shows_full_back()
         extra: str | None = None
         extra_html: str | None = None
-        if self._feedback is not None and shows_full_back and self._has_extra(item):
+        if self._feedback is not None and shows_full_back and self._extra_visible:
             assert item is not None and src is not None
             extra = item.get("extra", "")
             extra_html = src.extra_html
@@ -1101,6 +1202,14 @@ class DrillController:
             edit=self._can_edit(),
             next_batch=not busy and s["phase"] == "batch-done",
             save=not busy,
+            show_extra=(
+                self._finished is None
+                and not self._editing
+                and self._feedback is not None
+                and shows_full_back
+                and not self._extra_visible
+                and self._has_extra(item)
+            ),
         )
 
         batch_done = None

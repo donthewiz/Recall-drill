@@ -146,6 +146,7 @@ document.addEventListener("keydown", function(e) {
   if (e.key === "Enter") { cmd = (e.ctrlKey || e.metaKey) ? "rd:ctrl-enter" : "rd:enter"; }
   else if ((e.ctrlKey || e.metaKey) && (e.key === "e" || e.key === "E")) { cmd = "rd:edit"; }
   else if ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R")) { cmd = "rd:replay"; }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === "i" || e.key === "I")) { cmd = "rd:extra"; }
   if (cmd) { e.preventDefault(); pycmd(cmd); }
 });
 """

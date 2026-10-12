@@ -96,7 +96,14 @@ def _controller(state: SessionState, collisions: int = 0) -> DrillController:
     return DrillController(
         state,
         [_source(i) for i in range(len(state["items"]))],
-        ControllerSettings(deck_name="golden", play_audio_on_feedback=False),
+        # SessionView as the goldens record it: correct cycle and Final answers
+        # wait for Continue, and the Extra shows on every full-back feedback.
+        ControllerSettings(
+            deck_name="golden",
+            play_audio_on_feedback=False,
+            auto_advance_correct=False,
+            extra_display="always",
+        ),
         lambda saved: None,
         lambda: 0,
         collisions=collisions,

@@ -235,6 +235,32 @@ def test_drill_window_keys_and_effects(window_env: Path) -> None:
     assert w.ctrl.state["stats"]["overrides"] == 1
 
 
+def test_drill_window_show_extra_holds_a_dwell(window_env: Path) -> None:
+    """2026-10-12: Show Extra (button, Ctrl+I in the page) on a feedback screen
+    that hides the Extra stops the dwell and holds until Enter."""
+    from aqt.qt import Qt
+
+    deck = [
+        {"front": "heart", "back": "cardi", "extra": "as in cardiology"},
+        {"front": "liver", "back": "hepat", "extra": "as in hepatitis"},
+    ]
+    w: Any = _window(window_env, deck, encodeReps=2)
+    for back in ("cardi", "hepat"):  # first time each: shown and held
+        w.input.setText(back)
+        _key(w, Qt.Key.Key_Return)
+        assert not w._dwell.isActive() and w.ctrl.view().extra is not None
+        _key(w, Qt.Key.Key_Return)
+    assert not w.extra_btn.isVisible()
+    w.input.setText("cardi")
+    _key(w, Qt.Key.Key_Return)
+    assert w._dwell.isActive() and w.extra_btn.isVisible()
+    w.web.bridge("rd:extra")
+    assert not w._dwell.isActive() and w.continue_btn.isVisible()
+    assert w.ctrl.view().extra == "as in cardiology" and not w.extra_btn.isVisible()
+    _key(w, Qt.Key.Key_Return)
+    assert w.ctrl.view().feedback is None
+
+
 def test_drill_window_close_asks_save_discard_cancel(
     window_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

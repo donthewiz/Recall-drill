@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+from .controller import ExtraDisplay
 from .deck_settings import HOLDOUT_MAX_PCT
 from .difficulty import DifficultySettings
 from .engine.items import MIN_WORDS_TO_CHUNK
@@ -66,6 +67,12 @@ class AddonConfig:
     for their first Anki review). Not for "my rd::hard cards"."""
     idle_cap_seconds: int = 120
     """Active drill time: the most one gap between actions counts (a break doesn't)."""
+    auto_advance_correct: bool = True
+    """A correct cycle or Final-check answer moves on by itself after a short dwell
+    (2026-10-12); wrong answers and reveals still wait for Enter."""
+    extra_display: ExtraDisplay = "first_and_misses"
+    """When a card's Extra shows and holds the screen: "first_and_misses" (the first
+    time its full answer is on screen, and after a miss or a reveal) or "always"."""
 
     def difficulty(self, adjust: bool | None = None) -> DifficultySettings:
         """The difficulty rules; ``adjust`` (the deck's toggle) wins over the default."""
@@ -109,6 +116,7 @@ def parse_config(raw: object) -> AddonConfig:
     ladder = d.get("ladder_mode")
     cycle = d.get("cycle_order")
     mode = d.get("handoff_mode")
+    extra = d.get("extra_display")
     return AddonConfig(
         encode_reps=_int(d.get("encode_reps"), dc.encode_reps, 1, 10),
         chunk_difficulty=_int(d.get("chunk_difficulty"), int(dc.chunk_difficulty), 1, 100),
@@ -137,4 +145,6 @@ def parse_config(raw: object) -> AddonConfig:
         skip_max_difficulty=_float(d.get("skip_max_difficulty"), dc.skip_max_difficulty, 1, 10),
         exclude_handed_off_new=_bool(d.get("exclude_handed_off_new"), dc.exclude_handed_off_new),
         idle_cap_seconds=_int(d.get("idle_cap_seconds"), dc.idle_cap_seconds, 1, 3600),
+        auto_advance_correct=_bool(d.get("auto_advance_correct"), dc.auto_advance_correct),
+        extra_display=extra if extra in ("first_and_misses", "always") else dc.extra_display,
     )

@@ -6,7 +6,8 @@ Behavior lives in the controller (``controller.py``) and HTML in
 - shows the view (an ``AnkiWebView`` for the card area, native widgets for the
   answer box, buttons, progress and stats);
 - forwards keys and clicks: Enter submits or continues, Esc reveals,
-  Ctrl+Enter counts as correct, Ctrl+E edits in Anki, Ctrl+R replays audio;
+  Ctrl+Enter counts as correct, Ctrl+E edits in Anki, Ctrl+R replays audio,
+  Ctrl+I shows a hidden Extra;
 - runs the effects: the dwell timer, audio, the flash, clearing the input;
 - opens Anki's Browser for "Edit in Anki" and reads the card back when it closes;
 - offers the finished session's handoff (``handoff_dialog``, the only write).
@@ -133,6 +134,7 @@ class DrillWindow(QDialog):
         for keys, fn in (
             ("Ctrl+E", self._edit),
             ("Ctrl+R", self._replay),
+            ("Ctrl+I", self._show_extra),
         ):
             sc = QShortcut(QKeySequence(keys), self)
             sc.setContext(Qt.ShortcutContext.WindowShortcut)
@@ -192,6 +194,7 @@ class DrillWindow(QDialog):
         self.reveal_btn = _button("Show target", "Esc: reveal the target")
         self.override_btn = _button("Count as correct", "Ctrl+Enter: count this as correct anyway")
         self.replay_btn = _button("▶ Replay", "Ctrl+R: replay the card's audio")
+        self.extra_btn = _button("Show Extra", "Ctrl+I: show this card's Extra (holds the screen)")
         self.edit_btn = _button("Edit in Anki", "Ctrl+E: open this card in Anki's Browser")
         self.done_edit_btn = _button("Done editing", "Read the card back from Anki now")
         self.end_btn = _button("End session", "Save and stop")
@@ -209,6 +212,7 @@ class DrillWindow(QDialog):
             (self.reveal_btn, self._reveal),
             (self.override_btn, self._override),
             (self.replay_btn, self._replay),
+            (self.extra_btn, self._show_extra),
             (self.edit_btn, self._edit),
             (self.done_edit_btn, self._done_editing),
             (self.end_btn, self._end_session),
@@ -233,7 +237,14 @@ class DrillWindow(QDialog):
         ):
             row.addWidget(b)
         row.addStretch(1)
-        for b in (self.replay_btn, self.edit_btn, self.done_edit_btn, self.end_btn, self.close_btn):
+        for b in (
+            self.extra_btn,
+            self.replay_btn,
+            self.edit_btn,
+            self.done_edit_btn,
+            self.end_btn,
+            self.close_btn,
+        ):
             row.addWidget(b)
         outer.addLayout(row)
 
@@ -337,6 +348,7 @@ class DrillWindow(QDialog):
         self.reveal_btn.setVisible(on_card and b.reveal)
         self.override_btn.setVisible(on_card and b.override)
         self.replay_btn.setVisible(on_card)
+        self.extra_btn.setVisible(on_card and b.show_extra)
         self.edit_btn.setVisible(on_card and not v.editing)
         self.edit_btn.setEnabled(b.edit)
         self.done_edit_btn.setVisible(on_card and v.editing)
@@ -432,6 +444,8 @@ class DrillWindow(QDialog):
             self._edit()
         elif cmd == "rd:replay":
             self._replay()
+        elif cmd == "rd:extra":
+            self._show_extra()
         elif cmd == "close":
             # AnkiWebView sends this on Esc in the page.
             self._reveal()
@@ -455,6 +469,14 @@ class DrillWindow(QDialog):
     def _reveal(self) -> None:
         if self.ctrl.view().mode in ("trial", "feedback"):
             self._run(self.ctrl.reveal())
+
+    def _show_extra(self) -> None:
+        if not self.ctrl.view().buttons.show_extra:
+            return
+        if not self.ctrl.show_extra() and not self.ctrl.processing:
+            # The controller now holds what a dwell would have committed.
+            self._dwell.stop()
+        self._render()
 
     def _next_batch(self) -> None:
         self._run(self.ctrl.next_batch())

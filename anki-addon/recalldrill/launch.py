@@ -69,6 +69,8 @@ def controller_settings(
         source_deck_editable=not drill_again,
         autoplay_question_audio=cfg.autoplay_question_audio,
         idle_cap_ms=cfg.idle_cap_seconds * 1000,
+        auto_advance_correct=cfg.auto_advance_correct,
+        extra_display=cfg.extra_display,
     )
 
 
