@@ -35,6 +35,7 @@ from anki.errors import NotFoundError
 from ..deck_settings import DeckSettings, hints_enabled, standard_share
 from ..difficulty import CardAdjustment, DifficultySettings, adjust_card
 from ..engine.types import DeckItem, ItemOverrides
+from ..list_kind import any_order_for
 from ..prompts import HintEntry, compute_hints, find_conflicts
 from ..sources import SourceRef
 from .cards import NoteCache
@@ -248,8 +249,13 @@ def build_session(
         item: DeckItem = {"front": r.front + hint, "back": r.answer}
         if r.extra:
             item["extra"] = r.extra
-        deck_items.append(item)
         s = r.cand.snap
+        # 2026-10-12: a list answer grades in any order unless its ListKind tag
+        # or its front's wording says the order matters.
+        any_order = any_order_for(r.front, r.answer, s.tags)
+        if any_order is not None:
+            item["anyOrder"] = any_order
+        deck_items.append(item)
         if difficulty is not None:
             adjustments.append(
                 adjust_card(s, difficulty.deck_reps, difficulty.deck_min_words, difficulty.settings)
@@ -288,6 +294,8 @@ class RebuiltCard:
     back: str
     extra: str
     source: SourceRef
+    any_order: bool | None = None
+    """``DrillItem.anyOrder`` as ``build_session`` would set it now (None: not a list)."""
 
 
 def rebuild_card(col: Collection, src: SourceRef, mappings: MappingTable) -> RebuiltCard | None:
@@ -316,7 +324,14 @@ def rebuild_card(col: Collection, src: SourceRef, mappings: MappingTable) -> Reb
         css=out.css,
         image_front=has_image(front_html),
     )
-    return RebuiltCard(grading_text(front_html) + src.hint, answer, grading_text(x_html), source)
+    front = grading_text(front_html)
+    return RebuiltCard(
+        front + src.hint,
+        answer,
+        grading_text(x_html),
+        source,
+        any_order_for(front, answer, note.tags),
+    )
 
 
 def build_session_items(

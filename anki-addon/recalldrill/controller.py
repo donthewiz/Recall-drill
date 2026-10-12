@@ -359,6 +359,9 @@ class ViewModel:
     progress: ProgressView
     batch_done: BatchDoneView | None
     dots: tuple[Dot, ...]
+    any_order: bool = False
+    """The card's list answer grades in any order (``DrillItem.anyOrder``): the
+    card shows an "any order" note."""
 
 
 @dataclass(frozen=True)
@@ -418,6 +421,22 @@ class EditRequest:
 # ---------------------------------------------------------------------------
 # The controller
 # ---------------------------------------------------------------------------
+
+
+def _with_any_order(state: SessionState, item_id: int, any_order: bool | None) -> SessionState:
+    """``state`` with item ``item_id``'s ``anyOrder`` set (None removes it); the
+    same object when nothing changes. The engine keeps a card's anyOrder through
+    an edit; the add-on recomputes it from the card as Anki now has it."""
+    item = next((i for i in state["items"] if i["id"] == item_id), None)
+    if item is None or item.get("anyOrder") == any_order:
+        return state
+    new_item: DrillItem = {**item}
+    if any_order is None:
+        new_item.pop("anyOrder", None)
+    else:
+        new_item["anyOrder"] = any_order
+    items = [new_item if i["id"] == item_id else i for i in state["items"]]
+    return {**state, "items": items}
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -928,10 +947,18 @@ class DrillController:
         return []
 
     def apply_card_edit(
-        self, front: str, back: str, extra: str, source: SourceRef | None = None
+        self,
+        front: str,
+        back: str,
+        extra: str,
+        source: SourceRef | None = None,
+        any_order: bool | None | Literal["keep"] = "keep",
     ) -> list[Effect]:
         """handleSaveEdit with the card as Anki now has it (``source``: its rebuilt
-        :class:`SourceRef`, kept for display and later resume checks)."""
+        :class:`SourceRef`, kept for display and later resume checks;
+        ``any_order``: its ``anyOrder`` recomputed by ``build.rebuild_card``, None
+        when the answer is no longer a list, "keep" to leave it as the engine
+        does)."""
         if not self._editing:
             return []
         # canSaveEdit: an empty front or answer can't be saved, so it's a cancel.
@@ -944,6 +971,8 @@ class DrillController:
         if source is not None:
             self._sources[before["id"]] = source
         result = edit_current_item(self._state, {"front": front, "back": back, "extra": extra})
+        if any_order != "keep":
+            result["state"] = _with_any_order(result["state"], before["id"], any_order)
         restarted = result["restarted"]
         if restarted:
             self._show_next = False
@@ -954,14 +983,25 @@ class DrillController:
             self._pre_wrong_state = (
                 None
                 if restarted
-                else edit_current_item(
-                    self._pre_wrong_state, {"front": front, "back": back, "extra": extra}
-                )["state"]
+                else self._edit_pre_wrong(self._pre_wrong_state, front, back, extra, any_order)
             )
         if result["state"] is not self._state:
             self._set_state(result["state"], effects)  # saves the new source too
         self._close_editor(restarted)
         return effects
+
+    @staticmethod
+    def _edit_pre_wrong(
+        pre: SessionState,
+        front: str,
+        back: str,
+        extra: str,
+        any_order: bool | None | Literal["keep"],
+    ) -> SessionState:
+        state = edit_current_item(pre, {"front": front, "back": back, "extra": extra})["state"]
+        if any_order == "keep":
+            return state
+        return _with_any_order(state, pre["currentId"], any_order)
 
     # -- the view -----------------------------------------------------------
 
@@ -1123,6 +1163,7 @@ class DrillController:
                 )
                 for it in items
             ),
+            any_order=item is not None and item.get("anyOrder") is True,
         )
 
     def _remaining_text(self) -> str | None:
@@ -1284,6 +1325,8 @@ class DrillController:
             card: DeckItem = {"front": it["front"], "back": it["back"]}
             if "extra" in it:
                 card["extra"] = it["extra"]
+            if "anyOrder" in it:
+                card["anyOrder"] = it["anyOrder"]
             deck.append(card)
             sources.append(self._sources[item_id])
         return deck, sources

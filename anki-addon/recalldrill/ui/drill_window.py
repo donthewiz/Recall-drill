@@ -552,7 +552,9 @@ class DrillWindow(QDialog):
             self.activateWindow()
             return
         self._run(
-            self.ctrl.apply_card_edit(rebuilt.front, rebuilt.back, rebuilt.extra, rebuilt.source)
+            self.ctrl.apply_card_edit(
+                rebuilt.front, rebuilt.back, rebuilt.extra, rebuilt.source, rebuilt.any_order
+            )
         )
         self.activateWindow()
 

@@ -437,3 +437,49 @@ def test_overrides_survive_save_resume_and_drill_again(st: Storage) -> None:
     again, _ = start_drill_again(st, ctrl, store, ctrl.settings, Clock())
     (item,) = again.state["items"]
     assert (item.get("encodeRepsOverride"), item.get("minWordsToChunkOverride")) == (3, 4)
+
+
+def test_any_order_survives_save_resume_cut_and_drill_again(st: Storage) -> None:
+    """2026-10-12: anyOrder lives on the items, so the save, a resume, the
+    finish-early cut and a drill-again of the same cards keep it."""
+    deck: list[Any] = [
+        {"front": "Name the types", "back": "skeletal, cardiac, smooth", "anyOrder": True},
+        {"front": "List them in order", "back": "one, two, three", "anyOrder": False},
+        {"front": "heart", "back": "cardi"},
+    ]
+    ctrl, store = _start(st, deck, encodeReps=1)
+    ctrl.start()
+    _answer_correctly(ctrl)
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    assert [i.get("anyOrder") for i in saved["items"]] == [True, False, None]
+    resumed, _ = open_saved(st, "deck-42", saved, ControllerSettings(), Clock())
+    assert [i.get("anyOrder") for i in resumed.state["items"]] == [True, False, None]
+
+    # The finish-early cut keeps the mastered cards' items as they are.
+    for _ in range(200):
+        if ctrl.state["phase"] == "cycle" and ctrl.state["items"][0]["status"] == "mastered":
+            break
+        _answer_correctly(ctrl)
+    ctrl.save_and_stop()
+    stopped = sessions.load(st, "deck-42")
+    assert stopped is not None
+    cut = sessions.finish_early(stopped, missing=(), changed=(), now_ms=0)
+    kept = {i["back"]: i.get("anyOrder") for i in cut["items"]}
+    assert kept.get("skeletal, cardiac, smooth") is True
+
+    # Drill-again of a card missed in the Final check keeps it too.
+    ctrl2, store2 = _start(st, deck, encodeReps=1)
+    ctrl2.start()
+    for _ in range(300):
+        if ctrl2.state["phase"] == "final" and not ctrl2.view().buttons.continue_:
+            trial = select_trial(ctrl2.state)
+            assert trial is not None
+            if trial["itemId"] == 0:
+                break
+        _answer_correctly(ctrl2)
+    ctrl2.submit("nope")
+    _finish(ctrl2)
+    again, _ = start_drill_again(st, ctrl2, store2, ctrl2.settings, Clock())
+    (item,) = again.state["items"]
+    assert item.get("anyOrder") is True

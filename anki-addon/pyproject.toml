@@ -43,6 +43,7 @@ strict = [
     "recalldrill/card_state.py",
     "recalldrill/difficulty.py",
     "recalldrill/pacing.py",
+    "recalldrill/list_kind.py",
 ]
 
 [tool.pytest.ini_options]

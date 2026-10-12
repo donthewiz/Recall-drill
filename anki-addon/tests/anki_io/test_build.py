@@ -459,3 +459,53 @@ def test_io_lookalike_with_a_different_answer_image_is_graded_in_full(col: Colle
     col.update_note(note)
     _, res = run(col, did)
     assert [i["back"] for i in res.deck_items] == ["Figure 9 Femur"]
+
+
+# ---------------------------------------------------------------------------
+# Any-order lists (2026-10-12)
+# ---------------------------------------------------------------------------
+
+
+def test_any_order_from_list_kind_tags_and_wording(col: Collection) -> None:
+    did = deck(col, "Lab 2")
+    rows = [
+        ("Name the types of muscle tissue", "skeletal, cardiac, smooth", ()),
+        ("List the regions from superior to inferior", "cervical, thoracic, lumbar", ()),
+        (
+            "List the bones from proximal to distal",
+            "humerus, carpals, phalanges",
+            ("ListKind::Taxonomy",),
+        ),
+        ("Name the layers", "outer, middle, inner", ("ListKind::Sequence",)),
+        ("Name the fibers", "collagen, elastic, reticular", ("listkind::attributeset",)),
+        ("Name the pair", "radius and ulna", ("ListKind::AttributeSet",)),
+    ]
+    for front, back, tags in rows:
+        add_note(col, "Basic", did, {"Front": front, "Back": back}, tags)
+    _, result = run(col, did)
+    items = by_back(result)
+    assert items["skeletal, cardiac, smooth"].get("anyOrder") is True
+    assert items["cervical, thoracic, lumbar"].get("anyOrder") is False
+    # The tag beats the wording.
+    assert items["humerus, carpals, phalanges"].get("anyOrder") is True
+    assert items["outer, middle, inner"].get("anyOrder") is False
+    assert items["collagen, elastic, reticular"].get("anyOrder") is True
+    assert "anyOrder" not in items["radius and ulna"]  # not a list
+
+
+def test_rebuild_card_recomputes_any_order(col: Collection) -> None:
+    from recalldrill.anki_io.build import rebuild_card
+
+    did = deck(col, "Lab 2")
+    note = add_note(col, "Basic", did, {"Front": "Name the types", "Back": "a, b, c"})
+    _, result = run(col, did)
+    (src,) = result.sources
+    assert result.deck_items[0].get("anyOrder") is True
+    note.add_tag("ListKind::Sequence")
+    col.update_note(note)
+    rebuilt = rebuild_card(col, src, MappingTable(col))
+    assert rebuilt is not None and rebuilt.any_order is False
+    note["Back"] = "a and b"
+    col.update_note(note)
+    rebuilt = rebuild_card(col, src, MappingTable(col))
+    assert rebuilt is not None and rebuilt.any_order is None
