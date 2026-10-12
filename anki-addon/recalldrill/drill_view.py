@@ -27,6 +27,9 @@ from .engine.types import WordDiffResult
 
 Prepare = Callable[[str], str]
 
+ANY_ORDER_NOTE = "any order"
+"""Shown beside the stage pill on a card whose list answer grades in any order."""
+
 EDITING_NOTICE = (
     "Editing this card in Anki's Browser. Close the Browser (or press Done editing) "
     "to come back to the drill."
@@ -59,6 +62,7 @@ body { margin: 12px 16px; }
   color: var(--rd-accent); background: var(--rd-accent-bg); padding: 2px 10px;
   border-radius: 999px; }
 .rd-badge { font-size: 11px; color: var(--rd-muted); }
+.rd-any-order { font-size: 11px; color: var(--rd-muted); margin-left: 8px; }
 .rd-hint { color: var(--rd-text-2); }
 .rd-sub { margin: 14px 0 4px; min-height: 28px; }
 .rd-cue { display: inline-block; font-family: Consolas, "Courier New", monospace;
@@ -210,8 +214,17 @@ def card_html(view: ViewModel, prepare: Prepare) -> str:
     the region revealed and its label), then Extra. Both figures stacked would
     push the revealed label below the fold.
     """
+    # 2026-10-12: an unordered list answer says so beside the stage pill.
+    any_order = (
+        f'<span class="rd-any-order" id="rd-any-order">{ANY_ORDER_NOTE}</span>'
+        if view.any_order
+        else ""
+    )
     head = (
-        f'<div class="rd-head"><span class="rd-pill">{escape(view.label)}</span>'
+        f'<div class="rd-head"><span><span class="rd-pill">{escape(view.label)}</span>'
+        f'{any_order}</span><span class="rd-badge">{escape(view.cue_badge)}</span></div>'
+        if any_order
+        else f'<div class="rd-head"><span class="rd-pill">{escape(view.label)}</span>'
         f'<span class="rd-badge">{escape(view.cue_badge)}</span></div>'
     )
     notices: list[str] = []

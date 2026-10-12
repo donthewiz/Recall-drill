@@ -78,6 +78,7 @@ def anki_io_violations(name: str) -> bool:
 
 PURE_MODULES = (
     "storage.py",
+    "list_kind.py",
     "prompts.py",
     "deck_settings.py",
     "sources.py",
