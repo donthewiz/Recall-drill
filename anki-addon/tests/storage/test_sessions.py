@@ -216,6 +216,7 @@ def test_completion_writes_history_once_and_waits_for_the_handoff(st: Storage) -
         "strictPunctuation": False,
         "stemTolerance": True,
         "hints": True,
+        "cycleRule": "clean-one",
     }
     assert line["scope"] == {"deckId": 42, "search": None}
     assert line["collisions"] == 0 and line["holdout"] == []

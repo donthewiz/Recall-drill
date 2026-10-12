@@ -58,7 +58,9 @@ const SCENARIOS: [string, (s: SessionState) => boolean, boolean][] = [
   ['chunk, blind attempt', s => s.phase === 'encode' && s.currentId === LONG && item(s, LONG).stage === 'chunks' && item(s, LONG).chunkStreak === 1, true],
   ['first 2-part combination (a miss would isolate)', s => s.phase === 'encode' && s.currentId === LONG && item(s, LONG).stage === 'combine' && item(s, LONG).combineSeqIdx === 0, false],
   ['whole-answer window, 2nd rep', s => s.phase === 'encode' && s.currentId === LONG && item(s, LONG).stage === 'combine' && item(s, LONG).combineSeqIdx === 1 && item(s, LONG).combineStreak === 1, false],
-  ['review, the answer that would master', s => s.phase === 'cycle' && item(s, s.currentId).cycleStreak === 1, false],
+  // 2026-10-12: the card is clean (its miss is overridden, so never recorded),
+  // and a clean card's first correct cycle answer masters it.
+  ['review, the answer that would master', s => s.phase === 'cycle' && item(s, s.currentId).cycleStreak === 0, false],
   ['final check', s => s.phase === 'final', false],
 ];
 

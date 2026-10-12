@@ -110,6 +110,9 @@ class CardRow:
     misses: int | None = None
     reveals: int | None = None
     final_misses: int | None = None
+    cycle_rule: str | None = None
+    """The session's cycle rule (``encode.cycleRule``): "clean-one", or "two" for
+    lines from before 2026-10-12; None for holdout and baseline cards."""
 
     @property
     def struggle(self) -> int | None:
@@ -263,6 +266,7 @@ class _Session:
     encode_reps: int | None
     cards: dict[int, _SessionCard]
     holdout: dict[int, dict[str, Any]]
+    cycle_rule: str
 
 
 def _session(line: Mapping[str, Any]) -> _Session:
@@ -287,6 +291,8 @@ def _session(line: Mapping[str, Any]) -> _Session:
             final_misses=_int(c.get("finalMisses")),
         )
     reps = _int(_key(line.get("encode"), "encodeReps"))
+    # Lines from before the clean-card rule (2026-10-12) have no cycleRule.
+    cycle_rule = _str(_key(line.get("encode"), "cycleRule")) or "two"
     holdout: dict[int, dict[str, Any]] = {}
     for h in _dicts(line.get("holdout")):
         cid = _int(h.get("cid"))
@@ -301,6 +307,7 @@ def _session(line: Mapping[str, Any]) -> _Session:
         encode_reps=reps,
         cards=by_cid,
         holdout=holdout,
+        cycle_rule=cycle_rule,
     )
 
 
@@ -388,6 +395,7 @@ def card_rows(
                     misses=sc.misses if sc else None,
                     reveals=sc.reveals if sc else None,
                     final_misses=sc.final_misses if sc else _int(d.get("finalMisses")),
+                    cycle_rule=sess.cycle_rule if sess is not None else "two",
                 )
             )
         held = _ints(_key(line.get("groups"), "holdout"))
@@ -647,6 +655,7 @@ def build_report(
         ),
         ("card class", _breakdown(drilled, lambda r: r.card_class or "unknown", m)),
         ("handoff mode", _breakdown(drilled, lambda r: r.mode or "unknown", m)),
+        ("cycle rule", _breakdown(drilled, lambda r: r.cycle_rule or "two", m)),
         ("deck", _breakdown(drilled, lambda r: r.deck, m)),
     ]
     suggestions = [

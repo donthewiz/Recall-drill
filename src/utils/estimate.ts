@@ -85,8 +85,9 @@ export function pickColdStartDeckShape(items: DeckItem[]): ColdStartDeckShape {
 // chunks/card x 12 cards = 36, never repeated for a perfect learner since
 // presentations only recur after a miss).
 //
-// Every item needs exactly 2 cycle-phase trials to reach `mastered`
-// (cycleStreak >= 2, and a perfect learner's streak only ever goes up), plus
+// Every item needs exactly 1 cycle-phase trial to reach `mastered` (a
+// perfect learner's card is always clean, and a clean card is mastered by
+// its first correct cycle answer -- cycleRepsToMaster, 2026-10-12), plus
 // (Phase 3) exactly 1 Final-check trial; chunked items additionally need
 // exactly 1 graded (blind) trial per chunk (C8a's cued attempt 0 is the
 // presentation excluded above) plus the combine ladder's cost (see
@@ -118,7 +119,7 @@ export function computeMinimumTrials(
     } else {
       total += encodeReps;
     }
-    total += 2; // cycle: exactly 2 corrects to reach mastered
+    total += 1; // cycle: a clean card's one correct answer masters it
     if (includeFinalCheck) total += 1; // Phase 3: one Final-check answer
   }
   return total;

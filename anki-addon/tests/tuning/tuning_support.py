@@ -48,8 +48,9 @@ def session_line(
     holdout: Sequence[int] = (),
     did: int = 1,
     minutes: int = 20,
+    cycle_rule: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    line = {
         "type": "session",
         "sessionId": sid,
         "startedAt": js_iso_string(started),
@@ -93,7 +94,8 @@ def session_line(
             "strictPunctuation": True,
             "stemTolerance": False,
             "hints": True,
-        },
+        }
+        | ({} if cycle_rule is None else {"cycleRule": cycle_rule}),
         "scope": {"deckId": did, "search": None},
         "collisions": 0,
         "holdout": [
@@ -101,6 +103,7 @@ def session_line(
             for h in holdout
         ],
     }
+    return line
 
 
 def handoff_line(

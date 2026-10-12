@@ -58,8 +58,8 @@ describe('simulate', () => {
   it('runs every batch of a batched config through to the Final check', () => {
     for (const batchSize of [5, 10]) {
       const result = simulate(shortDeck, { ...config, encodeReps: 1, batchSize }, perfectLearner);
-      // Every card: 1 full rep, 2 cycle answers, 1 Final check answer.
-      expect(result.trialsByStage).toEqual({ full: 12, cycle: 24, final: 12 });
+      // Every card: 1 full rep, 1 cycle answer (clean), 1 Final check answer.
+      expect(result.trialsByStage).toEqual({ full: 12, cycle: 12, final: 12 });
     }
   });
 

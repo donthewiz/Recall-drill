@@ -88,7 +88,8 @@ describe('Final check: covers every card exactly once (perfect learner)', () => 
     expect(s.phase).toBe('final');
     expect(s.items.every(i => i.finalDone)).toBe(true);
     // Phase 3 never touches status/cycleStreak.
-    expect(s.items.every(i => i.status === 'mastered' && i.cycleStreak === 2)).toBe(true);
+    // (A perfect learner's clean cards were mastered by one cycle answer.)
+    expect(s.items.every(i => i.status === 'mastered' && i.cycleStreak === 1)).toBe(true);
   });
 
   it('the "k of N" counter reads N of N right after the last card\'s correct answer, before Continue is clicked', () => {

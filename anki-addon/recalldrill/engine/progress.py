@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TypedDict
 
-from .items import reps_for
+from .items import cycle_reps_to_master, reps_for
 from .jscompat import js_sum
 from .types import DrillItem
 
@@ -35,8 +35,9 @@ def _clamp01(n: float) -> float:
 
 
 def compute_item_progress(item: DrillItem, encode_reps: int) -> float:
-    """0..1 encoding progress: 'new' 0, 'ready' 0.7, 'mastered' 1, and 'encoding' the
-    fraction of the item's own ladder done, scaled into 0..0.7.
+    """0..1 encoding progress: 'new' 0, 'mastered' 1, 'encoding' the fraction of the
+    item's own ladder done, scaled into 0..0.7, and 'ready' 0.7 plus 0.3 times its
+    cycle streak over what it needs (2026-10-12: 1 for a clean card, else 2).
 
     Add-on extension: a card's ``encodeRepsOverride`` replaces ``encode_reps``
     (:func:`.items.reps_for`)."""
@@ -44,7 +45,7 @@ def compute_item_progress(item: DrillItem, encode_reps: int) -> float:
     if item["status"] == "mastered":
         return 1
     if item["status"] == "ready":
-        return 0.7
+        return 0.7 + 0.3 * _clamp01(item["cycleStreak"] / cycle_reps_to_master(item))
     if item["status"] == "new":
         return 0
 

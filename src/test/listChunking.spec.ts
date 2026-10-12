@@ -88,7 +88,7 @@ describe('everything that reads chunks follows', () => {
     const item = buildItem({ front: 'Q', back: 'a, b, c, d, e, f' }, 0, 35, 'cumulative', 8);
     expect(item.stage).toBe('chunks');
     expect(item.chunks).toEqual(['a, b', 'c, d', 'e, f']);
-    // 3 chunks + 1 intermediate window + 1 x encodeReps final window + 2 cycle + 1 final.
-    expect(computeMinimumTrials([item], 1)).toBe(3 + 1 + 1 + 2 + 1);
+    // 3 chunks + 1 intermediate window + 1 x encodeReps final window + 1 cycle + 1 final.
+    expect(computeMinimumTrials([item], 1)).toBe(3 + 1 + 1 + 1 + 1);
   });
 });

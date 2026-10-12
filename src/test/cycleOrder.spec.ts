@@ -17,11 +17,15 @@ function makeShortDeck(count: number): DeckItem[] {
 }
 
 // Starts straight in the cycle phase: every item already 'ready', empty
-// queue -- initSession builds the first pass via advanceCycleState.
-function cycleState(count: number, batchSize: number, cycleOrder?: CycleOrder): SessionState {
+// queue -- initSession builds the first pass via advanceCycleState. The
+// cards carry one earlier miss, so they need 2 correct cycle answers (a clean
+// card is mastered by its first, 2026-10-12) and the two-pass order is what
+// these tests see; `clean` leaves them clean.
+function cycleState(count: number, batchSize: number, cycleOrder?: CycleOrder, clean = false): SessionState {
   const items = buildItems(makeShortDeck(count), 35, 'cumulative', batchSize).map(it => ({
     ...it,
     status: 'ready' as const,
+    ...(clean ? {} : { misses: 1 }),
   }));
   return initSession({
     items,
@@ -66,6 +70,18 @@ describe('inOrder cycle phase', () => {
       s = r.next;
     }
     expect(seen).toEqual([0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
+    expect(s.items.every(i => i.status === 'mastered')).toBe(true);
+  });
+
+  it('clean cards: a perfect run is one pass in deck order', () => {
+    let s = cycleState(5, 5, 'inOrder', true);
+    const seen: number[] = [];
+    for (let n = 0; n < 5; n++) {
+      const r = step(s, false);
+      seen.push(r.id);
+      s = r.next;
+    }
+    expect(seen).toEqual([0, 1, 2, 3, 4]);
     expect(s.items.every(i => i.status === 'mastered')).toBe(true);
   });
 

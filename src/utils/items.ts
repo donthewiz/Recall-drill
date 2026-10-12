@@ -208,6 +208,15 @@ export function buildCombineSequence(
   return seq;
 }
 
+// Cycle mastery (2026-10-12): a clean card -- no miss and no reveal on it in
+// this session (near misses don't count; a "Count as correct" override never
+// recorded its miss) -- is mastered by 1 correct cycle answer, any other card
+// by 2 in a row. Whatever encodeReps is. An edit that restarts a card resets
+// its counters, so a restarted card is clean again.
+export function cycleRepsToMaster(item: Pick<DrillItem, 'misses' | 'reveals'>): number {
+  return (item.misses ?? 0) === 0 && (item.reveals ?? 0) === 0 ? 1 : 2;
+}
+
 // C1: how many consecutive blind successes a given combine window needs.
 // Only applies under ladderMode 'cumulative' -- 'exhaustive' keeps requiring
 // encodeReps uniformly on every window (see applyAnswer's combine branch),
