@@ -1,6 +1,6 @@
 # Vitest spec → Python test map
 
-Every vitest spec file (30 files, 275 tests) and where its behavior is checked in the add-on. Phase 1a started this map; Phase 1b finished it.
+Every vitest spec file (33 files, 313 tests) and where its behavior is checked in the add-on. Phase 1a started this map; Phase 1b finished it.
 
 **Statuses:**
 - **ported**: a pytest twin per TS `it`, with the TS test name in the docstring.
@@ -18,7 +18,7 @@ A scenario drives the same deck, config and answers as the `it`, and the golden 
 | `grading.json` | 1a | `norm`, `exactMatch`, `computeWordDiff`, `grade` |
 | `items.json` | 1a | everything in `items.ts` |
 | `session_scenarios.json` | 1b | 100 scripted sessions (1,662 steps, full state after each); pure cases for `history.ts`, `progress.ts`, `estimate.ts`, `orderCycleQueue`, `computeAccuracyPercent`; hand-built edge states |
-| `session_sim.json` | 1b | the scoreboard's 450 seeded `simulate()` runs (numbers + trace hash), its decks and config, the `npm run simulate` "Current engine" text, and 37 seeded twins of the spec files' own `simulate()` calls |
+| `session_sim.json` | 1b | the scoreboard's 450 seeded `simulate()` runs (numbers + trace hash), its decks and config, the `npm run simulate` "Current engine" text (and, since v0.2, the "Your settings" text, its config and `listDeck`), and 37 seeded twins of the spec files' own `simulate()` calls |
 | `session_seed0.json` | 1b | seed 0 of each scoreboard config: trial, answer, result and state hash at every step |
 
 ## Summary
@@ -38,7 +38,7 @@ A scenario drives the same deck, config and answers as the `it`, and the golden 
 | 11 | `src/test/characterization.legacy.spec.ts` | 5 | N/A | Tests the frozen `LegacyEngine` reference snapshot (`src/test/reference/`), which the add-on doesn't port. |
 | 12 | `src/test/chunkText.spec.ts` | 3 | ported | `test_chunk_text_spec.py`; `items.json` |
 | 13 | `src/test/cycleGap.spec.ts` | 1 | golden | scenario |
-| 14 | `src/test/cycleOrder.spec.ts` | 12 | ported (5) + golden (7) | `test_cycle_order_spec.py`; scenarios |
+| 14 | `src/test/cycleOrder.spec.ts` | 13 | ported (5) + golden (7) + ported elsewhere (1) | `test_cycle_order_spec.py`; scenarios |
 | 15 | `src/test/editCurrentItem.spec.ts` | 16 | ported (1) + golden (15) | `test_edit_current_item_spec.py`; scenarios |
 | 16 | `src/test/extraField.spec.ts` | 14 | ported (10) + golden (3) + N/A (1) | `test_extra_field_spec.py`; scenarios |
 | 17 | `src/test/finalCheck.spec.ts` | 8 | golden | scenarios |
@@ -54,9 +54,12 @@ A scenario drives the same deck, config and answers as the `it`, and the golden 
 | 27 | `src/test/strictPunctuation.spec.ts` | 34 | ported (28) + golden (3) + N/A (3) | `test_strict_punctuation_spec.py`; scenarios |
 | 28 | `src/test/telemetry.spec.ts` | 11 | ported (4) + golden (7) | `test_telemetry_spec.py`; scenarios |
 | 29 | `test/coldStartEstimate.consistency.spec.ts` | 28 | ported | `test_simulate_parity.py` (seeded golden runs + the spec's assertion) |
-| 30 | `test/simulate.spec.ts` | 4 | ported | `test_simulate_parity.py` (seeded golden runs + the spec's assertions) |
+| 30 | `test/simulate.spec.ts` | 6 | ported | `test_simulate_parity.py` (seeded golden runs + the spec's assertions; the batched "Your settings" section) |
+| 31 | `src/test/listChunking.spec.ts` | 12 | ported + golden | `test_list_chunking_spec.py`; `items.json` (`lists`) |
+| 32 | `src/test/anyOrder.spec.ts` | 13 | ported + golden | `test_any_order_spec.py`; `grading.json` (`anyOrder`), `items.json` (`listOrder`, `anyOrderItems`), scenario `any-order-list` |
+| 33 | `src/test/cleanCycle.spec.ts` | 10 | ported | `test_clean_cycle_spec.py` (plus the add-on's `encodeRepsOverride`) |
 
-**Totals:** 275 TS tests. 242 are covered (ported, golden, or both) and 33 are N/A. Nothing that exercises engine behavior is left uncovered.
+**Totals:** 313 TS tests. 280 are covered (ported, golden, or both) and 33 are N/A. Nothing that exercises engine behavior is left uncovered.
 
 ## Not covered, and why
 
@@ -411,3 +414,10 @@ Files that were already fully ported in Phase 1a (`chunkText`, `grade`) and the 
 | a struggling learner never needs fewer trials than a perfect one on the same deck | ported: `test_simulate_parity.py::test_struggling_never_needs_fewer_trials_than_perfect` |
 | cumulative ladder gives >=40% trial-count reduction vs exhaustive once cards average >=4 chunks (perfect learner) | ported: `test_simulate_parity.py::test_cumulative_ladder_cuts_trials_by_40_percent` |
 
+### v0.2 (2026-10-12)
+
+- `src/test/listChunking.spec.ts`: every `it` has a twin in `test_list_chunking_spec.py`; `items.json` `lists` records `listItems` and `chunkText` over listDeck and edge texts, every percent, thresholds 3 and 8.
+- `src/test/anyOrder.spec.ts`: twins in `test_any_order_spec.py`; `grading.json` `anyOrder` (every list target × typed variants × three option sets, diff included), `items.json` `listOrder`/`orderCues`/`anyOrderItems` (build, normalize, `withListOrder`, `joinWindow`, the any-order culprit search), and the scripted session `any-order-list`.
+- `src/test/cleanCycle.spec.ts`: twins in `test_clean_cycle_spec.py`, which also checks the rule under the add-on's `encodeRepsOverride`.
+- `src/test/cycleOrder.spec.ts` "clean cards: a perfect run is one pass in deck order": the rule is `test_clean_cycle_spec.py`'s; the order is the other `inOrder` tests'.
+- `test/simulate.spec.ts` "runs every batch of a batched config through to the Final check" and "listDeck: …": `test_simulate_parity.py::test_settings_section_is_byte_identical_to_npm_run_simulate` (batched, listDeck).
