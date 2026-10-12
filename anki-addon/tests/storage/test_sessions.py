@@ -484,3 +484,54 @@ def test_any_order_survives_save_resume_cut_and_drill_again(st: Storage) -> None
     again, _ = start_drill_again(st, ctrl2, store2, ctrl2.settings, Clock())
     (item,) = again.state["items"]
     assert item.get("anyOrder") is True
+
+
+def test_saves_keep_each_note_types_css_once(st: Storage) -> None:
+    """v0.2: addon.css holds each note type's CSS once; sources leave it out and
+    get it back on load. A source whose CSS differs keeps its own."""
+    from recalldrill.sources import SourceRef
+
+    deck: list[Any] = [{"front": f"f{i}", "back": f"b{i}"} for i in range(4)]
+    srcs: list[SourceRef] = [
+        source(0, ntid=7, css=".a{}"),
+        source(1, ntid=7, css=".a{}"),
+        source(2, ntid=8, css=".b{}"),
+        source(3, ntid=7, css=".a2{}"),  # the note type was edited mid-session
+    ]
+    ctrl, _ = start_session(
+        st,
+        key=deck_key(42),
+        deck_items=deck,
+        sources=srcs,
+        config=config(),
+        scope=scope_json(deck_id=42),
+        select_options=OPTIONS,
+        deck_settings=DECK_SETTINGS,
+        hints=True,
+        settings=ControllerSettings(deck_name="Med Term"),
+        now_ms=Clock(),
+    )
+    ctrl.start()
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    assert saved["addon"]["css"] == {"7": ".a{}", "8": ".b{}"}
+    assert ["css" in s for s in saved["addon"]["sources"]] == [False, False, False, True]
+    assert sessions.saved_sources(saved) == srcs
+    resumed, _ = open_saved(st, "deck-42", saved, ControllerSettings(), Clock())
+    assert list(resumed.sources) == srcs
+
+
+def test_an_old_save_with_css_in_every_source_still_loads(st: Storage) -> None:
+    from recalldrill.sources import source_to_json
+
+    ctrl, _ = _start(st)
+    ctrl.start()
+    saved = sessions.load(st, "deck-42")
+    assert saved is not None
+    old = dict(saved)
+    old["addon"] = {k: v for k, v in saved["addon"].items() if k != "css"}
+    old["addon"]["sources"] = [source_to_json(s) for s in sessions.saved_sources(saved)]
+    assert all("css" in s for s in old["addon"]["sources"])
+    assert sessions.saved_sources(old) == sessions.saved_sources(saved)
+    resumed, _ = open_saved(st, "deck-42", old, ControllerSettings(), Clock())
+    assert [s.css for s in resumed.sources] == [s.css for s in sessions.saved_sources(saved)]

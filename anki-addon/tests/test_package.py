@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
+
+import pytest
 
 import recalldrill  # importable via conftest's sys.path entry
 
 ADDON_ROOT = Path(__file__).resolve().parent.parent
+
+needs_aqt = pytest.mark.skipif(
+    importlib.util.find_spec("aqt") is None,
+    reason="imports aqt (Anki's GUI package), which isn't installed",
+)
+"""As ``tests/anki_io/anki_fixtures.needs_aqt``: the ``recalldrill.ui`` tests below."""
 
 
 def test_manifest_matches_package() -> None:
@@ -63,6 +72,7 @@ def test_config_defaults_match_web_app() -> None:
     }
 
 
+@needs_aqt
 def test_about_menu_registration_is_a_no_op_without_main_window() -> None:
     from recalldrill.ui import about
 
@@ -71,6 +81,7 @@ def test_about_menu_registration_is_a_no_op_without_main_window() -> None:
     about.register_menu()  # aqt.mw is None outside Anki
 
 
+@needs_aqt
 def test_entry_registration_is_a_no_op_without_main_window(tmp_path: Path) -> None:
     from recalldrill.ui import entry
 
@@ -79,6 +90,7 @@ def test_entry_registration_is_a_no_op_without_main_window(tmp_path: Path) -> No
     assert entry._ctx is None  # pyright: ignore[reportPrivateUsage]
 
 
+@needs_aqt
 def test_dev_label_only_for_the_dev_folder() -> None:
     from recalldrill.ui import about
 

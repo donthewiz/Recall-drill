@@ -67,7 +67,7 @@ from .history_store import (
     declined_line,
     record_cold_start,
 )
-from .sources import SourceRef, source_from_json
+from .sources import SourceRef, sources_from_json
 from .storage import SESSIONS_DIR, Storage
 
 SaveStatus = Literal["resume", "handoff"]
@@ -284,8 +284,14 @@ def decline_handoff(storage: Storage, key: str, saved: Mapping[str, Any], now_ms
 
 
 def saved_sources(saved: Mapping[str, Any]) -> list[SourceRef]:
+    """The save's sources, each note type's CSS resolved from ``addon.css`` (v0.2;
+    older saves keep the CSS in every source)."""
     addon = cast(Mapping[str, Any], saved["addon"])
-    return [source_from_json(cast(Mapping[str, Any], s)) for s in addon.get("sources", [])]
+    css = addon.get("css")
+    return sources_from_json(
+        cast(list[Mapping[str, Any]], addon.get("sources", [])),
+        cast(Mapping[str, str], css) if isinstance(css, dict) else None,
+    )
 
 
 # ---------------------------------------------------------------------------
