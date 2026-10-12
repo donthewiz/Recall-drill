@@ -752,6 +752,20 @@ Siblings (the same notes' suspended new cards) are handed off with them.
 - **No cold-start estimate.** The setup panel shows only measured time: drill minutes from the user's own timed sessions (idle gaps over 120 s don't count) and Anki minutes from the FSRS simulator or the revlog, otherwise "no estimate yet". No daily time budget.
 - **"Count as correct" no longer leaves Continue up** after it auto-advances (see the open issue below; the web app still has it).
 
+### What changed in v0.2 (2026-10-12)
+
+From a review against Don's live Anki (409 drill-tagged cards suspended and never seen; list cards about 6 min each in the drill and most of the misses; an Extra holding the screen on every Lab 2 trial). Nine commits; details in `anki-addon/docs/DECISIONS.md` ("v0.2"), numbers in `docs/BASELINE.md`.
+
+- **The harness** runs batched configs and has a "Your settings" section (encodeReps 1, batches of 10) with a synthetic list deck. Engine changes are measured there.
+- **List answers** (`listItems`: 3+ items by `,` / `;` outside brackets) are chunked at item boundaries; the word rule never cuts inside parentheses. A 3-item list is never chunked (2 + 1 merges back), and neither is a sentence with two commas.
+- **Unordered lists grade in any order** (`anyOrder`): web app from the front's wording (`listOrderFromWording`), add-on from `ListKind::Sequence` / `AttributeSet` / `Taxonomy` tags, else the wording. Chunks, windows and the culprit search follow.
+- **A clean card** (no miss, no reveal this session) is mastered by **one** correct cycle answer; others still need two in a row.
+- **Add-on, fewer clicks:** correct cycle and Final-check answers move on by themselves (`auto_advance_correct`); the Extra shows the first time and after misses (`extra_display`, Show Extra Ctrl+I).
+- **Add-on, waiting cards:** a once-a-day notice and Tools → Recall Drill: waiting cards for drill cards still suspended after `stale_drill_days` (7) or past their deck's pacing; **Send to Anki undrilled** unsuspends them (and their notes' suspended new siblings) in place, tags `rd::undrilled`, one undo step. The add-on's second collection write; a "Released undrilled" row in the tuning report.
+- **Add-on:** saves keep each note type's CSS once; version 0.2.0.
+
+Still open: the web-app grading issues listed below are untouched on purpose (Don, 2026-10-12).
+
 ### Python-only engine extensions
 
 Optional keys the web app never sets, so absent means identical to TS (goldens and the scoreboard are unchanged):

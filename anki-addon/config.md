@@ -1,4 +1,4 @@
-Global defaults for new drill sessions. They match the web app's `recall_drill_*` defaults. A deck's own settings (set in the Recall Drill panel: batch size, blind typings, cycle order, strict punctuation, word-ending tolerance, hints) win over `encode_reps`, `batch_size`, `stem_tolerance` and `cycle_order`. A value that is missing or of the wrong type takes its default. Each key shows its default and the phase that introduced it (Phase 0 is the scaffold: the keys that mirror the web app's `recall_drill_*` defaults). Change them in Tools → Add-ons → Recall Drill → Config. 27 keys in all.
+Global defaults for new drill sessions. They match the web app's `recall_drill_*` defaults. A deck's own settings (set in the Recall Drill panel: batch size, blind typings, cycle order, strict punctuation, word-ending tolerance, hints) win over `encode_reps`, `batch_size`, `stem_tolerance` and `cycle_order`. A value that is missing or of the wrong type takes its default. Each key shows its default and the phase that introduced it (Phase 0 is the scaffold: the keys that mirror the web app's `recall_drill_*` defaults). Change them in Tools → Add-ons → Recall Drill → Config. 31 keys in all.
 
 - `encode_reps` (default 3; Phase 0): consecutive blind correct answers a card needs on its whole-answer step.
 - `chunk_difficulty` (default 35; Phase 0): chunking percentage. 100 means never chunk.
@@ -9,6 +9,8 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `collision_catch` (default true; Phase 3a): add-on only. When a whole-answer trial (full answer, cycle, Final check) is answered with the exact answer of *another* card whose prompt conflicts with this one (same rule as the disambiguation hints), the drill says so and lets you try again. Nothing is graded and nothing is saved for that try.
 - `play_audio_on_feedback` (default true; Phase 3a): add-on only. Play the card's answer audio when the feedback shows the full answer.
 - `autoplay_question_audio` (default false; Phase 3b): add-on only. Play a card's question audio when it comes up in the drill (once per card, not on every trial of it).
+- `auto_advance_correct` (default true; v0.2): add-on only. A correct answer (exact or near, or "Count as correct") in the review cycle and the Final check moves on by itself after a short pause (0.6 s, 1.2 s after a near answer), as encoding already does. Wrong answers and reveals still wait for Enter, and so does a card whose answer audio plays (`play_audio_on_feedback`), so the audio isn't cut off. false: every cycle and Final-check answer waits for Enter.
+- `extra_display` (default "first_and_misses"; v0.2): add-on only. When a card's Extra shows. "first_and_misses": the first time the card's full answer is on screen in the session, and after a wrong answer or a reveal; it then holds the screen until Enter. Otherwise it stays hidden; **Show Extra** (Ctrl+I) shows it on any feedback screen (and then holds). "always": on every feedback that shows the full answer, holding the screen each time (v0.1's behavior).
 
 **Handing off a finished session to Anki** (one undo step: Edit → Undo "Recall Drill handoff"):
 
@@ -36,6 +38,11 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - Without FSRS data, a reviewed card with 3+ lapses, an ease under 200% or the `leech` tag gets one more blind typing.
 - `skip_min_stability` (default 30; Phase 6): with `skip_max_difficulty`, defines the **stable** class: a card with FSRS stability at least this many days, difficulty at most `skip_max_difficulty`, and not a leech. The class is off by default; the panel counts the stable cards it skips.
 - `skip_max_difficulty` (default 5; Phase 6): the difficulty ceiling of the stable class (see `skip_min_stability`).
+
+**Waiting drill cards** (Tools → Recall Drill: waiting cards; v0.2):
+
+- `stale_drill_days` (default 7): a drill card (note tagged `rd::drill` or a child of it) still suspended and new this many days after its note was added is **stale**. A card in a deck whose pacing target has passed, or that has no drill days left, is stale whatever its age.
+- `waiting_notice` (default true): once per Anki day, after the profile opens, a tooltip says how many stale drill cards are waiting. false: no tooltip (the Tools entry and the panel's line stay).
 
 **Pacing** (Recall Drill panel → Pacing; target date and drill weekdays are saved per deck in `pacing.json`):
 

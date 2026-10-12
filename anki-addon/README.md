@@ -4,7 +4,7 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 
 **The method, in five lines.**
 1. Cards are drilled in batches (default 5). Short answers are typed from a first-letter cue, then blind, several times in a row.
-2. Long answers are split into chunks. Each chunk is typed once, then the chunks are chained back together.
+2. Long answers are split into chunks. Each chunk is typed once, then the chunks are chained back together. A list answer is split a few items at a time, never mid-item, and (unless the card says the order matters) its items can be typed in any order.
 3. Misses are broken down to the span that failed, and that span is drilled.
 4. Each batch ends with a cycle pass; the whole session ends with a Final check, one cue-free pass over every card.
 5. Anki owns long-term memory: the drill has no scheduler of its own, and fewer trials is the priority.
@@ -56,6 +56,12 @@ Open the setup panel on a deck. It reads the collection but writes nothing until
 - **Adjust reps by difficulty** changes the drill for *reviewed* cards only: high FSRS difficulty (≥ 7) gets one more blind typing and chunks earlier; low (≤ 3) gets one fewer. **New cards have no FSRS data and are unchanged.**
 - **Holdout %** (0–50, **default 0 = off**): that share of new cards skips the drill and goes to Anki as plain new cards (tagged `rd::holdout`), as a fair comparison for the drilled ones.
 
+**Lists** (v0.2). An answer with three or more items separated by commas or semicolons is a list. A list of 4+ items is chunked by items (the chunk-difficulty percentage applied to items, at least 2 items per chunk), never splitting an item, and its items can be typed **in any order**, in every chunk, combination and review, and the feedback marks the items you missed. The card shows "any order". The order matters, and is kept, when the note is tagged `ListKind::Sequence`, or when it has no `ListKind` tag and the front says so ("in order", "steps", "sequence", "proximal to distal", "superior to inferior", "then", an arrow, …). A `ListKind::AttributeSet` or `ListKind::Taxonomy` tag means any order whatever the wording. One-word items may be typed with spaces only ("nervous muscle epithelial connective").
+
+**Fewer clicks** (v0.2). A correct answer in the review cycle and the Final check moves on by itself after a short pause, as encoding does; wrong answers and reveals still wait for Enter (`auto_advance_correct`). A card's Extra shows, and waits for Enter, the first time you see the card's full answer in a session and after a miss or a reveal; otherwise it stays hidden, and **Show Extra** (Ctrl+I) brings it up (`extra_display`; "always" restores the old behavior).
+
+**Waiting drill cards** (v0.2). The `anki-cards` skill suspends the cards it tags `rd::drill` until they are drilled. When a deck is never drilled, they wait forever. Tools → **Recall Drill: waiting cards** lists, per deck, the drill cards still suspended and new, how many are **stale** (added more than `stale_drill_days`, 7, days ago, or in a deck whose pacing target has passed or has no drill days left), the oldest, and the pacing target. Each row has **Drill…** (the setup panel on that deck) and **Send to Anki undrilled…**: it unsuspends the cards and their notes' suspended new siblings as plain new cards, in their current place in the new queue (nothing moved or buried), tags the notes `rd::undrilled`, and is one undo step (Edit → Undo "Recall Drill: send undrilled"). Those cards then wait for Anki like handed-off ones. Once a day after the profile opens, a tooltip says when stale cards are waiting (`waiting_notice`), and the setup panel shows an amber line on a deck that has them.
+
 **The review cycle.** After a batch is encoded, each card comes back in a shuffled review cycle. A card you have never missed or revealed in this session is **mastered by one correct answer**; a card you missed or revealed needs **two correct answers in a row**, with other cards in between (a near miss counts as correct and doesn't make a card need two). This holds whatever "Blind typings" is set to. The Final check at the end is unchanged: one correct answer per card.
 
 **Drill time** reads "Next N cards: …". It comes from **your own drill sessions**: until you have **3 timed sessions** it says "no estimate yet".
@@ -73,6 +79,7 @@ Open the setup panel on a deck. It reads the collection but writes nothing until
 | **Ctrl+Enter** | count a wrong answer as correct |
 | **Ctrl+E** | edit the card in Anki's Browser |
 | **Ctrl+R** | replay the audio |
+| **Ctrl+I** | show the card's Extra on a feedback screen that hides it |
 
 Edits happen in Anki's own editor: close the Browser (or press **Done editing**) and the card reloads in the session.
 
@@ -95,8 +102,9 @@ Cards that already have a schedule keep it either way.
 | `rd::final-miss` | A card missed in the Final check. Replaced the same way. |
 | `rd::holdout` | The note was a held-out control (only exists when Holdout % is on). |
 | `rd::long` | The note's answer was drilled in chunks. **Off by default** (`tag_long`). |
+| `rd::undrilled` | The note's drill cards were sent to Anki without the drill (Tools → Recall Drill: waiting cards). |
 
-Tools → **Recall Drill: my rd::hard cards** opens the panel on `tag:rd::hard`; **Recall Drill: filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*`.
+Tools → **Recall Drill: my rd::hard cards** opens the panel on `tag:rd::hard`; **Recall Drill: filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*` (it would also match `rd::drilled` and `rd::undrilled`).
 
 ## Time figures
 
@@ -107,11 +115,12 @@ Every minute figure comes from **your own data**, and says where:
 
 ## Data and sync
 
-**In the collection** (syncs with Anki): the tags, and what the handoff changes (suspension, queue position, due dates and review log rows for A, burying, flag clearing). That is all that reaches your phone.
+**In the collection** (syncs with Anki): the tags, what the handoff changes (suspension, queue position, due dates and review log rows for A, burying, flag clearing), and what sending waiting cards undrilled changes (suspension, the `rd::undrilled` tag). That is all that reaches your phone.
 
 **In `user_files/profiles/<profile>/`** inside the add-on folder (local, **does not sync, not on your phone**):
 - `sessions/`: in-progress sessions;
-- `history/`: the append-only session, handoff and tuning logs (the tuning report reads them);
+- `history/`: the append-only session, handoff, release and tuning logs (the tuning report reads them);
+- `waiting_notice.json`: the last day the waiting-cards tooltip showed;
 - `deck_settings.json`: each deck's drill settings;
 - `hints.json`: manual hints;
 - `mappings.json`: your answer and Extra field choices;
@@ -125,7 +134,7 @@ A file the add-on can't read is renamed `<name>.corrupt-<timestamp>` and the def
 
 ## Tuning report
 
-Tools → **Recall Drill: tuning report**. Its metric is the **next-day Again rate**: for each drilled card, whether the first rating Anki recorded after the handoff (on a later Anki day, within 2 days) was Again. Holdout and baseline cards get the same measure from their first rating to their next-day rating. Trials per card are always shown beside it, because fewer trials is still the priority. Groups under 30 cards show "n too small" and produce no suggestion. It can suggest a new chunk threshold or a number of blind typings; nothing changes without your confirmation.
+Tools → **Recall Drill: tuning report**. Its metric is the **next-day Again rate**: for each drilled card, whether the first rating Anki recorded after the handoff (on a later Anki day, within 2 days) was Again. Holdout and baseline cards get the same measure from their first rating to their next-day rating, and so do cards sent to Anki undrilled (a "Released undrilled" row: the cards that waited longest, not a random control). A "cycle rule" breakdown splits sessions before and after v0.2's one-answer rule for clean cards. Trials per card are always shown beside it, because fewer trials is still the priority. Groups under 30 cards show "n too small" and produce no suggestion. It can suggest a new chunk threshold or a number of blind typings; nothing changes without your confirmation.
 
 The warning it shows, verbatim:
 

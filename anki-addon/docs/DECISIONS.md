@@ -39,7 +39,7 @@ Nothing may assume Med Term's shape (Basic and Reverse, short answers).
 
 - **Type checker:** pyright 1.1.414.
   - `standard` everywhere.
-  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py`, `history_store.py`, `addon_config.py`, `card_html.py`, `drill_view.py`, `launch.py`, and (Phase 5) `holdout.py`, `measure.py` and `tuning.py`.
+  - `strict` on `recalldrill/__init__.py`, `recalldrill/engine/`, `recalldrill/anki_io/` and the pure modules `recalldrill/storage.py`, `prompts.py`, `deck_settings.py`, `sources.py`, `controller.py`, `sessions.py`, `history_store.py`, `addon_config.py`, `card_html.py`, `drill_view.py`, `launch.py`, (Phase 5) `holdout.py`, `measure.py` and `tuning.py`, and (v0.2) `list_kind.py` and `waiting.py`.
   - `ui/` stays at standard because PyQt6's stubs leave signals partially `Unknown`, which strict rejects on every `qconnect`.
 - **Lint:** ruff 0.16.10, rules `E F W I UP B`, line length 100.
 - **Tests:** pytest 9.1.1 with `--import-mode=importlib`.
@@ -356,6 +356,8 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 | Profile close | `profile_will_close`: each open drill window flushes its dwell, saves and stops, and closes; setup panels close | works |
 | Tools → **Recall Drill: my rd::hard cards** / **Recall Drill: filtered deck for rd::hard** | `mw.form.menuTools` actions (Phase 4) | works (headless test; Don's manual check) |
 | Tools → **Recall Drill: tuning report** | `mw.form.menuTools` action (Phase 5) | works (headless test; Don's manual check) |
+| Tools → **Recall Drill: waiting cards** | `mw.form.menuTools` action (v0.2) | headless test; not yet checked in Anki |
+| Profile open → waiting-cards notice | `profile_did_open()` (v0.2), read in a `QueryOp` | headless test of the notice; the hook itself is untested |
 
 "Works" is from the installed source and headless tests; Don's manual check confirms it in Anki. The Phase 2 dev preview (`Recall Drill (dev): preview current deck`) is gone; its content is the setup panel's. The About box stays.
 
@@ -594,6 +596,159 @@ Design: `docs/PARTIAL_HANDOFF_DESIGN.md`. Code: `sessions.finish_early` (pure), 
 
 **Where the button shows** (`sessions.finish_early_button`, pure): "Finish with K cards" on the batch interstitial and on the stopped screen ("Finish with K mastered cards" in the setup panel's banner, beside Resume and Start fresh). Never while a card is on screen, in the Final check, in a drill-again session, when nothing is mastered or nothing would go back, or while another window drives the save (the panel refuses through `_already_open()`, like Resume). On the interstitial it flushes the dwell and saves and stops first; both windows then check the cards against Anki (`check_resume`, in a `QueryOp`), confirm (`finish_early_confirmation`: Finish / Cancel) and cut. A missing card alone makes no cut (nothing returned), so the button isn't offered for it.
 
+## v0.2: list drilling, fewer clicks, waiting cards (2026-10-12)
+
+Findings from a review of the add-on against Don's live Anki: 409 drill-tagged
+cards suspended and never seen (Lab 2 214, Lecture 3 95, Psych Ch6 100), list
+cards costing about 6 min each in the drill (6+ item lists came out `rd::hard`
+4 of 6 times; 12 of 24 drilled Lab 2 notes, almost all lists, had an Again in
+Anki vs 1 of 19 Psych notes), and every Lab 2 card's Extra re-showing and
+holding the screen on every full-back trial. The five changes below follow.
+Unchanged on purpose: no scheduler, typed free recall only, handoff B, the
+add-on never writes note fields, remediation by halving, the `chunkDifficulty`
+percentage model, clearing a save on completion, and grading's parenthetical
+alternates, typo tolerance and the known grading bugs. Nothing shortens,
+splits or edits a card: these change how a card is drilled, not the card.
+Simulate before and after: `docs/BASELINE.md`, the four 2026-10-12 sections.
+
+### List chunking (Don, 2026-10-12)
+
+Engine (TS and Python, goldens). `listItems(text)`: split on `,` and `;`
+outside `()` and `[]`, trim, drop a leading "and "/"or ", keep each item's
+wording; a list has 3 or more items (the anki-cards skill's `_item_spans` rule,
+so "radius and ulna" is one item). `chunkText` cuts a list answer at item
+boundaries when it has 4+ items whatever its word count, or 3 items and more
+words than the threshold (the card's `minWordsToChunkOverride`, else the
+session's): `max(2, round(items × chunkDifficulty / 100))` items per chunk, a
+lonely 1-item trailing chunk merged into the one before, items joined with ", ".
+Fewer than 2 chunks means none; `chunkDifficulty` ≥ 100 still means no
+chunking. Other answers keep the word rule, but a cut never falls inside
+parentheses (it moves to just after the word that closes them). Estimate,
+progress, combine windows and remediation read chunks through `buildItem`;
+`computeMinimumTrials` still equals a perfect run's attempts.
+
+As built, a 3-item list never chunks: 2 items per chunk leaves a lonely third
+that merges back. So a long 3-item list, or a prose sentence with two commas
+(it reads as a 3-item list), is drilled whole; a sentence with three commas
+("…evaporation, condensation, precipitation, and collection…") is cut at its
+commas. A list of 4-8 items of 8 words or fewer is now chunked, which costs a
+perfect learner more trials (presentations, blind chunk answers, windows) than
+one whole answer; the harness's learners don't model long lists being hard.
+
+### Any-order lists (Don, 2026-10-12)
+
+Engine. `DeckItem.anyOrder` / `DrillItem.anyOrder` (optional; absent or false
+grades exactly as before, so the existing goldens didn't move).
+`grade(typed, target, {anyOrder})` on a target of 2+ items (a whole list answer
+has 3+, a chunk or window of one 2+): the typed text is split the same way (on
+whitespace instead, dropping "and"/"or", when it has fewer items than the
+target and every target item is one word); items match one to one, exact pairs
+first, then near ones, each pair graded in order with the same options. Every
+target item matched and nothing left over: exact if every pair is exact, else
+near; otherwise wrong. The diff marks a matched item's words matched (a dropped
+"and" counts with its item), `missingWords` lists the unmatched items' words.
+Typed text that can't be split into 2+ items (multi-word items typed without
+separators) grades as before. An any-order card's combine windows join their
+chunks with ", " (`joinWindow`), and remediation's culprit search uses the
+any-order diff, so the culprits are the chunks holding the missed items.
+
+`listOrderFromWording(front)`: "ordered" when the front, cloze blank (`[...]`,
+`___`) removed and lower-cased, contains one of `ORDER_CUES` as whole words:
+in order, the order, order is, sequence, step, steps, chain, cycle, then,
+proximal to distal, distal to proximal, superior to inferior, inferior to
+superior, superficial to deep, deep to superficial, largest to smallest,
+smallest to largest, anterior to posterior, posterior to anterior, medial to
+lateral, lateral to medial, →. Else "any".
+
+Who sets it: the web app (`withListOrder` when building a session; SessionView
+shows "any order"), and the add-on's `build.py` through `list_kind.any_order_for`:
+a note tag `ListKind::Sequence` (any case) means ordered, `ListKind::AttributeSet`
+or `ListKind::Taxonomy` any order (a tag beats the wording; Sequence wins over
+the others), no `ListKind` tag: `listOrderFromWording` on the front's grading
+text; not a list: no `anyOrder`. The save, resume, the finish-early cut and
+drill-again carry it on the items; `rebuild_card` recomputes it after an edit
+in Anki and `apply_card_edit` applies it (the engine's edit keeps the old value).
+
+### Clean cards master the cycle with one answer (Don, 2026-10-12)
+
+Engine. In the cycle a card is mastered at `cycleStreak >= cycleRepsToMaster(item)`:
+1 when the card is **clean** (`misses == 0` and `reveals == 0` in this session;
+near misses don't count, and a miss overridden with "Count as correct" is never
+recorded, because the override re-applies the trial to the pre-wrong
+snapshot), else 2 as before. Whatever `encodeReps` is, and with any
+`encodeRepsOverride`. An edit that restarts a card resets its counters, so it
+is clean again (accepted). The Final check is unchanged. `computeMinimumTrials`
+counts 1 cycle trial per card (a perfect learner is always clean). Progress
+counts a ready card's cycle streak against 1 or 2 (0.7 + 0.3 × streak / needed),
+so a miss that makes a card unclean can lower it. The add-on's session line
+records `encode.cycleRule: "clean-one"`; the tuning report's "cycle rule"
+breakdown counts lines without it as "two".
+
+### Auto-advance and Extra display (Don, 2026-10-12)
+
+Controller and UI only (`git diff -- engine src/` empty for it). Config
+`auto_advance_correct` (default true): in the cycle and the Final check an exact
+or near answer, or "Count as correct", that the Extra doesn't hold starts a
+dwell (`CORRECT_DWELL_MS`: 600 ms exact, 1200 ms near; `DWELL_MS` has no keys
+for these) and then runs `applyNext` as Continue would. Wrong answers and
+reveals wait for Enter, and so does a card with answer audio while
+`play_audio_on_feedback` is on (the audio would be cut off). A self-advance
+isn't an action for active time.
+
+Config `extra_display`: "first_and_misses" (default) shows a card's Extra, and
+holds the screen until Enter, the first time its full answer is on screen in
+the session and on any trial answered wrong or revealed (an override keeps what
+the wrong answer showed); on other correct trials it's hidden and doesn't hold.
+**Show Extra** (Ctrl+I, or `rd:extra` from the page) shows it on any feedback
+screen and turns a running dwell into a hold. "always" is v0.1's behavior. The
+cards whose Extra was seen are saved (`addon.extraSeen`, item ids), resumed,
+remapped by the finish-early cut; a new session (drill-again too) starts empty,
+and an edit that changes a card's Extra clears its flag. The SessionView parity
+tests run with `auto_advance_correct` off and `extra_display` "always".
+
+### Waiting cards and release (Don, 2026-10-12)
+
+`waiting.py` (pure), `anki_io/waiting.py`, `anki_io/release.py`,
+`ui/waiting_dialog.py`.
+
+- **Waiting**: a new, suspended card whose note has the skill's tag family,
+  searched as `tag:rd::drill` with `SearchNode(tag=…)` (exact: it matches
+  `rd::drill` and `rd::drill::A`, never `rd::drilled` or `rd::undrilled`;
+  tested), less a card waiting for Anki after a handoff or release (only while
+  unsuspended, as in selection). **Added** = the note id's Anki day.
+- **Stale**: added more than `stale_drill_days` (default 7) days ago, or in a
+  deck whose pacing target has passed or that has no drill days left (the home
+  deck's pacing, else the nearest parent's with a target).
+- **Notice**: once per Anki day (`notice_due`), after `profile_did_open`, read in
+  a `QueryOp`, a tooltip "Recall Drill: N drill cards are still suspended and
+  waiting (oldest added <date>). Tools → Recall Drill: waiting cards." Config
+  `waiting_notice` (default true); the last day shown is
+  `user_files/profiles/<profile>/waiting_notice.json`.
+- **Tools → Recall Drill: waiting cards**: a table per home deck (waiting,
+  stale, oldest added, pacing target) with **Drill…** (the setup panel on that
+  deck) and **Send to Anki undrilled…**. The setup panel shows an amber line on
+  a deck scope with stale waiting cards.
+- **Release** (the add-on's **second collection write**, next to the handoff):
+  plan, then apply, like the handoff. It unsuspends the row's waiting cards and
+  their notes' suspended new siblings; they stay new and keep their new-queue
+  positions (no reposition, no bury); the notes get `rd::undrilled`. One undo
+  step, "Recall Drill: send undrilled", with the handoff's rollback on failure
+  (tested with a forced failure). The confirmation gives the counts, the
+  siblings and the days the deck's new/day spreads them over.
+- **History**: `{"type": "release", "timestamp", "deckId", "groups":
+  {"released", "released_siblings"}, "tags": {"added", "byTag"}}` in
+  `history/<did>.jsonl`. `handed_off_at` reads release groups, so selection and
+  pacing leave those cards out until Anki rates them. The tuning report never
+  counts them as drilled outcomes: they get a "Released undrilled" row, measured
+  from their own introduction like the holdout, with a note that it isn't a
+  random control.
+
+### Housekeeping (v0.2)
+
+Session saves keep each note type's CSS once (`addon.css`, by note type id);
+`SourceRef.css` resolves on load, and old saves with CSS in every source still
+load. `VERSION` 0.2.0.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
@@ -610,7 +765,7 @@ A TS change alone fails the drift guard. Regenerated goldens without the Python 
 A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addon/build.py` writes `anki-addon/dist/recall_drill-<human_version>.ankiaddon` (`dist/` is gitignored), a zip of the add-on folder's **contents**, no top-level folder.
 
 - **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
-- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.1.0), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
+- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.2.0), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
 - **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
 - **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
 - **The "(dev)" label** (Tools menu entry and About text) shows only when the add-on's folder is `recall_drill_dev` (`ui/about.py`, `display_name`, decided from the module's first name part); an installed package shows plain "Recall Drill".

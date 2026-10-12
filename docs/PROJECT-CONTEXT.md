@@ -1,4 +1,4 @@
-# Recall Drill: project context (as of 2026-10-02)
+# Recall Drill: project context (as of 2026-10-12)
 
 Upload this to the Claude project as current context. It replaces older summaries. `docs/V2-HANDOFF.md` is the design history: why things are the way they are (its last section is the Anki add-on).
 
@@ -34,12 +34,12 @@ Recall Drill is a **session-only typed-recall drill** for prose and terminology 
 |---|---|
 | `npm run dev` | Dev server on port 3000 (`.claude/launch.json` has "Recall-drill dev") |
 | `npm run lint` | `tsc --noEmit` |
-| `npm test` | 275 tests, about 3–4s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
+| `npm test` | 313 tests (33 files), about 3–7s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
 | `npm run build` | Production build |
-| `npm run simulate` | Trial-count scoreboard (`test/simulate*.ts`): 50 seeded runs × 3 decks × 3 learner models, mean ± SD. Deterministic. **Any engine change must report this before and after.** `docs/BASELINE.md` keeps the history. |
-| `anki-addon/.venv/bin/python -m pytest anki-addon/tests -q` | The add-on's tests (Windows: `anki-addon\.venv\Scripts\python`). Needs the venv (`anki-addon/requirements-dev.txt`, Python 3.13). Qt tests run on the offscreen platform and skip without `aqt`/a display. |
+| `npm run simulate` | Trial-count scoreboard (`test/simulate*.ts`): "Current engine" (50 seeded runs × 3 decks × 3 learner models, the web app's old defaults) and, since 2026-10-12, "Your settings" (encodeReps 1, batchSize 10, shuffled cycle, over the 3 decks plus `listDeck`), mean ± SD. Deterministic. **Any engine change must report both sections before and after.** `docs/BASELINE.md` keeps the history. |
+| `anki-addon/.venv/bin/python -m pytest anki-addon/tests -q` | The add-on's tests, 11056 as of v0.2 (Windows: `anki-addon\.venv\Scripts\python`). Needs the venv (`anki-addon/requirements-dev.txt`, Python 3.13). Qt tests run on the offscreen platform and skip without `aqt`/a display. |
 | `cd anki-addon && .venv/bin/ruff check . && .venv/bin/pyright` | Lint and type check for the add-on |
-| `anki-addon/.venv/bin/python anki-addon/tools/simulate.py` | The same "Current engine" scoreboard from the Python engine; must be **byte-identical** to `npm run simulate`'s first section. `--difficulty-overrides` adds a Python-only section (per-card reps and chunk threshold) |
+| `anki-addon/.venv/bin/python anki-addon/tools/simulate.py` | The same "Current engine" and "Your settings" sections from the Python engine; must be **byte-identical** to `npm run simulate`'s first two sections. `--difficulty-overrides` adds a Python-only section (per-card reps and chunk threshold) |
 | `npx tsx anki-addon/tools/export_golden.ts` | Regenerates the golden traces in `anki-addon/tests/golden/` from the TS engine; CI fails if they change (`git diff --exit-code anki-addon/tests/golden`). `--full <deck>:<learner>[:<run>]` writes one run's full state for diffing |
 | `anki-addon/.venv/bin/python anki-addon/build.py` | Packages `anki-addon/dist/recall_drill-<version>.ankiaddon` (clean git tree and passing `tests/engine` required; `--allow-dirty`, `--skip-tests` for tests) |
 
@@ -82,6 +82,7 @@ After the last batch comes a **Final check**: one shuffled, cue-free pass over e
 - **Short answers (≤ 8 words, or difficulty 100%)** use the `full` stage:
   - attempt 0 shows a first-letter cue (`T__ h____ …`)
   - then it needs `encodeReps` (default 3) consecutive blind correct answers
+- **List answers** (3+ items separated by `,` or `;`, 2026-10-12): a list of 4+ items (or 3 items over the word threshold) is chunked at item boundaries, the `chunkDifficulty` percentage applied to items (at least 2 per chunk; so a 3-item list is never chunked). An unordered list (`anyOrder`: no order cue such as "in order", "steps", "proximal to distal" in the front) grades its items in any order, in every chunk, window and review.
 - **Longer answers are chunked:**
   - Each chunk is shown once (an ungraded presentation), then needs one blind correct answer.
   - Then forward chaining: windows 1–2, 1–3, …, 1–n.
@@ -93,7 +94,7 @@ After the last batch comes a **Final check**: one shuffled, cue-free pass over e
   - After 2 further misses, the culprit is halved recursively.
 
 **Cycle:**
-- A card is mastered at 2 correct in a row.
+- A **clean** card (no miss and no reveal on it this session; near misses and overridden misses don't count) is mastered by 1 correct answer; any other card at 2 correct in a row (2026-10-12).
 - Shuffled mode: the first correct answer sends the card to the end of the pass; a miss or reveal brings it back 2–3 cards later.
 - An "in order" mode also exists.
 
@@ -146,6 +147,20 @@ Backups (`schemaVersion` 1) contain folders plus each deck's items, saved sessio
    - **Done screen:** honest accuracy line, "Where you struggled" (top 5 by misses + reveals + finalMisses), and "Drill these cards again" for the Final-check misses.
    - **Fix:** "Practice again" no longer drops the Extra field.
 
+## 6b. What changed on 2026-10-12 (v0.2, 9 commits)
+
+1. **Harness:** `simulate()` runs batched configs ("Next batch" at each interstitial); a "Your settings" section and the synthetic `test/fixtures/listDeck.ts`.
+2. **List chunking** at item boundaries (`listItems`), and the word rule never cuts inside parentheses.
+3. **Any-order lists** (`anyOrder`, `listOrderFromWording`): items in any order; the culprit search follows.
+4. **Add-on:** `anyOrder` per card from `ListKind::*` tags, else the wording.
+5. **Clean cards master the cycle with one correct answer.**
+6. **Add-on:** correct cycle and Final answers move on by themselves (`auto_advance_correct`); the Extra shows the first time and after misses (`extra_display`, Show Extra Ctrl+I).
+7. **Add-on:** waiting drill cards (`tag:rd::drill`, new, suspended), stale after `stale_drill_days`, a once-a-day notice, Tools → Recall Drill: waiting cards, and **Send to Anki undrilled** (the add-on's second collection write; `rd::undrilled`).
+8. **Add-on:** saves keep each note type's CSS once; version 0.2.0.
+9. Docs.
+
+Simulate deltas are in `docs/BASELINE.md` (four 2026-10-12 sections); decisions in `anki-addon/docs/DECISIONS.md` ("v0.2").
+
 ## 7. Decisions worth knowing
 
 - A "Count as correct" override counts as an attempt on the **card** (so the card's state matches a typed correct answer) but **not** in session `stats.attempts`. That matches the original C2 spec.
@@ -179,18 +194,18 @@ Backups (`schemaVersion` 1) contain folders plus each deck's items, saved sessio
 
 ## 10. Anki add-on (`anki-addon/`, built 2026-10)
 
-A desktop Anki add-on that drills the user's own Anki cards with the same engine, then hands them to Anki. Local `.ankiaddon`, not on AnkiWeb. Desktop only; the web app stays the phone tool. Details: `anki-addon/README.md` (user), `anki-addon/docs/DECISIONS.md` (decisions and checked Anki facts), `anki-addon/config.md` (the 27 config keys), `docs/V2-HANDOFF.md` ("Anki add-on (2026-10)"), `docs/SMOKE.md` §11 (manual checks).
+A desktop Anki add-on that drills the user's own Anki cards with the same engine, then hands them to Anki. Local `.ankiaddon`, not on AnkiWeb. Desktop only; the web app stays the phone tool. Details: `anki-addon/README.md` (user), `anki-addon/docs/DECISIONS.md` (decisions and checked Anki facts), `anki-addon/config.md` (the 31 config keys), `docs/V2-HANDOFF.md` ("Anki add-on (2026-10)"), `docs/SMOKE.md` §11 (manual checks).
 
-- **Folder:** `anki-addon/` (`__init__.py`, `manifest.json`, `config.json`, `build.py`, `recalldrill/`, `tests/`, `tools/`, `user_files/`). Target: Anki 26.08.1+ (`min_point_version` 260801), Python 3.13. Version in `recalldrill/__init__.py` (`VERSION`, 0.1.0).
+- **Folder:** `anki-addon/` (`__init__.py`, `manifest.json`, `config.json`, `build.py`, `recalldrill/`, `tests/`, `tools/`, `user_files/`). Target: Anki 26.08.1+ (`min_point_version` 260801), Python 3.13. Version in `recalldrill/__init__.py` (`VERSION`, 0.2.0).
 - **Layers** (`tests/test_layering.py`):
   - `engine/`: pure Python port of `src/utils/`, pinned to it by goldens and CI.
   - pure helpers (controller, sessions, storage, prompts, holdout, measure, tuning, difficulty, pacing): no `anki`, no Qt.
   - `anki_io/`: `anki` allowed, no Qt; the handoff and the release of waiting drill cards (2026-10-12) are the only collection writes.
   - `ui/`: Qt only here. Spin boxes, combo boxes and date fields come from `ui/widgets.py` and ignore the wheel until focused.
 - **Parity:** the Python engine equals the TS engine run for run (goldens, simulate scoreboard). Change engine behavior in one commit: TS change, regenerate goldens, Python port, both suites green. Python-only extensions (absent means identical): `minWordsToChunk`, `encodeRepsOverride`, `minWordsToChunkOverride`.
-- **Method of use:** pick cards by class/template/tag, drill, **Hand off** to Anki (one undo step; mode B by default: cards stay new, go to the front of the queue and are buried until tomorrow, so the FSRS optimizer keeps them; mode A would exclude them from training), pace a deck to a target date.
+- **Method of use:** pick cards by class/template/tag, drill, **Hand off** to Anki (one undo step; mode B by default: cards stay new, go to the front of the queue and are buried until tomorrow, so the FSRS optimizer keeps them; mode A would exclude them from training), pace a deck to a target date, and (v0.2) send drill cards that waited too long to Anki undrilled (Tools → Recall Drill: waiting cards).
 - **Data**, in the collection: the tags. Local in `anki-addon/user_files/profiles/<profile>/` (never syncs, not on the phone, one folder per Anki profile): `sessions/`, `history/*.jsonl`, `deck_settings.json`, `hints.json`, `mappings.json`, `pacing.json`, `holdout.json`, `estimates.json` (unused). Config lives in Anki's add-on config.
-- **Tags:** `rd::drilled` (handed off), `rd::hard` (misses + reveals + final misses ≥ 3), `rd::final-miss`, `rd::holdout` (only with Holdout % on; default 0 = off), `rd::long` (off by default). The `anki-cards` skill's `rd::drill::*` tags are a different family: search exact tags, never `tag:rd::*`.
+- **Tags:** `rd::drilled` (handed off), `rd::hard` (misses + reveals + final misses ≥ 3), `rd::final-miss`, `rd::holdout` (only with Holdout % on; default 0 = off), `rd::long` (off by default), `rd::undrilled` (sent to Anki without the drill, v0.2). The `anki-cards` skill's `rd::drill::*` tags are a different family: search exact tags, never `tag:rd::*`.
 - **Settled decisions:** handoff B; siblings go with their drilled cards; edits go through Anki's editor (the drill never writes fields); hints on for standard note types; holdout off by default; handed-off cards wait for Anki before being drilled again; time figures only from the user's own data ("no estimate yet" otherwise), no time budget; no AnkiWeb publishing.
 - **Open web-app issues found while porting** (not fixed; see `docs/V2-HANDOFF.md`): a minus sign after a space is dropped in grading; an inserted word in a long answer grades as near; "Count as correct" leaves Continue showing in SessionView (one-line fix); plus four minor ones.
 - **Overlaps:** the `medical-terminology-recall-drill` skill and `anki-cards` Recall Drill export aren't needed for this path; `medterm-daily-drill`'s daily unsuspend and pacing are replaced for decks drilled in the add-on.
