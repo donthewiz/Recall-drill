@@ -71,6 +71,7 @@ import {
   buildItems,
   chunkText,
   culpritHalf,
+  listItems,
   findAllCulpritChunks,
   MIN_WORDS_TO_CHUNK,
   normalizeItem,
@@ -682,6 +683,25 @@ function exportGrading(pairs: [string, string][]): void {
 // ---------------------------------------------------------------------------
 // items.json
 
+// listItems / chunkText edge cases: separators inside () and [], a leading
+// "and"/"or", empty items, two items, parentheses across a word-rule cut.
+const LIST_EDGE_TEXTS = [
+  'radius and ulna',
+  'alpha, beta',
+  'alpha, beta, and gamma',
+  'alpha; beta; or gamma; delta',
+  'a, , b, c,',
+  'And one, two, Or three',
+  'x (a, b), y [c; d], z',
+  'unclosed (a, b, c',
+  'stray ) a, b, c',
+  'one two three, four five six, seven eight nine',
+  'one two three four five six seven (eight nine ten eleven) twelve thirteen fourteen fifteen',
+  'w1 w2 (w3 w4 w5 w6 w7 w8 w9 w10) w11 w12',
+  'a (b (c d) e f g h) i j k l m n o',
+  '1 frontal, 2 parietal, 2 temporal, 1 occipital, 1 sphenoid, 1 ethmoid, 2 extra, 3 more, 4 again',
+];
+
 function words36(n: number): string {
   return Array.from({ length: n }, (_, i) => i.toString(36)).join(' ');
 }
@@ -702,6 +722,13 @@ function exportItems(gradingTargets: string[]): void {
   const chunkTextDefaults = [...gridTexts, FOUR_CHUNK_BACK, TWO_CHUNK_BACK, ...proseDeck.map(c => c.back)].map(
     text => ({ text, out: chunkText(text), out50: chunkText(text, 50) })
   );
+  // List answers and parentheses (2026-10-12): listItems, and chunkText over
+  // every percent and two thresholds.
+  const listCases = [...listDeck.map(c => c.back), ...LIST_EDGE_TEXTS].map(text => ({
+    text,
+    items: listItems(text),
+    chunks: CHUNK_PERCENTS.flatMap(pct => [3, 8].map(min => ({ pct, min, out: chunkText(text, pct, min) }))),
+  }));
 
   // Grading-corpus targets: the cue for each, and chunking (irregular
   // whitespace between words) for the first 200 with 5+ words.
@@ -740,6 +767,7 @@ function exportItems(gradingTargets: string[]): void {
     'Normal arterial pH is 7.35-7.45; below 7.35 is acidosis, and above 7.45 is alkalosis in adults.',
     'The suffix -itis means inflammation, as in arthritis, gastritis, and cardi/o-related carditis today.',
     'Base excess ranges from -2 to +2 mEq/L, and a value below -2 suggests a metabolic acidosis.',
+    ...listDeck.map(c => c.back),
   ];
   const typedVariants: ((w: string[]) => string)[] = [
     w => w.join(' '),
@@ -1025,6 +1053,7 @@ function exportItems(gradingTargets: string[]): void {
     chunkTextDefaults,
     targets,
     chunkTextIrregular,
+    lists: listCases,
     combine,
     chunkings,
     windows,
@@ -2105,7 +2134,9 @@ const SCENARIOS: Scenario[] = [
       deck: [
         { front: 'Before surgery', back: 'pre-op' },
         { front: 'Ions', back: 'Na+ and K+' },
-        { front: 'pH', back: 'Normal arterial pH is 7.35-7.45; below 7.35 is acidosis, (above) is alkalosis.' },
+        // A colon, not a comma, before "(above)": with two separators this
+        // back would be a 3-item list (items.ts listItems), which isn't chunked.
+        { front: 'pH', back: 'Normal arterial pH is 7.35-7.45; below 7.35 is acidosis: (above) is alkalosis.' },
       ],
       config: cfg(1, 35, { strictPunctuation: true }),
       shuffleWithinBatch: false,

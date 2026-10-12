@@ -16,6 +16,7 @@ from recalldrill.engine.items import (
     chunk_text,
     culprit_half,
     find_all_culprit_chunks,
+    list_items,
     normalize_item,
     parse_deck,
     partition_into_batches,
@@ -63,6 +64,21 @@ def test_chunk_text_defaults(case: Any) -> None:
 @_cases("chunkTextIrregular")
 def test_chunk_text_irregular_whitespace(case: Any) -> None:
     check(chunk_text(case["text"], 20, 4), case["out"], "chunkText(text, 20, 4)", text=case["text"])
+
+
+@_cases("lists")
+def test_list_items_and_list_chunking(case: Any) -> None:
+    text = case["text"]
+    check(list_items(text), case["items"], "listItems(text)", text=text)
+    for c in case["chunks"]:
+        check(
+            chunk_text(text, c["pct"], c["min"]),
+            c["out"],
+            "chunkText",
+            text=text,
+            chunk_percent=c["pct"],
+            min_words_to_chunk=c["min"],
+        )
 
 
 @_cases("targets")

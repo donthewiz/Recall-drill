@@ -8,7 +8,9 @@ checked against recorded TS outputs in ``tests/golden/items.json``.
 TS name                       Python name
 ============================  ================================
 ``parseDeck``                 ``parse_deck``
+``listItems``                 ``list_items``
 ``MIN_WORDS_TO_CHUNK``        ``MIN_WORDS_TO_CHUNK``
+``joinRuns``                  ``_join_runs``
 ``chunkText``                 ``chunk_text``
 ``renderFirstLetterCue``      ``render_first_letter_cue``
 ``buildCombineSequence``      ``build_combine_sequence``
@@ -45,7 +47,7 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from . import rand
 from .grading import compute_word_diff, exact_match
-from .jscompat import js_round, js_split_ws, js_trim, truthy
+from .jscompat import JS_WS, js_round, js_split_ws, js_trim, truthy
 from .types import (
     CombineSequenceItem,
     DeckItem,
@@ -97,20 +99,75 @@ def parse_deck(text: str) -> list[DeckItem]:
     return out
 
 
+_LEADING_CONJUNCTION_RE = re.compile("^(?:[aA][nN][dD]|[oO][rR])" + JS_WS + "+")
+
+
+def list_items(text: str) -> list[str] | None:
+    """The items of a comma- or semicolon-separated list, or None (2026-10-12).
+
+    Splits on ``,`` and ``;`` outside ``()`` and ``[]``, trims each item, drops a
+    leading "and " or "or " and empty items, and keeps each item's own wording.
+    A list has 3 or more items: "radius and ulna" is one item."""
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in text:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]" and depth > 0:
+            depth -= 1
+        if ch in ",;" and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    parts.append("".join(current))
+    items = [js_trim(_LEADING_CONJUNCTION_RE.sub("", js_trim(p), count=1)) for p in parts]
+    items = [i for i in items if len(i) > 0]
+    return items if len(items) >= 3 else None
+
+
 # Answers at or under this many words skip the chunk/combine ladder and use
 # stage 'full' directly.
 MIN_WORDS_TO_CHUNK = 8
 
 
+def _join_runs(runs: list[list[str]], joiner: str) -> list[str] | None:
+    """Joins runs of units into chunks; a lonely 1-unit trailing run merges into
+    the one before. Fewer than 2 chunks: None."""
+    if len(runs) > 1 and len(runs[-1]) <= 1:
+        last = runs.pop()
+        runs[-1] = [*runs[-1], *last]
+    return [joiner.join(r) for r in runs] if len(runs) > 1 else None
+
+
 def chunk_text(
     text: str, chunk_percent: float = 35, min_words_to_chunk: int = MIN_WORDS_TO_CHUNK
 ) -> list[str] | None:
-    """Splits an answer into chunks of about ``chunk_percent`` % of its words, or None."""
+    """Splits an answer into chunks, or None.
+
+    A list answer (:func:`list_items`) with 4+ items, or 3 items and more than
+    ``min_words_to_chunk`` words, is cut at item boundaries, ``max(2,
+    js_round(items x pct))`` items per chunk, joined with ", ". Any other answer
+    over the threshold is cut every ``js_round(words x pct)`` words, a cut inside
+    parentheses moving to just after the word that closes them."""
     words = [w for w in js_split_ws(text) if len(w) > 0]
+    pct = max(15, min(100, chunk_percent))
+
+    items = list_items(text)
+    if items is not None and (len(items) >= 4 or len(words) > min_words_to_chunk):
+        # 100% means full card at once (no chunking)
+        if pct >= 100:
+            return None
+        items_per_chunk = max(2, js_round(len(items) * (pct / 100)))
+        if items_per_chunk >= len(items):
+            return None
+        item_runs = [items[i : i + items_per_chunk] for i in range(0, len(items), items_per_chunk)]
+        return _join_runs(item_runs, ", ")
+
     if len(words) <= min_words_to_chunk:
         return None
 
-    pct = max(15, min(100, chunk_percent))
     # 100% means full card at once (no chunking)
     if pct >= 100:
         return None
@@ -120,16 +177,25 @@ def chunk_text(
     if target_chunk_size >= len(words):
         return None
 
-    chunks = [
-        " ".join(words[i : i + target_chunk_size]) for i in range(0, len(words), target_chunk_size)
-    ]
-
-    # Avoid leaving a lonely 1-word trailing chunk
-    if len(chunks) > 1 and len(js_split_ws(chunks[-1])) <= 1:
-        last = chunks.pop()
-        chunks[-1] = chunks[-1] + " " + last
-
-    return chunks if len(chunks) > 1 else None
+    # Never cut inside parentheses: the cut moves to just after the closing word.
+    depth_after: list[int] = []
+    depth = 0
+    for w in words:
+        for ch in w:
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+        depth_after.append(depth)
+    runs: list[list[str]] = []
+    start = 0
+    while start < len(words):
+        end = min(start + target_chunk_size, len(words))
+        while end < len(words) and depth_after[end - 1] > 0:
+            end += 1
+        runs.append(words[start:end])
+        start = end
+    return _join_runs(runs, " ")
 
 
 _ASCII_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")

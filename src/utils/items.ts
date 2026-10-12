@@ -51,21 +51,81 @@ export function parseDeck(text: string): DeckItem[] {
   return out;
 }
 
+// List answers (2026-10-12): the items of a comma- or semicolon-separated
+// list, or null when the text isn't a list. Splits on , and ; outside () and
+// [] (so "true (vertebrosternal, sternal)" stays one item), trims each item,
+// drops a leading "and " or "or " ("a, b, and c"), and keeps every item's own
+// wording, parentheticals included. Empty items are dropped. A list has 3 or
+// more items: "radius and ulna" (no separator) is one item, "a, b" is not a
+// list. Same rule as the anki-cards skill's _item_spans.
+export function listItems(text: string): string[] | null {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of text) {
+    if (ch === '(' || ch === '[') depth++;
+    else if ((ch === ')' || ch === ']') && depth > 0) depth--;
+    if ((ch === ',' || ch === ';') && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  const items = parts.map(p => p.trim().replace(/^(?:and|or)\s+/i, '').trim()).filter(p => p.length > 0);
+  return items.length >= 3 ? items : null;
+}
+
 // Answers at or under this many words skip the chunk/combine ladder
 // entirely and use stage 'full' directly -- not worth the ladder's own
 // overhead (a chunk now costs a presentation + a blind attempt each, per
 // C8, plus a combine window) when a single full-answer recall handles it.
 export const MIN_WORDS_TO_CHUNK = 8;
 
+// Joins runs of units (words or list items) into chunks. Avoids leaving a
+// lonely 1-unit trailing chunk: it merges into the one before. Fewer than 2
+// chunks: null.
+function joinRuns(runs: string[][], joiner: string): string[] | null {
+  if (runs.length > 1 && runs[runs.length - 1].length <= 1) {
+    const last = runs.pop()!;
+    runs[runs.length - 1] = [...runs[runs.length - 1], ...last];
+  }
+  return runs.length > 1 ? runs.map(r => r.join(joiner)) : null;
+}
+
+// Chunking, two rules (2026-10-12):
+// - A list answer (listItems) is cut at item boundaries: when it has 4 or
+//   more items whatever its word count, or 3 items and more than
+//   minWordsToChunk words. Items per chunk = max(2, round(items x pct)), a
+//   lonely 1-item trailing chunk merges into the one before, and a chunk joins
+//   its items with ", " as typed. A 3-item list at or under the threshold is
+//   not chunked (nor is it by the word rule, which needs more words).
+// - Any other answer over minWordsToChunk words is cut by word count, as
+//   before, except that a cut never falls inside parentheses: it moves to
+//   just after the word that closes them.
+// chunkPercent >= 100 means no chunking at all, for both.
 export function chunkText(
   text: string,
   chunkPercent: number = 35,
   minWordsToChunk: number = MIN_WORDS_TO_CHUNK
 ): string[] | null {
   const words = text.split(/\s+/).filter(w => w.length > 0);
+  const pct = Math.max(15, Math.min(100, chunkPercent));
+
+  const items = listItems(text);
+  if (items && (items.length >= 4 || words.length > minWordsToChunk)) {
+    // 100% means full card at once (no chunking)
+    if (pct >= 100) return null;
+    const itemsPerChunk = Math.max(2, Math.round(items.length * (pct / 100)));
+    if (itemsPerChunk >= items.length) return null;
+    const runs: string[][] = [];
+    for (let i = 0; i < items.length; i += itemsPerChunk) runs.push(items.slice(i, i + itemsPerChunk));
+    return joinRuns(runs, ', ');
+  }
+
   if (words.length <= minWordsToChunk) return null;
 
-  const pct = Math.max(15, Math.min(100, chunkPercent));
   // 100% means full card at once (no chunking)
   if (pct >= 100) return null;
 
@@ -75,18 +135,27 @@ export function chunkText(
 
   if (targetChunkSize >= words.length) return null;
 
-  const chunks: string[] = [];
-  for (let i = 0; i < words.length; i += targetChunkSize) {
-    chunks.push(words.slice(i, i + targetChunkSize).join(' '));
+  // Cut every targetChunkSize words, but never inside parentheses: a cut
+  // that would leave a "(" open moves forward to just after the word that
+  // closes it (an unclosed "(" runs to the end).
+  const depthAfter: number[] = [];
+  let depth = 0;
+  for (const w of words) {
+    for (const ch of w) {
+      if (ch === '(') depth++;
+      else if (ch === ')' && depth > 0) depth--;
+    }
+    depthAfter.push(depth);
   }
-
-  // Avoid leaving a lonely 1-word trailing chunk
-  if (chunks.length > 1 && chunks[chunks.length - 1].split(/\s+/).length <= 1) {
-    const last = chunks.pop()!;
-    chunks[chunks.length - 1] = chunks[chunks.length - 1] + ' ' + last;
+  const runs: string[][] = [];
+  let start = 0;
+  while (start < words.length) {
+    let end = Math.min(start + targetChunkSize, words.length);
+    while (end < words.length && depthAfter[end - 1] > 0) end++;
+    runs.push(words.slice(start, end));
+    start = end;
   }
-
-  return chunks.length > 1 ? chunks : null;
+  return joinRuns(runs, ' ');
 }
 
 // C5: attempt-0 cue for a stage-unit. Reveals the first alphanumeric
