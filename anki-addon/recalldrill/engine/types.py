@@ -39,6 +39,9 @@ class DrillItem(TypedDict):
     front: str
     back: str
     extra: NotRequired[str]
+    anyOrder: NotRequired[bool]
+    """2026-10-12: an unordered list answer, graded in any order. Absent or
+    False: graded exactly as before."""
     status: ItemStatus
     encodeStreak: int
     cycleStreak: int
@@ -102,6 +105,7 @@ class DeckItem(TypedDict):
     front: str
     back: str
     extra: NotRequired[str]
+    anyOrder: NotRequired[bool]
 
 
 class SavedSessionState(TypedDict):

@@ -16,7 +16,9 @@ from recalldrill.engine.items import (
     chunk_text,
     culprit_half,
     find_all_culprit_chunks,
+    join_window,
     list_items,
+    list_order_from_wording,
     normalize_item,
     parse_deck,
     partition_into_batches,
@@ -28,6 +30,7 @@ from recalldrill.engine.items import (
     shuffle,
     slugify,
     split_in_half,
+    with_list_order,
 )
 
 GOLDEN = load_golden("items.json")
@@ -78,6 +81,42 @@ def test_list_items_and_list_chunking(case: Any) -> None:
             text=text,
             chunk_percent=c["pct"],
             min_words_to_chunk=c["min"],
+        )
+
+
+@_cases("listOrder")
+def test_list_order_from_wording(case: Any) -> None:
+    check(list_order_from_wording(case["front"]), case["out"], "listOrderFromWording", **case)
+
+
+def test_order_cues() -> None:
+    check(list(items.ORDER_CUES), GOLDEN["orderCues"], "ORDER_CUES")
+
+
+def test_any_order_build_and_normalize() -> None:
+    for c in GOLDEN["anyOrderItems"]["built"]:
+        item = build_item(c["card"], 3, 35, "cumulative", 8)
+        check(item, c["item"], "buildItem", card=c["card"])
+        check(normalize_item(copy.deepcopy(item)), c["normalized"], "normalizeItem", card=c["card"])
+    for c in GOLDEN["anyOrderItems"]["withOrder"]:
+        check(with_list_order(c["card"]), c["out"], "withListOrder", card=c["card"])
+
+
+ANY_ORDER_CULPRITS: list[Any] = GOLDEN["anyOrderItems"]["culprits"]
+
+
+@pytest.mark.parametrize("case", ANY_ORDER_CULPRITS, ids=case_ids(ANY_ORDER_CULPRITS))
+def test_any_order_culprits(case: Any) -> None:
+    chunks, start, end = case["chunks"], case["startIdx"], case["endIdx"]
+    check(join_window(chunks, start, end + 1, True), case["window"], "joinWindow(anyOrder)")
+    check(join_window(chunks, start, end + 1), case["spaceWindow"], "joinWindow")
+    for strict, out in zip((True, False), case["out"], strict=True):
+        check(
+            find_all_culprit_chunks(case["typed"], chunks, start, end, strict, True, True),
+            out,
+            "findAllCulpritChunks(anyOrder)",
+            typed=case["typed"],
+            strict=strict,
         )
 
 

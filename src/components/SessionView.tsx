@@ -709,8 +709,16 @@ export const SessionView: React.FC<SessionViewProps> = ({
       >
         {/* Stage / Chunk indicator pill */}
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-bg)] px-2.5 py-0.5 rounded-full border border-[var(--accent)]/15">
-            {trial?.label ?? ''}
+          <span className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-bg)] px-2.5 py-0.5 rounded-full border border-[var(--accent)]/15">
+              {trial?.label ?? ''}
+            </span>
+            {/* 2026-10-12: an unordered list answer grades its items in any order. */}
+            {currentItem?.anyOrder && (
+              <span id="any-order-note" className="text-[11px] font-medium text-[var(--text-muted)]">
+                any order
+              </span>
+            )}
           </span>
           {isPresentation && (
             <span className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">

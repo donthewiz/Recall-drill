@@ -16,7 +16,11 @@ TS name                   Python name
 ``computeWordDiff``       ``compute_word_diff``
 ``STOPWORDS``             ``STOPWORDS``
 ``lightStem``             ``_light_stem``
+``splitItemsWithParts``   ``_split_items_with_parts``
+``splitListItems``        ``split_list_items``
+``wordParts``             ``_word_parts``
 ``grade``                 ``grade``
+``anyOrderGrade``         ``_any_order_grade``
 ========================  ==========================
 
 TS-private functions keep a leading underscore. All JS semantics (whitespace,
@@ -196,6 +200,68 @@ def _light_stem(word: str) -> str:
     return word
 
 
+_LEADING_CONJUNCTION_RE = re.compile("^(?:[aA][nN][dD]|[oO][rR])" + JS_WS + "+")
+_CONJUNCTION_WORD_RE = re.compile("^(?:[aA][nN][dD]|[oO][rR])\\Z")
+
+
+class _SplitItems(NamedTuple):
+    items: list[str]
+    part: list[int]
+    """Raw part index of each item."""
+
+
+def _split_items_with_parts(text: str) -> _SplitItems:
+    """List items (2026-10-12): split on ``,`` and ``;`` outside ``()`` and ``[]``,
+    each part trimmed and stripped of a leading "and "/"or ", empty parts dropped."""
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in text:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]" and depth > 0:
+            depth -= 1
+        if ch in ",;" and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    parts.append("".join(current))
+    items: list[str] = []
+    part: list[int] = []
+    for i, p in enumerate(parts):
+        item = js_trim(_LEADING_CONJUNCTION_RE.sub("", js_trim(p), count=1))
+        if len(item) > 0:
+            items.append(item)
+            part.append(i)
+    return _SplitItems(items, part)
+
+
+def split_list_items(text: str) -> list[str]:
+    """Every list item of ``text`` (any number; ``items.list_items`` needs 3)."""
+    return _split_items_with_parts(text).items
+
+
+def _word_parts(text: str) -> list[int]:
+    """For each word of ``js_trim(text)``, the raw part its first character is in."""
+    out: list[int] = []
+    depth = 0
+    part_idx = 0
+    in_word = False
+    for ch in js_trim(text):
+        ws = is_js_ws(ch)
+        if not ws and not in_word:
+            out.append(part_idx)
+        in_word = not ws
+        if ch in "([":
+            depth += 1
+        elif ch in ")]" and depth > 0:
+            depth -= 1
+        if ch in ",;" and depth == 0:
+            part_idx += 1
+    return out
+
+
 def grade(
     typed: str,
     target: str,
@@ -203,11 +269,14 @@ def grade(
     lenient: bool | None = None,
     stem_tolerance: bool | None = None,
     strict_punctuation: bool | None = None,
+    any_order: bool | None = None,
 ) -> GradeResult:
     """Grades ``typed`` against ``target``: exact, near or wrong.
 
     The options mirror TS ``opts?.x ?? default``: ``None`` means the default
-    (lenient on, stem tolerance on, strict punctuation off).
+    (lenient on, stem tolerance on, strict punctuation off, ordered).
+    ``any_order`` (2026-10-12): the target is an unordered list
+    (:func:`_any_order_grade`).
     """
     lenient = True if lenient is None else lenient
     stem_tolerance = True if stem_tolerance is None else stem_tolerance
@@ -223,6 +292,11 @@ def grade(
             "extraWords": [],
             "similarity": 1,
         }
+
+    if any_order:
+        unordered = _any_order_grade(typed, target, lenient, stem_tolerance, strict)
+        if unordered is not None:
+            return unordered
 
     typed_trimmed = js_trim(typed)
     typed_words = js_split_ws(typed_trimmed) if typed_trimmed else []
@@ -272,3 +346,92 @@ def grade(
             return result("near")
 
     return result("wrong")
+
+
+def _any_order_grade(
+    typed: str, target: str, lenient: bool, stem_tolerance: bool, strict: bool
+) -> GradeResult | None:
+    """Any-order grading of a list target; None means "grade as ordered".
+
+    None when the target has fewer than 2 items, or the typed text can't be
+    split into 2+ items (multi-word items typed without separators). When the
+    typed text has fewer items than the target and every target item is one
+    word, it is split on whitespace instead ("and"/"or" dropped). Items match
+    one to one, exact pairs first, then near (grade() in order, same options).
+    All target items matched and none typed left over: exact if every pair is
+    exact, else near; otherwise wrong. The diff marks a matched item's words
+    matched (a word outside every item too); missingWords are the unmatched
+    items' words."""
+    tgt = _split_items_with_parts(target)
+    if len(tgt.items) < 2:
+        return None
+    typed_items = split_list_items(typed)
+    one_word_items = all(len(js_split_ws(i)) == 1 for i in tgt.items)
+    if len(typed_items) < len(tgt.items) and one_word_items:
+        typed_items = [
+            w
+            for w in js_split_ws(js_trim(typed))
+            if len(w) > 0 and not _CONJUNCTION_WORD_RE.match(w)
+        ]
+    elif len(typed_items) < 2:
+        return None
+
+    n = len(tgt.items)
+    match_of = [-1] * n
+    exact_pair = [False] * n
+    used = [False] * len(typed_items)
+    verdicts = [
+        [
+            grade(
+                ty,
+                t,
+                lenient=lenient,
+                stem_tolerance=stem_tolerance,
+                strict_punctuation=strict,
+            )["verdict"]
+            for ty in typed_items
+        ]
+        for t in tgt.items
+    ]
+    for wanted in ("exact", "near"):
+        for i in range(n):
+            if match_of[i] != -1:
+                continue
+            j = next(
+                (k for k in range(len(typed_items)) if not used[k] and verdicts[i][k] == wanted),
+                -1,
+            )
+            if j == -1:
+                continue
+            match_of[i] = j
+            used[j] = True
+            exact_pair[i] = wanted == "exact"
+
+    matched_parts = {tgt.part[i] for i in range(n) if match_of[i] != -1}
+    item_parts = set(tgt.part)
+    target_words = js_split_ws(js_trim(target))
+    parts = _word_parts(target)
+    diff: list[WordDiffResult] = [
+        {
+            "word": word,
+            "matched": parts[idx] not in item_parts or parts[idx] in matched_parts,
+        }
+        for idx, word in enumerate(target_words)
+    ]
+    missing_words = [w for i in range(n) if match_of[i] == -1 for w in js_split_ws(tgt.items[i])]
+    extra_words = [
+        w for k, item in enumerate(typed_items) if not used[k] for w in js_split_ws(item)
+    ]
+    matched = len([j for j in match_of if j != -1])
+    similarity = (2 * matched) / (n + len(typed_items))
+
+    verdict: Literal["exact", "near", "wrong"] = "wrong"
+    if matched == n and all(used):
+        verdict = "exact" if all(exact_pair) else "near"
+    return {
+        "verdict": verdict,
+        "diff": diff,
+        "missingWords": missing_words,
+        "extraWords": extra_words,
+        "similarity": similarity,
+    }

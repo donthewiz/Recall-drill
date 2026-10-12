@@ -18,6 +18,10 @@ TS name                       Python name
 ``splitInHalf``               ``split_in_half``
 ``culpritHalf``               ``culprit_half``
 ``findAllCulpritChunks``      ``find_all_culprit_chunks``
+``joinWindow``                ``join_window``
+``ORDER_CUES``                ``ORDER_CUES``
+``listOrderFromWording``      ``list_order_from_wording``
+``withListOrder``             ``with_list_order``
 ``shuffle``                   ``shuffle``
 ``selectNextEncodeItem``      ``select_next_encode_item``
 ``slugify``                   ``slugify``
@@ -46,8 +50,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, NotRequired, TypedDict, cast
 
 from . import rand
-from .grading import compute_word_diff, exact_match
-from .jscompat import JS_WS, js_round, js_split_ws, js_trim, truthy
+from .grading import compute_word_diff, exact_match, grade, split_list_items
+from .jscompat import WS_RE, js_round, js_split_ws, js_trim, truthy
 from .types import (
     CombineSequenceItem,
     DeckItem,
@@ -99,31 +103,13 @@ def parse_deck(text: str) -> list[DeckItem]:
     return out
 
 
-_LEADING_CONJUNCTION_RE = re.compile("^(?:[aA][nN][dD]|[oO][rR])" + JS_WS + "+")
-
-
 def list_items(text: str) -> list[str] | None:
     """The items of a comma- or semicolon-separated list, or None (2026-10-12).
 
     Splits on ``,`` and ``;`` outside ``()`` and ``[]``, trims each item, drops a
     leading "and " or "or " and empty items, and keeps each item's own wording.
     A list has 3 or more items: "radius and ulna" is one item."""
-    parts: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for ch in text:
-        if ch in "([":
-            depth += 1
-        elif ch in ")]" and depth > 0:
-            depth -= 1
-        if ch in ",;" and depth == 0:
-            parts.append("".join(current))
-            current = []
-        else:
-            current.append(ch)
-    parts.append("".join(current))
-    items = [js_trim(_LEADING_CONJUNCTION_RE.sub("", js_trim(p), count=1)) for p in parts]
-    items = [i for i in items if len(i) > 0]
+    items = split_list_items(text)
     return items if len(items) >= 3 else None
 
 
@@ -282,14 +268,31 @@ def culprit_half(typed: str, left: str, right: str, strict: bool = False) -> str
 
 
 def find_all_culprit_chunks(
-    typed: str, chunks: Sequence[str], start_idx: int, end_idx: int, strict: bool = False
+    typed: str,
+    chunks: Sequence[str],
+    start_idx: int,
+    end_idx: int,
+    strict: bool = False,
+    any_order: bool = False,
+    stem_tolerance: bool | None = None,
 ) -> list[int]:
     """Chunk indices in ``start_idx..end_idx`` with an unmatched word in the LCS diff.
 
-    Falls back to ``[end_idx]`` when every word matched.
+    Falls back to ``[end_idx]`` when every word matched. An any-order card (TS
+    ``anyOrder: {stemTolerance}``) joins the window with ", " and uses grade()'s
+    any-order diff, with ``stem_tolerance``.
     """
-    combined_target = " ".join(chunks[start_idx : end_idx + 1])
-    diff = compute_word_diff(typed, combined_target, strict)
+    combined_target = join_window(chunks, start_idx, end_idx + 1, any_order)
+    if any_order:
+        diff = grade(
+            typed,
+            combined_target,
+            strict_punctuation=strict,
+            stem_tolerance=stem_tolerance,
+            any_order=True,
+        )["diff"]
+    else:
+        diff = compute_word_diff(typed, combined_target, strict)
 
     culprits: list[int] = []
     word_cursor = 0
@@ -304,6 +307,71 @@ def find_all_culprit_chunks(
         culprits.append(end_idx)
 
     return culprits
+
+
+def join_window(chunks: Sequence[str], start: int, end: int, any_order: bool = False) -> str:
+    """``chunks[start:end]`` as one combine window: ", " for an any-order card
+    (its chunks are runs of list items), else a space."""
+    return (", " if any_order else " ").join(chunks[start:end])
+
+
+ORDER_CUES: tuple[str, ...] = (
+    "in order",
+    "the order",
+    "order is",
+    "sequence",
+    "step",
+    "steps",
+    "chain",
+    "cycle",
+    "then",
+    "proximal to distal",
+    "distal to proximal",
+    "superior to inferior",
+    "inferior to superior",
+    "superficial to deep",
+    "deep to superficial",
+    "largest to smallest",
+    "smallest to largest",
+    "anterior to posterior",
+    "posterior to anterior",
+    "medial to lateral",
+    "lateral to medial",
+    "\u2192",
+)
+"""Wording that makes a list ordered (the anki-cards skill's sequence cues, plus
+the reverse directions and the anterior/posterior and medial/lateral pairs)."""
+
+_CLOZE_BLANK_RE = re.compile("\\[(?:\\.\\.\\.|\u2026)\\]")
+_UNDERSCORES_RE = re.compile("_{2,}")
+_CUE_RES = {
+    cue: re.compile("(?:^|[^a-z0-9])" + re.escape(cue) + "(?:\\Z|[^a-z0-9])")
+    for cue in ORDER_CUES
+    if cue != "\u2192"
+}
+
+
+def list_order_from_wording(front: str) -> str:
+    """"ordered" when the front (cloze blank ``[...]`` / ``___`` removed) has one of
+    :data:`ORDER_CUES`, else "any" (2026-10-12)."""
+    text = _CLOZE_BLANK_RE.sub(" ", front)
+    text = _UNDERSCORES_RE.sub(" ", text)
+    text = WS_RE.sub(" ", text.lower())
+    for cue in ORDER_CUES:
+        if cue == "\u2192":
+            if cue in text:
+                return "ordered"
+            continue
+        if _CUE_RES[cue].search(text):
+            return "ordered"
+    return "any"
+
+
+def with_list_order(card: DeckItem) -> DeckItem:
+    """``card`` with ``anyOrder`` set for an unordered list answer, else unchanged."""
+    if list_items(card["back"]) is None or list_order_from_wording(card["front"]) != "any":
+        return card
+    return {**card, "anyOrder": True}
 
 
 def shuffle[T](arr: Sequence[T]) -> list[T]:
@@ -436,6 +504,8 @@ def build_item(
     # TS `extra: p.extra`: absent stays absent.
     if "extra" in p:
         item["extra"] = p["extra"]
+    if "anyOrder" in p:
+        item["anyOrder"] = p["anyOrder"]
     if "encodeRepsOverride" in o:
         item["encodeRepsOverride"] = o["encodeRepsOverride"]
     if "minWordsToChunkOverride" in o:
@@ -466,6 +536,7 @@ _PASS_THROUGH_FIELDS = (
     "front",
     "back",
     "extra",
+    "anyOrder",
     "finalDone",
     "finalMisses",
     "attempts",

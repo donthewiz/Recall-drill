@@ -112,3 +112,28 @@ def test_stopwords_match_ts_source() -> None:
     block = re.search(r"const STOPWORDS = new Set\(\[(.*?)\]\);", source, re.DOTALL)
     assert block is not None
     assert grading.STOPWORDS == frozenset(re.findall(r"'([a-z]+)'", block.group(1)))
+
+
+ANY_ORDER: list[Any] = GOLDEN["anyOrder"]
+
+
+@pytest.mark.parametrize("case", ANY_ORDER, ids=case_ids(ANY_ORDER))
+def test_any_order_grade(case: Any) -> None:
+    """grade() with anyOrder (2026-10-12), result and diff, under three option sets."""
+    for r in case["results"]:
+        opts = r["opts"]
+        check(
+            grade(
+                case["typed"],
+                case["target"],
+                lenient=opts["lenient"],
+                stem_tolerance=opts["stemTolerance"],
+                strict_punctuation=opts["strictPunctuation"],
+                any_order=True,
+            ),
+            r["out"],
+            "grade(anyOrder)",
+            typed=case["typed"],
+            target=case["target"],
+            opts=opts,
+        )

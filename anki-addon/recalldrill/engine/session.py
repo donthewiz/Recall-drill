@@ -67,6 +67,7 @@ from .items import (
     culprit_half,
     find_all_culprit_chunks,
     item_overrides,
+    join_window,
     min_words_for,
     partition_into_batches,
     render_first_letter_cue,
@@ -398,9 +399,9 @@ def _word_count_by_space(text: str) -> int:
     return len(text.split(" "))
 
 
-def _join_window(chunks: Sequence[str], start: int, end: int) -> str:
-    """TS ``chunks.slice(start - 1, end).join(' ')`` (start >= 1 in every window)."""
-    return " ".join(chunks[start - 1 : end])
+def _join_window(chunks: Sequence[str], start: int, end: int, any_order: bool = False) -> str:
+    """TS ``joinWindow(chunks, start - 1, end, anyOrder)`` (start >= 1 in every window)."""
+    return join_window(chunks, start - 1, end, any_order)
 
 
 def select_trial(state: SessionState) -> Trial | None:
@@ -455,7 +456,9 @@ def select_trial(state: SessionState) -> Trial | None:
     combine_seq = it["combineSeq"]
     if it["stage"] == "combine" and chunks is not None and combine_seq is not None:
         seq_item = combine_seq[it["combineSeqIdx"]]
-        combined = _join_window(chunks, seq_item["start"], seq_item["end"])
+        combined = _join_window(
+            chunks, seq_item["start"], seq_item["end"], it.get("anyOrder") is True
+        )
         return {
             "itemId": it["id"],
             "stage": "combine",
@@ -624,9 +627,17 @@ def _grade_and_advance(
     strict = state["config"].get("strictPunctuation")
     strict = False if strict is None else strict
 
+    # 2026-10-12: an unordered list card grades every target in any order.
+    any_order = it.get("anyOrder") is True
+
     def grade_against(target: str) -> GradeResult:
         return grade(
-            typed, target, lenient=True, stem_tolerance=stem_tolerance, strict_punctuation=strict
+            typed,
+            target,
+            lenient=True,
+            stem_tolerance=stem_tolerance,
+            strict_punctuation=strict,
+            any_order=any_order,
         )
 
     # Add-on extension: the card's own encodeReps (the session's when unset).
@@ -690,7 +701,7 @@ def _grade_and_advance(
         combine_seq = it["combineSeq"]
         if it["stage"] == "combine" and chunks is not None and combine_seq is not None:
             seq_item = combine_seq[it["combineSeqIdx"]]
-            combined_target = _join_window(chunks, seq_item["start"], seq_item["end"])
+            combined_target = _join_window(chunks, seq_item["start"], seq_item["end"], any_order)
             was_blind = it["combineStreak"] >= 1
             gr = grade_against(combined_target)
             is_ok = gr["verdict"] != "wrong"
@@ -769,7 +780,13 @@ def _grade_and_advance(
 
             if it["combineMissCount"] >= miss_threshold:
                 culprits = find_all_culprit_chunks(
-                    typed, chunks, seq_item["start"] - 1, seq_item["end"] - 1, strict
+                    typed,
+                    chunks,
+                    seq_item["start"] - 1,
+                    seq_item["end"] - 1,
+                    strict,
+                    any_order,
+                    stem_tolerance,
                 )
                 it["remediateStack"] = [{"text": chunks[culprits[0]], "streak": 0, "missCount": 0}]
                 it["remediateQueue"] = [chunks[idx] for idx in culprits[1:]]
@@ -1199,6 +1216,9 @@ def edit_current_item(state: SessionState, edit: ItemEdit) -> EditResult:
     card: DeckItem = {"front": front, "back": back}
     if extra:
         card["extra"] = extra
+    # anyOrder is the card's, kept like its id (the add-on's rebuild_card recomputes it).
+    if "anyOrder" in old:
+        card["anyOrder"] = old["anyOrder"]
     rebuilt: DrillItem = {
         **build_item(
             card,
