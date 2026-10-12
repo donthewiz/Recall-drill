@@ -19,6 +19,7 @@
 import { shortDeck } from './fixtures/shortDeck';
 import { proseDeck } from './fixtures/proseDeck';
 import { mediumDeck } from './fixtures/mediumDeck';
+import { listDeck } from './fixtures/listDeck';
 import { perfectLearner, realisticLearner, simulate, strugglingLearner, SimulationResult } from './simulate';
 import {
   legacyPerfectLearner,
@@ -31,6 +32,7 @@ import { AggregatedResult, fmt, runSeeded, withinOneSd } from './simulate.stats'
 const RUNS_PER_CONFIG = 50;
 
 const config = { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative' as const };
+const settingsConfig = { ...config, encodeReps: 1, batchSize: 10, cycleOrder: 'shuffled' as const };
 
 const decks: { name: string; deck: typeof shortDeck }[] = [
   { name: 'shortDeck', deck: shortDeck },
@@ -76,6 +78,37 @@ for (const { name: deckName, deck } of decks) {
   }
 }
 console.log(currentRows.join('\n'));
+
+// "Your settings" (2026-10-12): the add-on's defaults as Don drills (one blind
+// typing, batches of 10, shuffled cycle), over the decks plus listDeck. The
+// "Current engine" section above stays the long-running scoreboard; this one
+// shows what a change costs at the settings actually in use.
+const settingsDecks: { name: string; deck: typeof shortDeck }[] = [
+  { name: 'shortDeck', deck: shortDeck },
+  { name: 'mediumDeck', deck: mediumDeck },
+  { name: 'proseDeck', deck: proseDeck },
+  { name: 'listDeck', deck: listDeck },
+];
+console.log(
+  `\n=== Your settings (encodeReps ${settingsConfig.encodeReps}, batchSize ${settingsConfig.batchSize}, cycleOrder ${settingsConfig.cycleOrder}), ${RUNS_PER_CONFIG} seeded runs per config (mean +/- SD) ===\n`
+);
+const settingsRows: string[] = [
+  '| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |',
+  '|---|---|---|---|---|---|',
+];
+for (const { name: deckName, deck } of settingsDecks) {
+  for (const { name: learnerName, current } of learners) {
+    let lastResult: SimulationResult | null = null;
+    const agg = runSeeded(`settings:${deckName}:${learnerName}`, RUNS_PER_CONFIG, () => {
+      lastResult = simulate(deck, settingsConfig, current);
+      return lastResult;
+    });
+    settingsRows.push(
+      `| ${deckName} | ${learnerName} | ${fmt(agg.totalTrials, 1)} | ${fmt(agg.keystrokes, 1)} | ${fmt(agg.wallClockEstimate, 1)} | ${formatStageBreakdown(lastResult!.trialsByStage)} |`
+    );
+  }
+}
+console.log(settingsRows.join('\n'));
 
 console.log(`\n=== Phase 0 baseline (legacyEngine.ts), ${RUNS_PER_CONFIG} seeded runs per config (mean +/- SD) ===\n`);
 const legacyRows: string[] = [

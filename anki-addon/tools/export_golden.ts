@@ -95,6 +95,7 @@ import {
   TWO_CHUNK_CHUNKS,
   TWO_CHUNK_DIFFICULTY,
 } from '../../src/test/fixtures/deck';
+import { listDeck } from '../../test/fixtures/listDeck';
 import { mediumDeck } from '../../test/fixtures/mediumDeck';
 import { proseDeck } from '../../test/fixtures/proseDeck';
 import { shortDeck } from '../../test/fixtures/shortDeck';
@@ -1146,7 +1147,7 @@ function simulateTraced(
   minWordsToChunk: number = MIN_WORDS_TO_CHUNK,
   record: 'none' | 'hash' | 'full' = 'none'
 ): TracedRun {
-  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode, undefined, minWordsToChunk);
+  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode, config.batchSize, minWordsToChunk);
   let state: SessionState = initSession({
     items,
     phase: 'encode',
@@ -1167,6 +1168,8 @@ function simulateTraced(
   let keystrokes = 0;
 
   while (totalTrials < MAX_TRIALS) {
+    // A batch's interstitial: "Next batch", as test/simulate.ts does.
+    if (state.phase === 'batch-done') state = advanceToNextBatch(state);
     const trial = selectTrial(state);
     if (!trial) break;
 
@@ -1250,19 +1253,25 @@ function runNumbers(run: TracedRun) {
   };
 }
 
-// The "Current engine" section of `npm run simulate`, exactly as it prints:
-// everything before the Phase 0 baseline section.
-function captureCurrentEngineReport(): string {
+// The "Current engine" and "Your settings" sections of `npm run simulate`,
+// exactly as they print: everything before the Phase 0 baseline section,
+// split where "Your settings" starts.
+function captureSimulateReport(): { report: string; settingsReport: string } {
   const out = execFileSync(process.execPath, ['--import', 'tsx', 'test/simulate.report.ts'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
   });
+  const mid = out.indexOf('\n=== Your settings');
   const end = out.indexOf('\n=== Phase 0 baseline');
-  if (!out.startsWith('\n=== Current engine') || end < 0) {
-    throw new Error('test/simulate.report.ts output changed shape; update captureCurrentEngineReport()');
+  if (!out.startsWith('\n=== Current engine') || mid < 0 || end < mid) {
+    throw new Error('test/simulate.report.ts output changed shape; update captureSimulateReport()');
   }
-  return out.slice(0, end);
+  return { report: out.slice(0, mid), settingsReport: out.slice(mid, end) };
 }
+
+// test/simulate.report.ts's "Your settings" section: its config and decks.
+const SETTINGS_CONFIG: SessionConfig = { ...SIM_CONFIG, encodeReps: 1, batchSize: 10, cycleOrder: 'shuffled' };
+const SETTINGS_DECK_ORDER = ['shortDeck', 'mediumDeck', 'proseDeck', 'listDeck'];
 
 interface ExtraRunSpec {
   label: string;
@@ -1336,6 +1345,7 @@ const NAMED_DECKS: Record<string, DeckItem[]> = {
   shortDeck,
   proseDeck,
   mediumDeck,
+  listDeck,
   mixedDeck: MIXED_DECK,
   twoChunkDeck: [{ front: 'Q', back: TWO_CHUNK_BACK }],
 };
@@ -1388,7 +1398,9 @@ function exportSessionSim(): void {
     runsPerConfig: RUNS_PER_CONFIG,
     runs,
     extraRuns,
-    report: captureCurrentEngineReport(),
+    ...captureSimulateReport(),
+    settingsConfig: SETTINGS_CONFIG,
+    settingsDeckOrder: SETTINGS_DECK_ORDER,
   });
   writeGolden('session_seed0.json', { steps: seed0 });
 }

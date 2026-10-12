@@ -10,8 +10,11 @@ Run from the repo root::
 
     anki-addon/.venv/bin/python anki-addon/tools/simulate.py
 
-It prints the same text, byte for byte, as the "Current engine" section of
-``npm run simulate`` (the Phase 0 legacy sections are not ported).
+It prints the same text, byte for byte, as the "Current engine" and "Your
+settings" sections of ``npm run simulate`` (the Phase 0 legacy sections are not
+ported). "Your settings" (2026-10-12) runs the add-on's defaults as Don drills
+(``settingsConfig`` in the golden: one blind typing, batches of 10) over the
+decks plus ``listDeck``.
 
 ``--difficulty-overrides`` prints, after that section, a **Python-only** one
 (no TS counterpart, so it is not part of the parity check): the same decks and
@@ -47,6 +50,7 @@ from recalldrill.engine.items import MIN_WORDS_TO_CHUNK, build_items  # noqa: E4
 from recalldrill.engine.jscompat import js_sum, js_to_fixed, utf16_len  # noqa: E402
 from recalldrill.engine.session import (  # noqa: E402
     SESSION_COMPLETE_ID,
+    advance_to_next_batch,
     apply_answer,
     apply_next,
     init_session,
@@ -178,7 +182,7 @@ def simulate(
         deck,
         config["chunkDifficulty"],
         config["ladderMode"],
-        None,
+        config.get("batchSize"),
         min_words_to_chunk,
         overrides=overrides,
     )
@@ -205,6 +209,10 @@ def simulate(
     keystrokes = 0
 
     while total_trials < MAX_TRIALS:
+        # A batch's interstitial: "Next batch" (the "Current engine" config never
+        # sets batchSize, so it never gets here).
+        if state["phase"] == "batch-done":
+            state = call(advance_to_next_batch, state)
         trial = call(select_trial, state)
         if trial is None:
             break
@@ -300,9 +308,10 @@ def load_sim_golden() -> dict[str, Any]:
     return json.loads(GOLDEN_SIM.read_text(encoding="utf-8"))
 
 
-def run_seed(deck_name: str, learner_name: str, run: int) -> int:
-    """``hashSeed('current:<deck>:<learner>') + run`` (may pass 2**32; mulberry32 wraps it)."""
-    return rand.hash_seed(f"current:{deck_name}:{learner_name}") + run
+def run_seed(deck_name: str, learner_name: str, run: int, section: str = "current") -> int:
+    """``hashSeed('<section>:<deck>:<learner>') + run`` (may pass 2**32; mulberry32
+    wraps it). ``section`` is ``current`` or ``settings``."""
+    return rand.hash_seed(f"{section}:{deck_name}:{learner_name}") + run
 
 
 def run_config(
@@ -313,15 +322,24 @@ def run_config(
         return simulate(sim["decks"][deck_name], sim["config"], LEARNERS[learner_name], **kwargs)
 
 
-def current_engine_report(sim: dict[str, Any], runs: dict[tuple[str, str], list[SimRun]]) -> str:
-    """The "Current engine" section of ``npm run simulate``, as it prints."""
+def run_settings(sim: dict[str, Any], deck_name: str, learner_name: str, run: int) -> SimRun:
+    """One seeded run of the "Your settings" section."""
+    with rand.seeded(run_seed(deck_name, learner_name, run, "settings")):
+        return simulate(sim["decks"][deck_name], sim["settingsConfig"], LEARNERS[learner_name])
+
+
+def _table(
+    deck_order: Sequence[str],
+    learner_order: Sequence[str],
+    runs: dict[tuple[str, str], list[SimRun]],
+) -> list[str]:
     rows = [
         "| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) "
         "| Trials by stage (last run) |",
         "|---|---|---|---|---|---|",
     ]
-    for deck_name in sim["deckOrder"]:
-        for learner_name in sim["learnerOrder"]:
+    for deck_name in deck_order:
+        for learner_name in learner_order:
             results = runs[(deck_name, learner_name)]
             total = mean_sd([r.total_trials for r in results])
             keys = mean_sd([r.keystrokes for r in results])
@@ -330,8 +348,26 @@ def current_engine_report(sim: dict[str, Any], runs: dict[tuple[str, str], list[
                 f"| {deck_name} | {learner_name} | {fmt(total)} | {fmt(keys)} | {fmt(wall)} "
                 f"| {format_stage_breakdown(results[-1].trials_by_stage)} |"
             )
+    return rows
+
+
+def current_engine_report(sim: dict[str, Any], runs: dict[tuple[str, str], list[SimRun]]) -> str:
+    """The "Current engine" section of ``npm run simulate``, as it prints."""
+    rows = _table(sim["deckOrder"], sim["learnerOrder"], runs)
     runs_per_config = sim["runsPerConfig"]
     header = f"\n=== Current engine, {runs_per_config} seeded runs per config (mean +/- SD) ===\n"
+    return header + "\n" + "\n".join(rows) + "\n"
+
+
+def settings_report(sim: dict[str, Any], runs: dict[tuple[str, str], list[SimRun]]) -> str:
+    """The "Your settings" section of ``npm run simulate``, as it prints."""
+    c = sim["settingsConfig"]
+    rows = _table(sim["settingsDeckOrder"], sim["learnerOrder"], runs)
+    header = (
+        f"\n=== Your settings (encodeReps {c['encodeReps']}, batchSize {c['batchSize']}, "
+        f"cycleOrder {c['cycleOrder']}), {sim['runsPerConfig']} seeded runs per config "
+        "(mean +/- SD) ===\n"
+    )
     return header + "\n" + "\n".join(rows) + "\n"
 
 
@@ -341,6 +377,16 @@ def all_runs(sim: dict[str, Any]) -> dict[tuple[str, str], list[SimRun]]:
             run_config(sim, deck_name, learner_name, i) for i in range(sim["runsPerConfig"])
         ]
         for deck_name in sim["deckOrder"]
+        for learner_name in sim["learnerOrder"]
+    }
+
+
+def all_settings_runs(sim: dict[str, Any]) -> dict[tuple[str, str], list[SimRun]]:
+    return {
+        (deck_name, learner_name): [
+            run_settings(sim, deck_name, learner_name, i) for i in range(sim["runsPerConfig"])
+        ]
+        for deck_name in sim["settingsDeckOrder"]
         for learner_name in sim["learnerOrder"]
     }
 
@@ -445,6 +491,7 @@ def main(argv: Sequence[str]) -> int:
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     sys.stdout.write(current_engine_report(sim, all_runs(sim)))
+    sys.stdout.write(settings_report(sim, all_settings_runs(sim)))
     if "--difficulty-overrides" in argv:
         sys.stdout.write(override_report(sim, override_runs(sim)))
     return 0

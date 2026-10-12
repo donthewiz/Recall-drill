@@ -2,9 +2,10 @@
 
 ``tests/golden/session_sim.json`` holds all 450 seeded runs behind
 ``npm run simulate``'s "Current engine" table (3 decks x 3 learners x 50
-seeds). Since the PRNG and every draw match, each Python run must equal its TS
-twin exactly: every number and the trace hash, not just the mean within an SD.
-The printed table must then be byte-identical too.
+seeds), and the printed "Your settings" section (batched, so it also checks
+the harness's "Next batch" step). Since the PRNG and every draw match, each
+Python run must equal its TS twin exactly: every number and the trace hash, not
+just the mean within an SD. The printed tables must then be byte-identical too.
 
 The extra runs are seeded twins of the ``simulate()`` calls in
 ``test/simulate.spec.ts``, ``test/coldStartEstimate.consistency.spec.ts`` and
@@ -72,6 +73,27 @@ def test_scoreboard_is_byte_identical_to_npm_run_simulate() -> None:
             )
         )
         pytest.fail(f"scoreboard differs from npm run simulate:\n{diff}", pytrace=False)
+
+
+def test_settings_section_is_byte_identical_to_npm_run_simulate() -> None:
+    """The "Your settings" section (batches of 10, one blind typing, listDeck too)."""
+    runs = harness.all_settings_runs(SIM)
+    report = harness.settings_report(SIM, runs)
+    if report != SIM["settingsReport"]:
+        diff = "\n".join(
+            difflib.unified_diff(
+                SIM["settingsReport"].splitlines(),
+                report.splitlines(),
+                "TS",
+                "Python",
+                lineterm="",
+            )
+        )
+        pytest.fail(f"'Your settings' differs from npm run simulate:\n{diff}", pytrace=False)
+    # Every batch ran: each run reached the Final check for every card.
+    for (deck, _learner), results in runs.items():
+        n = len(SIM["decks"][deck])
+        assert all(r.trials_by_stage.get("final", 0) >= n for r in results)
 
 
 @pytest.mark.parametrize(
