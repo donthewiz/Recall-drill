@@ -12,7 +12,7 @@ import {
   CycleOrder,
 } from '../types';
 import { exactMatch, GradeResult, grade } from './grading';
-import { MIN_WORDS_TO_CHUNK, chunkText, renderFirstLetterCue, requiredRepsForWindow, splitInHalf, culpritHalf, findAllCulpritChunks, shuffle, selectNextEncodeItem, partitionIntoBatches, buildItem } from './items';
+import { MIN_WORDS_TO_CHUNK, chunkText, joinWindow, renderFirstLetterCue, requiredRepsForWindow, splitInHalf, culpritHalf, findAllCulpritChunks, shuffle, selectNextEncodeItem, partitionIntoBatches, buildItem } from './items';
 
 // ---------------------------------------------------------------------------
 // Phase 0 extraction: pure session state machine (selectTrial / applyAnswer /
@@ -400,7 +400,7 @@ export function selectTrial(state: SessionState): Trial | null {
 
   if (it.stage === 'combine' && it.chunks && it.combineSeq) {
     const seqItem = it.combineSeq[it.combineSeqIdx];
-    const combined = it.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
+    const combined = joinWindow(it.chunks, seqItem.start - 1, seqItem.end, it.anyOrder === true);
     return {
       itemId: it.id,
       stage: 'combine',
@@ -567,6 +567,9 @@ function gradeAndAdvance(
     lenient: true,
     stemTolerance: state.config.stemTolerance,
     strictPunctuation: state.config.strictPunctuation ?? false,
+    // 2026-10-12: an unordered list card grades every target -- whole answer,
+    // combine window, chunk -- in any order (grade()'s anyOrder).
+    anyOrder: it.anyOrder === true,
   };
 
   // C2: a near-miss verdict always shows the diff with a neutral note and the
@@ -646,7 +649,7 @@ function gradeAndAdvance(
 
     if (it.stage === 'combine' && it.chunks && it.combineSeq) {
       const seqItem = it.combineSeq[it.combineSeqIdx];
-      const combinedTarget = it.chunks.slice(seqItem.start - 1, seqItem.end).join(' ');
+      const combinedTarget = joinWindow(it.chunks, seqItem.start - 1, seqItem.end, it.anyOrder === true);
       const wasBlind = it.combineStreak >= 1;
       const gr = grade(typed, combinedTarget, gradeOpts);
       const isOk = gr.verdict !== 'wrong';
@@ -724,7 +727,8 @@ function gradeAndAdvance(
           it.chunks,
           seqItem.start - 1,
           seqItem.end - 1,
-          gradeOpts.strictPunctuation
+          gradeOpts.strictPunctuation,
+          it.anyOrder ? { stemTolerance: gradeOpts.stemTolerance } : undefined
         );
         it.remediateStack = [{ text: it.chunks[culprits[0]], streak: 0, missCount: 0 }];
         it.remediateQueue = culprits.slice(1).map(idx => it.chunks![idx]);
@@ -1134,7 +1138,9 @@ export function editCurrentItem(
   }
 
   const rebuilt: DrillItem = {
-    ...buildItem({ front, back, extra }, old.id, state.config.chunkDifficulty, state.config.ladderMode, MIN_WORDS_TO_CHUNK),
+    // anyOrder is the card's, kept like its id: the engine doesn't re-read
+    // the front's wording (the add-on's rebuild_card recomputes it).
+    ...buildItem({ front, back, extra, anyOrder: old.anyOrder }, old.id, state.config.chunkDifficulty, state.config.ladderMode, MIN_WORDS_TO_CHUNK),
     status: 'encoding',
   };
   return {

@@ -22,6 +22,9 @@ export interface DrillItem {
   // toward trials -- see drillEngine.ts's grade()/chunkText() call sites,
   // neither of which reads it.
   extra?: string;
+  // 2026-10-12: an unordered list answer -- its items may be typed in any
+  // order (grade()'s anyOrder). Absent or false grades exactly as before.
+  anyOrder?: boolean;
   status: ItemStatus;
   encodeStreak: number;
   cycleStreak: number;
@@ -103,6 +106,8 @@ export interface DeckItem {
   back: string;
   // Anki-style "Extra" field: optional, display-only. See DrillItem.extra.
   extra?: string;
+  // See DrillItem.anyOrder.
+  anyOrder?: boolean;
 }
 
 export interface SavedSessionState {

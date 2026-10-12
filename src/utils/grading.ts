@@ -144,6 +144,68 @@ function lightStem(word: string): string {
   return word;
 }
 
+// List items (2026-10-12), the core of items.ts's listItems: the text split
+// on , and ; outside () and [], each part trimmed and stripped of a leading
+// "and " / "or ", empty parts dropped. `part` is each kept item's index among
+// the raw parts, so a word can be traced back to its item (see
+// anyOrderGrade). Any number of items, unlike listItems (3 or more).
+interface SplitItems {
+  items: string[];
+  // Raw part index of each item in `items`.
+  part: number[];
+}
+
+function splitItemsWithParts(text: string): SplitItems {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of text) {
+    if (ch === '(' || ch === '[') depth++;
+    else if ((ch === ')' || ch === ']') && depth > 0) depth--;
+    if ((ch === ',' || ch === ';') && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  const items: string[] = [];
+  const part: number[] = [];
+  parts.forEach((p, i) => {
+    const item = p.trim().replace(/^(?:and|or)\s+/i, '').trim();
+    if (item.length > 0) {
+      items.push(item);
+      part.push(i);
+    }
+  });
+  return { items, part };
+}
+
+export function splitListItems(text: string): string[] {
+  return splitItemsWithParts(text).items;
+}
+
+// For each whitespace-separated word of text.trim() (computeWordDiff's
+// words), the raw part (see splitItemsWithParts) its first character is in.
+// A separator character belongs to the part it ends.
+function wordParts(text: string): number[] {
+  const t = text.trim();
+  const out: number[] = [];
+  let depth = 0;
+  let partIdx = 0;
+  let inWord = false;
+  for (const ch of t) {
+    const ws = /\s/.test(ch);
+    if (!ws && !inWord) out.push(partIdx);
+    inWord = !ws;
+    if (ch === '(' || ch === '[') depth++;
+    else if ((ch === ')' || ch === ']') && depth > 0) depth--;
+    if ((ch === ',' || ch === ';') && depth === 0) partIdx++;
+  }
+  return out;
+}
+
 export interface GradeResult {
   verdict: 'exact' | 'near' | 'wrong';
   diff: WordDiffResult[];
@@ -158,11 +220,16 @@ export interface GradeResult {
 // answer is otherwise very close (similarity >= 0.9) -- a single stem-level
 // slip in a short answer is still `wrong`, since it's too large a fraction of
 // the content to wave through; the same slip in a long answer is `near`.
-export function grade(
-  typed: string,
-  target: string,
-  opts?: { lenient?: boolean; stemTolerance?: boolean; strictPunctuation?: boolean }
-): GradeResult {
+export interface GradeOptions {
+  lenient?: boolean;
+  stemTolerance?: boolean;
+  strictPunctuation?: boolean;
+  // 2026-10-12: the target is an unordered list (DrillItem.anyOrder), so its
+  // items may be typed in any order. See anyOrderGrade.
+  anyOrder?: boolean;
+}
+
+export function grade(typed: string, target: string, opts?: GradeOptions): GradeResult {
   const lenient = opts?.lenient ?? true;
   const stemTolerance = opts?.stemTolerance ?? true;
   const strict = opts?.strictPunctuation ?? false;
@@ -171,6 +238,11 @@ export function grade(
 
   if (exactMatch(typed, target, strict)) {
     return { verdict: 'exact', diff, missingWords: [], extraWords: [], similarity: 1 };
+  }
+
+  if (opts?.anyOrder) {
+    const unordered = anyOrderGrade(typed, target, { lenient, stemTolerance, strictPunctuation: strict });
+    if (unordered) return unordered;
   }
 
   const typedWords = typed.trim().length ? typed.trim().split(/\s+/) : [];
@@ -212,4 +284,74 @@ export function grade(
   }
 
   return { verdict: 'wrong', diff, missingWords, extraWords, similarity };
+}
+
+// Any-order grading of a list target (2026-10-12). Returns null, so grade()
+// goes on exactly as for an ordered answer, when the target has fewer than 2
+// items (a full answer only gets anyOrder when it is a list of 3+; a combine
+// window or a chunk of one is 2+ items) or when the typed text can't be split
+// into items (multi-word items typed without separators).
+//
+// The typed text is split the same way. When that gives fewer items than the
+// target and every target item is one word, it is split on whitespace
+// instead, dropping "and" and "or". Items are then matched one to one: first
+// every exact pair, then near ones, a pair matching when grade() with the same
+// options (in order) is exact or near. Every target item matched and no typed
+// item left over: "exact" if every pair is exact, else "near"; otherwise
+// "wrong". The diff marks every word of a matched target item as matched (a
+// dropped "and" counts with its item, a word outside every item counts as
+// matched), and missingWords lists the unmatched items' words, so the feedback
+// and remediation's culprit search point at the missing items.
+function anyOrderGrade(
+  typed: string,
+  target: string,
+  opts: { lenient: boolean; stemTolerance: boolean; strictPunctuation: boolean }
+): GradeResult | null {
+  const tgt = splitItemsWithParts(target);
+  if (tgt.items.length < 2) return null;
+  let typedItems = splitListItems(typed);
+  const oneWordItems = tgt.items.every(i => i.split(/\s+/).length === 1);
+  if (typedItems.length < tgt.items.length && oneWordItems) {
+    typedItems = typed
+      .trim()
+      .split(/\s+/)
+      .filter(w => w.length > 0 && !/^(?:and|or)$/i.test(w));
+  } else if (typedItems.length < 2) {
+    return null;
+  }
+
+  // matchOf[i]: the typed item paired with target item i, or -1.
+  const matchOf: number[] = tgt.items.map(() => -1);
+  const exactPair: boolean[] = tgt.items.map(() => false);
+  const used: boolean[] = typedItems.map(() => false);
+  const verdicts = tgt.items.map(t => typedItems.map(ty => grade(ty, t, opts).verdict));
+  for (const wanted of ['exact', 'near'] as const) {
+    tgt.items.forEach((_, i) => {
+      if (matchOf[i] !== -1) return;
+      const j = typedItems.findIndex((_, k) => !used[k] && verdicts[i][k] === wanted);
+      if (j === -1) return;
+      matchOf[i] = j;
+      used[j] = true;
+      exactPair[i] = wanted === 'exact';
+    });
+  }
+
+  const matchedParts = new Set(tgt.part.filter((_, i) => matchOf[i] !== -1));
+  const itemParts = new Set(tgt.part);
+  const targetWords = target.trim().split(/\s+/);
+  const parts = wordParts(target);
+  const diff = targetWords.map((word, idx) => ({
+    word,
+    matched: !itemParts.has(parts[idx]) || matchedParts.has(parts[idx]),
+  }));
+  const missingWords = tgt.items.filter((_, i) => matchOf[i] === -1).flatMap(i => i.split(/\s+/));
+  const extraWords = typedItems.filter((_, k) => !used[k]).flatMap(i => i.split(/\s+/));
+  const matched = matchOf.filter(j => j !== -1).length;
+  const similarity = (2 * matched) / (tgt.items.length + typedItems.length);
+
+  let verdict: GradeResult['verdict'] = 'wrong';
+  if (matched === tgt.items.length && used.every(u => u)) {
+    verdict = exactPair.every(e => e) ? 'exact' : 'near';
+  }
+  return { verdict, diff, missingWords, extraWords, similarity };
 }

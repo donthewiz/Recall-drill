@@ -8,7 +8,7 @@ import {
   SavedSessionState,
   LadderMode,
 } from '../types';
-import { exactMatch, computeWordDiff } from './grading';
+import { exactMatch, computeWordDiff, grade, splitListItems } from './grading';
 
 export function parseDeck(text: string): DeckItem[] {
   const lines = text.split('\n');
@@ -59,21 +59,7 @@ export function parseDeck(text: string): DeckItem[] {
 // more items: "radius and ulna" (no separator) is one item, "a, b" is not a
 // list. Same rule as the anki-cards skill's _item_spans.
 export function listItems(text: string): string[] | null {
-  const parts: string[] = [];
-  let depth = 0;
-  let current = '';
-  for (const ch of text) {
-    if (ch === '(' || ch === '[') depth++;
-    else if ((ch === ')' || ch === ']') && depth > 0) depth--;
-    if ((ch === ',' || ch === ';') && depth === 0) {
-      parts.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  parts.push(current);
-  const items = parts.map(p => p.trim().replace(/^(?:and|or)\s+/i, '').trim()).filter(p => p.length > 0);
+  const items = splitListItems(text);
   return items.length >= 3 ? items : null;
 }
 
@@ -259,15 +245,22 @@ export function culpritHalf(typed: string, left: string, right: string, strict: 
 // anywhere before the end shifted every subsequent chunk's slice, so nearly
 // any miss flagged the entire window for remediation regardless of where the
 // actual mistake was.
+//
+// anyOrder (2026-10-12): an unordered list card's window is joined with ", "
+// (joinWindow) and diffed by grade()'s any-order rule, so the culprits are
+// the chunks holding the missed items wherever they were typed.
 export function findAllCulpritChunks(
   typed: string,
   chunks: string[],
   startIdx: number,
   endIdx: number,
-  strict: boolean = false
+  strict: boolean = false,
+  anyOrder?: { stemTolerance: boolean }
 ): number[] {
-  const combinedTarget = chunks.slice(startIdx, endIdx + 1).join(' ');
-  const diff = computeWordDiff(typed, combinedTarget, strict);
+  const combinedTarget = joinWindow(chunks, startIdx, endIdx + 1, anyOrder !== undefined);
+  const diff = anyOrder
+    ? grade(typed, combinedTarget, { strictPunctuation: strict, stemTolerance: anyOrder.stemTolerance, anyOrder: true }).diff
+    : computeWordDiff(typed, combinedTarget, strict);
 
   const culprits: number[] = [];
   let wordCursor = 0;
@@ -285,6 +278,69 @@ export function findAllCulpritChunks(
   }
 
   return culprits;
+}
+
+// The text of chunks[start..end) as one combine window. An any-order card's
+// chunks are runs of list items, so they join with ", " (any-order grading
+// splits the window back into items); every other card's join with a space,
+// as before.
+export function joinWindow(chunks: string[], start: number, end: number, anyOrder: boolean = false): string {
+  return chunks.slice(start, end).join(anyOrder ? ', ' : ' ');
+}
+
+// Whether a list answer's items must come in order, from the card's front
+// (2026-10-12): "ordered" when the front, with the cloze blank ([...] or
+// ___) removed, has one of ORDER_CUES (the anki-cards skill's sequence cues,
+// plus the reverse directions and the anterior/posterior and medial/lateral
+// pairs), else "any".
+export const ORDER_CUES: string[] = [
+  'in order',
+  'the order',
+  'order is',
+  'sequence',
+  'step',
+  'steps',
+  'chain',
+  'cycle',
+  'then',
+  'proximal to distal',
+  'distal to proximal',
+  'superior to inferior',
+  'inferior to superior',
+  'superficial to deep',
+  'deep to superficial',
+  'largest to smallest',
+  'smallest to largest',
+  'anterior to posterior',
+  'posterior to anterior',
+  'medial to lateral',
+  'lateral to medial',
+  '\u2192',
+];
+
+export function listOrderFromWording(front: string): 'ordered' | 'any' {
+  const text = front
+    .replace(/\[(?:\.\.\.|\u2026)\]/g, ' ')
+    .replace(/_{2,}/g, ' ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  for (const cue of ORDER_CUES) {
+    if (cue === '\u2192') {
+      if (text.includes(cue)) return 'ordered';
+      continue;
+    }
+    const at = new RegExp(`(?:^|[^a-z0-9])${cue}(?:$|[^a-z0-9])`);
+    if (at.test(text)) return 'ordered';
+  }
+  return 'any';
+}
+
+// A DeckItem with anyOrder set for an unordered list answer (listItems
+// non-null and listOrderFromWording "any"); every other card unchanged. What
+// the web app builds a session from.
+export function withListOrder(card: DeckItem): DeckItem {
+  if (!listItems(card.back) || listOrderFromWording(card.front) !== 'any') return card;
+  return { ...card, anyOrder: true };
 }
 
 export function shuffle<T>(arr: T[]): T[] {
@@ -404,6 +460,7 @@ export function buildItem(
     front: p.front,
     back: p.back,
     extra: p.extra,
+    anyOrder: p.anyOrder,
     status: 'new',
     encodeStreak: 0,
     cycleStreak: 0,
@@ -427,6 +484,7 @@ export function normalizeItem(it: any, ladderMode: LadderMode = 'cumulative'): D
     front: it.front,
     back: it.back,
     extra: it.extra,
+    anyOrder: it.anyOrder,
     status: it.status || 'new',
     encodeStreak: it.encodeStreak ?? 0,
     cycleStreak: it.cycleStreak ?? 0,

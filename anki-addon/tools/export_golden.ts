@@ -64,14 +64,18 @@ import {
   selectTrial,
   SESSION_COMPLETE_ID,
 } from '../../src/utils/session';
-import { computeWordDiff, exactMatch, grade, norm } from '../../src/utils/grading';
+import { computeWordDiff, exactMatch, grade, norm, splitListItems } from '../../src/utils/grading';
 import {
   buildCombineSequence,
   buildItem,
   buildItems,
   chunkText,
   culpritHalf,
+  joinWindow,
   listItems,
+  listOrderFromWording,
+  ORDER_CUES,
+  withListOrder,
   findAllCulpritChunks,
   MIN_WORDS_TO_CHUNK,
   normalizeItem,
@@ -677,7 +681,64 @@ function exportGrading(pairs: [string, string][]): void {
   writeGolden('grading.json', {
     gradeCombos: GRADE_COMBOS.map(([key, opts]) => ({ key, opts: opts ?? null })),
     cases,
+    anyOrder: anyOrderCases(),
   });
+}
+
+// grade() with anyOrder (2026-10-12): every list target of ANY_ORDER_TARGETS
+// against typed variants (items reordered, one missing, one extra, a near
+// item, whitespace-separated, no separators, joined with " and "), under
+// three option sets. Results are stored whole, diff included.
+const ANY_ORDER_TARGETS = [
+  ...listDeck.map(c => c.back),
+  'a, b',
+  'alpha beta, gamma delta',
+  'one, two, and three',
+  'x (a, b), y [c; d], z',
+  'red; green; blue',
+  'cervical, thoracic, lumbar,, sacral',
+  'only one item',
+];
+const ANY_ORDER_OPTS: GradeCombo[] = [
+  { lenient: true, stemTolerance: true, strictPunctuation: false },
+  { lenient: true, stemTolerance: false, strictPunctuation: true },
+  { lenient: false, stemTolerance: true, strictPunctuation: false },
+];
+
+function anyOrderVariants(target: string): string[] {
+  const items = splitListItems(target);
+  const rev = [...items].reverse();
+  const rot = items.length > 1 ? [...items.slice(1), items[0]] : items;
+  const variants = [
+    target,
+    rev.join(', '),
+    rot.join('; '),
+    rev.slice(1).join(', '),
+    [...rev, 'extra item'].join(', '),
+    [...rev.slice(0, -1), `the ${rev[rev.length - 1]}`].join(', '),
+    [...rev.slice(0, -1), `${rev[rev.length - 1]}s`].join(', '),
+    rev.join(' '),
+    rev.join(' and '),
+    rot.slice(0, -1).join(', ') + (rot.length > 1 ? ' and ' + rot[rot.length - 1] : ''),
+    rev.map(i => i.toUpperCase()).join(',  '),
+    [rev[0], rev[0], ...rev.slice(2)].join(', '),
+    '',
+  ];
+  return [...new Set(variants)];
+}
+
+function anyOrderCases(): unknown[] {
+  const out: unknown[] = [];
+  for (const target of ANY_ORDER_TARGETS) {
+    for (const typed of anyOrderVariants(target)) {
+      out.push({
+        typed,
+        target,
+        results: ANY_ORDER_OPTS.map(opts => ({ opts, out: grade(typed, target, { ...opts, anyOrder: true }) })),
+      });
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -701,6 +762,61 @@ const LIST_EDGE_TEXTS = [
   'a (b (c d) e f g h) i j k l m n o',
   '1 frontal, 2 parietal, 2 temporal, 1 occipital, 1 sphenoid, 1 ethmoid, 2 extra, 3 more, 4 again',
 ];
+
+// listOrderFromWording: every cue, its plural or a near miss, a cloze blank.
+const LIST_ORDER_FRONTS = [
+  ...listDeck.map(c => c.front),
+  ...ORDER_CUES.map(cue => `List them ${cue} please`),
+  ...ORDER_CUES.map(cue => `${cue.toUpperCase()}: name them`),
+  'Name the stepson', 'Steps of the process', 'the ordering of things', 'sequenced items',
+  'Bicycle parts', 'The cell cycle: [...]', 'Name the [...] in order', 'Name the [\u2026] then go',
+  'Name the ___ bones', 'Proximal-to-distal bones', 'proximal  to   distal', 'A \u2192 B',
+  'Then', 'then.', 'reorder is fine', 'in-order traversal', '', '[...]',
+];
+
+// anyOrder through buildItem, normalizeItem, joinWindow and the any-order
+// culprit search, over listDeck's backs chunked at three percents.
+function anyOrderItemCases(): unknown {
+  const built = [true, false, undefined].map(anyOrder => {
+    const card: DeckItem = anyOrder === undefined ? { front: 'Q', back: 'a, b, c, d' } : { front: 'Q', back: 'a, b, c, d', anyOrder };
+    const item = buildItem(card, 3, 35, 'cumulative', 8);
+    return { card, item, normalized: normalizeItem(JSON.parse(JSON.stringify(item))) };
+  });
+  const withOrder = [...listDeck, { front: 'Name them', back: 'a b' }, { front: 'Steps', back: 'a, b, c' }].map(card => ({
+    card,
+    out: withListOrder(card),
+  }));
+  const culprits: unknown[] = [];
+  for (const { back } of listDeck) {
+    for (const pct of [20, 35, 50]) {
+      const chunks = chunkText(back, pct);
+      if (!chunks) continue;
+      for (let end = 1; end < chunks.length; end++) {
+        const window = joinWindow(chunks, 0, end + 1, true);
+        const items = splitListItems(window);
+        const typedVariants = [
+          [...items].reverse().join(', '),
+          [...items].reverse().slice(1).join(', '),
+          items.slice(0, -1).join(', '),
+          [...items.slice(1), 'wrong item'].join(', '),
+          '',
+        ];
+        for (const typed of typedVariants) {
+          culprits.push({
+            chunks,
+            startIdx: 0,
+            endIdx: end,
+            typed,
+            window,
+            spaceWindow: joinWindow(chunks, 0, end + 1),
+            out: [true, false].map(strict => findAllCulpritChunks(typed, chunks, 0, end, strict, { stemTolerance: true })),
+          });
+        }
+      }
+    }
+  }
+  return { built, withOrder, culprits };
+}
 
 function words36(n: number): string {
   return Array.from({ length: n }, (_, i) => i.toString(36)).join(' ');
@@ -1054,6 +1170,9 @@ function exportItems(gradingTargets: string[]): void {
     targets,
     chunkTextIrregular,
     lists: listCases,
+    listOrder: LIST_ORDER_FRONTS.map(front => ({ front, out: listOrderFromWording(front) })),
+    orderCues: ORDER_CUES,
+    anyOrderItems: anyOrderItemCases(),
     combine,
     chunkings,
     windows,
@@ -1921,6 +2040,36 @@ function overrideAtEach(d: Driver, stops: [string, Pred][], wrong = 'zzz wrong')
   if (used.size !== stops.length) throw new Error(`${d.name}: not every override stop was reached`);
 }
 
+// Any-order lists (2026-10-12): the current trial's target with its items
+// reversed (an item-less target as is).
+const reversedItems = (target: string): string => {
+  const items = splitListItems(target);
+  return items.length > 1 ? [...items].reverse().join(', ') : target;
+};
+const ANY_ORDER_DECK: DeckItem[] = [
+  { front: 'Name the cranial bones', back: '1 frontal, 2 parietal, 2 temporal, 1 occipital, 1 sphenoid, 1 ethmoid', anyOrder: true },
+  { front: 'List the regions from superior to inferior', back: 'cervical, thoracic, lumbar, sacral, coccygeal' },
+  { front: 'Name the four tissue types', back: 'epithelial, connective, muscle, and nervous', anyOrder: true },
+];
+// Plays a learner who types every any-order target with its items reversed
+// (and every other target as shown), checking each reversed answer is exact.
+function reversedLearner(d: Driver, until: Pred): void {
+  for (let n = 0; !until(d.state, d) && !d.done(); n++) {
+    if (n > 600) throw new Error(`${d.name}: reversedLearner ran away`);
+    if (d.needsNext || d.state.phase === 'batch-done') {
+      d.do('next');
+      continue;
+    }
+    const t = d.trial();
+    if (!d.cur.anyOrder || t.cue.kind === 'present' || splitListItems(t.target).length < 2) {
+      d.do('correct');
+      continue;
+    }
+    d.do(`type:${reversedItems(t.target)}`);
+    if (d.lastVerdict !== 'exact') throw new Error(`${d.name}: reversed '${t.target}' graded ${d.lastVerdict}`);
+  }
+}
+
 const SCENARIOS: Scenario[] = [
   // ----- 1. A reveal at every stage -----
   {
@@ -2150,6 +2299,55 @@ const SCENARIOS: Scenario[] = [
       d.until(s => s.phase === 'cycle');
       d.do('wrong:pre-op.').do('next');
       d.finish().do('probe');
+    },
+  },
+  {
+    name: 'any-order-list',
+    covers: [
+      'required (2026-10-12): an any-order list card through chunks, combine, remediation (the culprit is the chunk holding the missed item), cycle and Final check with its items reversed; whitespace-separated one-word items; a near item; an ordered list card in the same deck still grades in order; anyOrder survives save/resume and an edit restart',
+    ],
+    setup: { deck: ANY_ORDER_DECK, config: cfg(1, 35), shuffleWithinBatch: false },
+    script: d => {
+      // Card 0: 6 items, 3 chunks of 2. Chunks reversed, then window 1-2
+      // (4 items) missing "1 occipital": a 2-chunk window remediates at once,
+      // on chunk 2 only.
+      reversedLearner(d, s => curIn(s)!.stage === 'combine');
+      d.do('wrong:2 temporal, 2 parietal, 1 frontal').do('next');
+      if (d.cur.stage !== 'remediate' || d.cur.remediateStack[0].text !== '2 temporal, 1 occipital') {
+        throw new Error(`${d.name}: expected chunk 2 as the only culprit`);
+      }
+      d.do(saveResume());
+      if (d.cur.anyOrder !== true) throw new Error(`${d.name}: anyOrder lost on resume`);
+      reversedLearner(d, s => s.phase === 'cycle');
+      // The cycle: card 1 (ordered) reversed is wrong; card 2 typed with
+      // whitespace only is exact, then with a stopword on one item near.
+      const todo = new Set(['ordered', 'spaces', 'near', 'edit']);
+      while (todo.size && d.state.phase === 'cycle') {
+        const id = d.state.currentId;
+        if (id === 1 && todo.has('ordered')) {
+          todo.delete('ordered');
+          d.do('wrong:coccygeal, sacral, lumbar, thoracic, cervical').do('next');
+        } else if (id === 2 && todo.has('spaces')) {
+          todo.delete('spaces');
+          d.do('type:nervous muscle connective epithelial');
+          if (d.lastVerdict !== 'exact') throw new Error(`${d.name}: whitespace-separated items graded ${d.lastVerdict}`);
+          d.do('next');
+        } else if (id === 0 && todo.has('edit')) {
+          // An edit that restarts the card keeps its anyOrder.
+          todo.delete('edit');
+          d.do(edit('Name the cranial bones', '1 frontal, 2 parietal, 2 temporal'));
+          if (d.cur.anyOrder !== true || d.cur.status !== 'encoding') throw new Error(`${d.name}: edit restart`);
+          reversedLearner(d, s => s.phase === 'cycle' && s.currentId !== 0);
+        } else if (id === 2 && todo.has('near')) {
+          todo.delete('near');
+          d.do('near:nervous, the muscle, connective, epithelial').do('next');
+        } else {
+          d.answerAndContinue(d.cur.anyOrder ? `type:${reversedItems(d.trial().target)}` : 'correct');
+        }
+      }
+      if (todo.size) throw new Error(`${d.name}: cycle cases not reached: ${[...todo]}`);
+      reversedLearner(d, () => false);
+      d.do('probe');
     },
   },
 ];

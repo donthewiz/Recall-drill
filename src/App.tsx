@@ -11,6 +11,7 @@ import {
 } from './types';
 import {
   buildItems,
+  withListOrder,
   normalizeItem,
   slugify,
   clearSessionState,
@@ -126,7 +127,8 @@ export default function App() {
     const mode = ladderModeParam !== undefined ? ladderModeParam : ladderMode;
     const size = batchSizeParam !== undefined ? batchSizeParam : batchSize;
     // Deck order within each batch (no shuffle): encoding starts at card 1.
-    const items = buildItems(parsed, diff, mode, size, undefined, false);
+    // An unordered list answer (no order cue in its front) grades in any order.
+    const items = buildItems(parsed.map(withListOrder), diff, mode, size, undefined, false);
     const slug = slugify(name);
     // A folder is not a deck: recordDeckUsed's "no existing entry" branch
     // would otherwise create a payload-less deck-index entry named after
@@ -378,7 +380,7 @@ export default function App() {
       return;
     }
     const freshItems = buildItems(
-      sessionItems.map(i => ({ front: i.front, back: i.back, extra: i.extra })),
+      sessionItems.map(i => ({ front: i.front, back: i.back, extra: i.extra, anyOrder: i.anyOrder })),
       chunkDifficulty,
       ladderMode,
       batchSize,

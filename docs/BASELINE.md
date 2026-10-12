@@ -892,3 +892,88 @@ engine": proseDeck perfect 156.0 → 146.0, realistic 270.5 → 257.8, strugglin
 | listDeck | realistic | 129.1 ± 8.6 | 5947.2 ± 471.6 | 1515.2 ± 115.0 | chunks:52 cycle:34 final:18 combine:11 full:6 remediate:4 |
 | listDeck | struggling | 214.1 ± 22.9 | 9772.6 ± 915.4 | 2492.8 ± 232.8 | cycle:67 chunks:60 final:28 remediate:22 combine:18 full:9 |
 ```
+
+## Any-order grading for unordered lists (2026-10-12)
+
+Engine change (TS, goldens, Python port in one commit). `DeckItem` and
+`DrillItem` gain an optional `anyOrder`; `grade(…, {anyOrder})` matches a list
+target's items one to one in any order (exact pairs first, then near), and
+combine windows, chunks and remediation's culprit search use the same rule. The
+web app sets `anyOrder` for a list answer whose front has no order cue
+(`listOrderFromWording`). Absent or false grades exactly as before.
+
+**No change to either section**: the harness never sets `anyOrder` (its
+perfect learner types every target as shown, and the other learners type it
+or nothing, so order never comes up). The goldens only gained cases: any-order
+grading, `listOrderFromWording`, the culprit search, and an `any-order-list`
+scripted session.
+
+**Before:**
+
+```
+=== Current engine, 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 72.0 ± 0.0 | 462.0 ± 0.0 | 210.7 ± 0.0 | full:36 cycle:24 final:12 |
+| shortDeck | realistic | 110.5 ± 6.9 | 699.4 ± 50.1 | 321.2 ± 20.7 | full:59 cycle:34 final:16 |
+| shortDeck | struggling | 177.2 ± 11.3 | 1131.2 ± 77.1 | 517.1 ± 32.6 | full:87 cycle:62 final:34 |
+| proseDeck | perfect | 146.0 ± 0.0 | 10870.0 ± 0.0 | 2634.6 ± 0.0 | chunks:64 combine:43 cycle:24 final:12 full:3 |
+| proseDeck | realistic | 257.8 ± 25.2 | 18138.7 ± 1480.7 | 4417.6 ± 363.3 | remediate:84 chunks:76 combine:62 cycle:43 final:18 full:6 |
+| proseDeck | struggling | 726.5 ± 85.7 | 39026.6 ± 3306.3 | 9762.3 ± 848.8 | remediate:313 chunks:122 combine:96 cycle:63 final:28 full:6 |
+| mediumDeck | perfect | 72.0 ± 0.0 | 2946.0 ± 0.0 | 762.7 ± 0.0 | full:36 cycle:24 final:12 |
+| mediumDeck | realistic | 111.2 ± 7.3 | 4551.5 ± 297.1 | 1178.3 ± 76.8 | full:58 cycle:42 final:18 |
+| mediumDeck | struggling | 182.4 ± 10.8 | 7455.2 ± 459.8 | 1930.3 ± 118.2 | full:84 cycle:59 final:39 |
+
+=== Your settings (encodeReps 1, batchSize 10, cycleOrder shuffled), 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 48.0 ± 0.0 | 308.0 ± 0.0 | 140.4 ± 0.0 | cycle:24 full:12 final:12 |
+| shortDeck | realistic | 74.4 ± 5.5 | 480.5 ± 41.3 | 218.4 ± 16.7 | cycle:46 final:17 full:14 |
+| shortDeck | struggling | 113.3 ± 9.4 | 730.1 ± 75.7 | 332.2 ± 30.2 | cycle:57 final:28 full:21 |
+| mediumDeck | perfect | 48.0 ± 0.0 | 1964.0 ± 0.0 | 508.4 ± 0.0 | cycle:24 full:12 final:12 |
+| mediumDeck | realistic | 74.0 ± 5.3 | 3034.3 ± 219.3 | 785.3 ± 56.6 | cycle:42 final:20 full:16 |
+| mediumDeck | struggling | 115.6 ± 8.0 | 4721.0 ± 342.0 | 1222.5 ± 87.8 | cycle:64 final:35 full:20 |
+| proseDeck | perfect | 122.0 ± 0.0 | 7952.0 ± 0.0 | 1950.1 ± 0.0 | chunks:64 cycle:24 combine:21 final:12 full:1 |
+| proseDeck | realistic | 185.8 ± 11.9 | 12316.6 ± 767.1 | 3015.7 ± 186.5 | chunks:88 cycle:38 combine:28 final:22 remediate:14 full:2 |
+| proseDeck | struggling | 315.4 ± 24.5 | 20214.9 ± 1445.1 | 4965.3 ± 353.5 | chunks:132 cycle:78 remediate:52 combine:34 final:33 full:1 |
+| listDeck | perfect | 85.0 ± 0.0 | 3912.0 ± 0.0 | 996.8 ± 0.0 | chunks:34 cycle:24 final:12 combine:10 full:5 |
+| listDeck | realistic | 129.1 ± 8.6 | 5947.2 ± 471.6 | 1515.2 ± 115.0 | chunks:52 cycle:34 final:18 combine:11 full:6 remediate:4 |
+| listDeck | struggling | 214.1 ± 22.9 | 9772.6 ± 915.4 | 2492.8 ± 232.8 | cycle:67 chunks:60 final:28 remediate:22 combine:18 full:9 |
+```
+
+**After:**
+
+```
+=== Current engine, 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 72.0 ± 0.0 | 462.0 ± 0.0 | 210.7 ± 0.0 | full:36 cycle:24 final:12 |
+| shortDeck | realistic | 110.5 ± 6.9 | 699.4 ± 50.1 | 321.2 ± 20.7 | full:59 cycle:34 final:16 |
+| shortDeck | struggling | 177.2 ± 11.3 | 1131.2 ± 77.1 | 517.1 ± 32.6 | full:87 cycle:62 final:34 |
+| proseDeck | perfect | 146.0 ± 0.0 | 10870.0 ± 0.0 | 2634.6 ± 0.0 | chunks:64 combine:43 cycle:24 final:12 full:3 |
+| proseDeck | realistic | 257.8 ± 25.2 | 18138.7 ± 1480.7 | 4417.6 ± 363.3 | remediate:84 chunks:76 combine:62 cycle:43 final:18 full:6 |
+| proseDeck | struggling | 726.5 ± 85.7 | 39026.6 ± 3306.3 | 9762.3 ± 848.8 | remediate:313 chunks:122 combine:96 cycle:63 final:28 full:6 |
+| mediumDeck | perfect | 72.0 ± 0.0 | 2946.0 ± 0.0 | 762.7 ± 0.0 | full:36 cycle:24 final:12 |
+| mediumDeck | realistic | 111.2 ± 7.3 | 4551.5 ± 297.1 | 1178.3 ± 76.8 | full:58 cycle:42 final:18 |
+| mediumDeck | struggling | 182.4 ± 10.8 | 7455.2 ± 459.8 | 1930.3 ± 118.2 | full:84 cycle:59 final:39 |
+
+=== Your settings (encodeReps 1, batchSize 10, cycleOrder shuffled), 50 seeded runs per config (mean +/- SD) ===
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 48.0 ± 0.0 | 308.0 ± 0.0 | 140.4 ± 0.0 | cycle:24 full:12 final:12 |
+| shortDeck | realistic | 74.4 ± 5.5 | 480.5 ± 41.3 | 218.4 ± 16.7 | cycle:46 final:17 full:14 |
+| shortDeck | struggling | 113.3 ± 9.4 | 730.1 ± 75.7 | 332.2 ± 30.2 | cycle:57 final:28 full:21 |
+| mediumDeck | perfect | 48.0 ± 0.0 | 1964.0 ± 0.0 | 508.4 ± 0.0 | cycle:24 full:12 final:12 |
+| mediumDeck | realistic | 74.0 ± 5.3 | 3034.3 ± 219.3 | 785.3 ± 56.6 | cycle:42 final:20 full:16 |
+| mediumDeck | struggling | 115.6 ± 8.0 | 4721.0 ± 342.0 | 1222.5 ± 87.8 | cycle:64 final:35 full:20 |
+| proseDeck | perfect | 122.0 ± 0.0 | 7952.0 ± 0.0 | 1950.1 ± 0.0 | chunks:64 cycle:24 combine:21 final:12 full:1 |
+| proseDeck | realistic | 185.8 ± 11.9 | 12316.6 ± 767.1 | 3015.7 ± 186.5 | chunks:88 cycle:38 combine:28 final:22 remediate:14 full:2 |
+| proseDeck | struggling | 315.4 ± 24.5 | 20214.9 ± 1445.1 | 4965.3 ± 353.5 | chunks:132 cycle:78 remediate:52 combine:34 final:33 full:1 |
+| listDeck | perfect | 85.0 ± 0.0 | 3912.0 ± 0.0 | 996.8 ± 0.0 | chunks:34 cycle:24 final:12 combine:10 full:5 |
+| listDeck | realistic | 129.1 ± 8.6 | 5947.2 ± 471.6 | 1515.2 ± 115.0 | chunks:52 cycle:34 final:18 combine:11 full:6 remediate:4 |
+| listDeck | struggling | 214.1 ± 22.9 | 9772.6 ± 915.4 | 2492.8 ± 232.8 | cycle:67 chunks:60 final:28 remediate:22 combine:18 full:9 |
+```
