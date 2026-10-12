@@ -748,3 +748,44 @@ that sit between T - 2 and T words, which the unchanged engine drills whole
 the next-day Again rate is the tuning report's question
 (`anki-addon/docs/DECISIONS.md`, "The tuning report"), not this harness's: its
 learner has no forgetting.
+
+## "Your settings" section and a list deck (2026-10-12)
+
+`npm run simulate` now prints a second table after "Current engine": **Your
+settings**, the add-on's settings as Don drills (`encodeReps` 1, `batchSize`
+10, `cycleOrder` shuffled, everything else as the scoreboard) over
+`shortDeck`, `mediumDeck`, `proseDeck` and a new synthetic fixture,
+`test/fixtures/listDeck.ts` (12 anatomy-shaped list answers: 3-8 items of 1-3
+words, parentheticals, counts like "2 parietal", one 19-word answer, two fronts
+that say the order matters). 50 seeded runs per config (seed label
+`settings:<deck>:<learner>`), same table format. `tools/simulate.py` prints both
+sections byte-identical to `npm run simulate` (`test_simulate_parity.py`).
+
+Why: the "Current engine" table runs at the web app's old defaults (3 blind
+typings, no batches) and has no list cards, while list cards are where Don's
+drill time and misses are (about 6 min per list card; 6+ item lists came out
+`rd::hard` 4 of 6 times). The v0.2 engine changes are measured on this section.
+
+The harness had to learn batches first: `simulate()` stopped as soon as
+`selectTrial` returned null, which a batched config hits at the first batch's
+interstitial (`phase: 'batch-done'`). It now calls `advanceToNextBatch` there
+and goes on (TS, Python and `export_golden.ts`'s traced copy). The scoreboard
+never sets `batchSize`, so the "Current engine" section is byte-identical.
+
+| Deck | Learner | Total trials | Keystrokes | Wall clock (est, s) | Trials by stage (last run) |
+|---|---|---|---|---|---|
+| shortDeck | perfect | 48.0 ± 0.0 | 308.0 ± 0.0 | 140.4 ± 0.0 | cycle:24 full:12 final:12 |
+| shortDeck | realistic | 74.4 ± 5.5 | 480.5 ± 41.3 | 218.4 ± 16.7 | cycle:46 final:17 full:14 |
+| shortDeck | struggling | 113.3 ± 9.4 | 730.1 ± 75.7 | 332.2 ± 30.2 | cycle:57 final:28 full:21 |
+| mediumDeck | perfect | 48.0 ± 0.0 | 1964.0 ± 0.0 | 508.4 ± 0.0 | cycle:24 full:12 final:12 |
+| mediumDeck | realistic | 74.0 ± 5.3 | 3034.3 ± 219.3 | 785.3 ± 56.6 | cycle:42 final:20 full:16 |
+| mediumDeck | struggling | 115.6 ± 8.0 | 4721.0 ± 342.0 | 1222.5 ± 87.8 | cycle:64 final:35 full:20 |
+| proseDeck | perfect | 132.0 ± 0.0 | 8300.0 ± 0.0 | 2042.4 ± 0.0 | chunks:72 combine:24 cycle:24 final:12 |
+| proseDeck | realistic | 197.8 ± 10.8 | 12710.7 ± 761.0 | 3121.2 ± 182.7 | chunks:96 cycle:38 combine:29 final:21 remediate:11 |
+| proseDeck | struggling | 340.0 ± 29.1 | 20771.2 ± 1566.9 | 5125.8 ± 386.3 | chunks:128 remediate:99 cycle:58 combine:42 final:30 |
+| listDeck | perfect | 76.0 ± 0.0 | 3919.0 ± 0.0 | 984.9 ± 0.0 | chunks:24 cycle:24 final:12 full:8 combine:8 |
+| listDeck | realistic | 115.3 ± 7.5 | 5996.5 ± 498.0 | 1505.5 ± 120.3 | cycle:37 chunks:34 final:17 full:10 combine:10 remediate:3 |
+| listDeck | struggling | 185.0 ± 16.7 | 9400.4 ± 795.1 | 2366.5 ± 195.6 | cycle:59 chunks:44 final:26 combine:11 full:10 remediate:10 |
+
+Trials per card at these settings: shortDeck and mediumDeck 4.0 (perfect) to
+about 9.5 (struggling); proseDeck 11.0 to 28.3; listDeck 6.3 to 15.4.

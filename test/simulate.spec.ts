@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { shortDeck } from './fixtures/shortDeck';
 import { proseDeck } from './fixtures/proseDeck';
+import { listDeck } from './fixtures/listDeck';
 import { perfectLearner, realisticLearner, simulate, strugglingLearner } from './simulate';
 
 const config = { encodeReps: 3, chunkDifficulty: 35, stemTolerance: true, ladderMode: 'cumulative' as const };
@@ -50,5 +51,24 @@ describe('simulate', () => {
     );
     const reduction = 1 - cumulative.totalTrials / exhaustive.totalTrials;
     expect(reduction).toBeGreaterThanOrEqual(0.4);
+  });
+
+  // 2026-10-12: a batched config used to stop at the first batch's
+  // interstitial (selectTrial returns null on 'batch-done').
+  it('runs every batch of a batched config through to the Final check', () => {
+    for (const batchSize of [5, 10]) {
+      const result = simulate(shortDeck, { ...config, encodeReps: 1, batchSize }, perfectLearner);
+      // Every card: 1 full rep, 2 cycle answers, 1 Final check answer.
+      expect(result.trialsByStage).toEqual({ full: 12, cycle: 24, final: 12 });
+    }
+  });
+
+  it('listDeck: 12 list cards of 3-8 items, one of 19 words, two with an ordered front', () => {
+    expect(listDeck).toHaveLength(12);
+    const items = listDeck.map(c => c.back.split(/,(?![^(]*\))/).length);
+    expect(Math.min(...items)).toBe(3);
+    expect(Math.max(...items)).toBe(8);
+    expect(listDeck.filter(c => c.back.split(/\s+/).length === 19)).toHaveLength(1);
+    expect(listDeck.filter(c => /proximal to distal|superior to inferior/.test(c.front))).toHaveLength(2);
   });
 });

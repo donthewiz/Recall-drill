@@ -5,6 +5,7 @@
 // baseline this produces -- see docs/BASELINE.md.
 import { Cue, DeckItem, SessionConfig, SessionState } from '../src/types';
 import {
+  advanceToNextBatch,
   applyAnswer,
   applyNext,
   buildItems,
@@ -49,7 +50,7 @@ export function simulate(
   learner: LearnerModel,
   minWordsToChunk: number = MIN_WORDS_TO_CHUNK
 ): SimulationResult {
-  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode, undefined, minWordsToChunk);
+  const items = buildItems(deck, config.chunkDifficulty, config.ladderMode, config.batchSize, minWordsToChunk);
   let state: SessionState = initSession({
     items,
     phase: 'encode',
@@ -69,6 +70,10 @@ export function simulate(
   let keystrokes = 0;
 
   while (totalTrials < MAX_TRIALS) {
+    // A batched session stops at each batch's interstitial ('batch-done', no
+    // trial): press "Next batch" and go on. The scoreboard's "Current engine"
+    // config never sets batchSize, so it never gets here.
+    if (state.phase === 'batch-done') state = advanceToNextBatch(state);
     const trial = selectTrial(state);
     if (!trial) break;
 
