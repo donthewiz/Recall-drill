@@ -95,7 +95,7 @@ from .engine.types import (
     WordDiffResult,
 )
 from .pacing import minutes_text
-from .sources import SourceRef, source_to_json
+from .sources import SourceRef, sources_to_json
 
 log = logging.getLogger(__name__)
 
@@ -699,8 +699,10 @@ class DrillController:
             "timestamp": self._now_ms(),
         }
         out: dict[str, Any] = _json_copy({k: v for k, v in saved.items() if v is not None})
+        sources, css = sources_to_json(self._sources)
         out["addon"] = {
-            "sources": [source_to_json(src) for src in self._sources],
+            "sources": sources,
+            "css": css,
             "collisions": self.collisions,
             "activeMs": self._active_ms,
             "activeMsByItem": {str(k): v for k, v in sorted(self._active_by_item.items())},

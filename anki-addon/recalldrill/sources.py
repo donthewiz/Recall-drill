@@ -78,6 +78,37 @@ def source_to_json(s: SourceRef) -> dict[str, Any]:
     return d
 
 
+def sources_to_json(sources: Sequence[SourceRef]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """The save's ``addon.sources`` and ``addon.css`` (v0.2): each note type's CSS
+    once, by note type id, instead of in every source (in a 109-card save the
+    repeated CSS was about 56% of the file). A source whose CSS differs from
+    the first one seen for its note type (the note type was edited mid-session)
+    keeps its own ``css``."""
+    out: list[dict[str, Any]] = []
+    css: dict[str, str] = {}
+    for s in sources:
+        d = source_to_json(s)
+        key = str(s.ntid)
+        if css.setdefault(key, s.css) == s.css:
+            del d["css"]
+        out.append(d)
+    return out, css
+
+
+def sources_from_json(
+    sources: Sequence[Mapping[str, Any]], css: Mapping[str, str] | None = None
+) -> list[SourceRef]:
+    """Inverse of :func:`sources_to_json`. A source without ``css`` takes its note
+    type's from ``css``; an old save has ``css`` in every source."""
+    shared = css or {}
+    out: list[SourceRef] = []
+    for d in sources:
+        if "css" not in d:
+            d = {**d, "css": shared.get(str(d.get("ntid")), "")}
+        out.append(source_from_json(d))
+    return out
+
+
 def source_from_json(d: Mapping[str, Any]) -> SourceRef:
     """Inverse of :func:`source_to_json`. Unknown keys are ignored; a missing
     key with a default takes it, any other missing key raises ``TypeError``."""
