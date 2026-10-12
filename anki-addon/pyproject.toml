@@ -44,6 +44,7 @@ strict = [
     "recalldrill/difficulty.py",
     "recalldrill/pacing.py",
     "recalldrill/list_kind.py",
+    "recalldrill/waiting.py",
 ]
 
 [tool.pytest.ini_options]

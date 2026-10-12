@@ -7,7 +7,8 @@
    and the main window refreshes. On success the history line is written and
    the save deleted; on failure the session stays pending and the error shows.
 
-``apply_handoff`` is the only collection write in the add-on.
+``apply_handoff`` is one of the add-on's two collection writes (the other is
+``release.apply_release``, from the waiting-cards dialog).
 """
 
 from __future__ import annotations

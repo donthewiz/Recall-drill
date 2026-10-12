@@ -195,6 +195,13 @@ def append_session(storage: Storage, history_key: str, line: Mapping[str, Any]) 
     return True
 
 
+def append_release(storage: Storage, history_key: str, line: Mapping[str, Any]) -> None:
+    """Appends a ``type: "release"`` line (cards sent to Anki undrilled)."""
+    if line.get("type") != "release":
+        raise ValueError("not a release line")
+    storage.append_jsonl(history_name(history_key), dict(line))
+
+
 def append_handoff(storage: Storage, history_key: str, line: Mapping[str, Any]) -> None:
     """Appends a ``type: "handoff"`` line (a handoff, or a declined one)."""
     if line.get("type") != "handoff":
@@ -248,6 +255,10 @@ def hard_cards(storage: Storage) -> HardCards:
     )
 
 
+RELEASE_GROUPS = ("released", "released_siblings")
+"""A ``type: "release"`` line's groups (``waiting.py``, 2026-10-12): drill cards
+sent to Anki undrilled, and their notes' suspended new siblings."""
+
 HANDED_OFF_GROUPS = ("drilled_new", "siblings", "holdout", "holdout_siblings")
 """The handoff line's groups of cards that had never been studied in Anki: the
 drilled new cards (B keeps them new, A makes them reviews due tomorrow), the
@@ -257,22 +268,28 @@ siblings and the holdout cards."""
 def handed_off_at(storage: Storage) -> dict[int, int]:
     """Card id -> its latest handoff's time (epoch ms; 0 if the line has none),
     for every card a handoff (declined ones aside) sent to Anki from
-    :data:`HANDED_OFF_GROUPS`, in any history log. Selection leaves a card out
-    until Anki has rated it since (``revlog.waiting_for_anki``)."""
+    :data:`HANDED_OFF_GROUPS`, or a release from :data:`RELEASE_GROUPS`, in any
+    history log. Selection and pacing leave a card out until Anki has rated it
+    since (``revlog.waiting_for_anki``)."""
     out: dict[int, int] = {}
     for name in storage.list_names(HISTORY_DIR, ".jsonl"):
         for raw in storage.read_jsonl(name):
             if not isinstance(raw, dict):
                 continue
             line = cast(dict[str, Any], raw)
-            if line.get("type") != "handoff" or line.get("declined"):
+            kind = line.get("type")
+            if kind == "release":
+                keys = RELEASE_GROUPS
+            elif kind == "handoff" and not line.get("declined"):
+                keys = HANDED_OFF_GROUPS
+            else:
                 continue
             groups = line.get("groups")
             if not isinstance(groups, dict):
                 continue
             stamp = line.get("timestamp")
             at = (iso_ms(stamp) if isinstance(stamp, str) else None) or 0
-            for key in HANDED_OFF_GROUPS:
+            for key in keys:
                 for cid in cast(list[Any], cast(dict[str, Any], groups).get(key) or []):
                     if isinstance(cid, int) and not isinstance(cid, bool):
                         out[cid] = max(at, out.get(cid, 0))

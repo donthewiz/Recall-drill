@@ -292,6 +292,12 @@ class SetupDialog(QDialog):
         self.sibling_label = QLabel()
         self.sibling_label.setWordWrap(True)
         cl.addWidget(self.sibling_label)
+        # 2026-10-12: stale drill cards still suspended and waiting in this deck.
+        self.waiting_label = QLabel()
+        self.waiting_label.setWordWrap(True)
+        self.waiting_label.setStyleSheet("color: #b26b00;")
+        self.waiting_label.setVisible(False)
+        cl.addWidget(self.waiting_label)
         self.difficulty_label = QLabel()
         self.difficulty_label.setWordWrap(True)
         cl.addWidget(self.difficulty_label)
@@ -657,6 +663,8 @@ class SetupDialog(QDialog):
             )
         else:
             self.sibling_label.setText("Siblings: 0 picked cards share a note.")
+        self.waiting_label.setText(f"⚠ {data.waiting_line}" if data.waiting_line else "")
+        self.waiting_label.setVisible(bool(data.waiting_line))
 
         b = data.build
         lines = [

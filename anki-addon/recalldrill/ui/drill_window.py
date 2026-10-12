@@ -10,7 +10,7 @@ Behavior lives in the controller (``controller.py``) and HTML in
   Ctrl+I shows a hidden Extra;
 - runs the effects: the dwell timer, audio, the flash, clearing the input;
 - opens Anki's Browser for "Edit in Anki" and reads the card back when it closes;
-- offers the finished session's handoff (``handoff_dialog``, the only write).
+- offers the finished session's handoff (``handoff_dialog``, a collection write).
 """
 
 from __future__ import annotations

@@ -185,7 +185,7 @@ A desktop Anki add-on that drills the user's own Anki cards with the same engine
 - **Layers** (`tests/test_layering.py`):
   - `engine/`: pure Python port of `src/utils/`, pinned to it by goldens and CI.
   - pure helpers (controller, sessions, storage, prompts, holdout, measure, tuning, difficulty, pacing): no `anki`, no Qt.
-  - `anki_io/`: `anki` allowed, no Qt; the handoff is the only collection write.
+  - `anki_io/`: `anki` allowed, no Qt; the handoff and the release of waiting drill cards (2026-10-12) are the only collection writes.
   - `ui/`: Qt only here. Spin boxes, combo boxes and date fields come from `ui/widgets.py` and ignore the wheel until focused.
 - **Parity:** the Python engine equals the TS engine run for run (goldens, simulate scoreboard). Change engine behavior in one commit: TS change, regenerate goldens, Python port, both suites green. Python-only extensions (absent means identical): `minWordsToChunk`, `encodeRepsOverride`, `minWordsToChunkOverride`.
 - **Method of use:** pick cards by class/template/tag, drill, **Hand off** to Anki (one undo step; mode B by default: cards stay new, go to the front of the queue and are buried until tomorrow, so the FSRS optimizer keeps them; mode A would exclude them from training), pace a deck to a target date.

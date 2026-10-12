@@ -378,7 +378,7 @@ Global config gained `autoplay_question_audio` (default false); `addon_config.pa
 
 A **complete** session (every card `finalDone`) is handed to Anki in one confirmed, undoable step. From then on Anki owns the cards' scheduling, and the drill's struggles live on as note tags. A saved-and-stopped or abandoned session hands off nothing.
 
-**Plan, then apply.** `plan_handoff(col, saved, settings)` reads a fresh `CardSnapshot` of every session card (and of every card of their notes), then `build_plan` (pure) decides. Cards that no longer exist are skipped and listed. `apply_handoff(col, plan)` is the add-on's **only collection write**. The UI runs it inside `CollectionOp`: one undo step, "Recall Drill handoff", and the main window refreshes.
+**Plan, then apply.** `plan_handoff(col, saved, settings)` reads a fresh `CardSnapshot` of every session card (and of every card of their notes), then `build_plan` (pure) decides. Cards that no longer exist are skipped and listed. `apply_handoff(col, plan)` is one of the add-on's **two collection writes** (the other, since 2026-10-12, is `release.apply_release`, which sends waiting drill cards to Anki undrilled). The UI runs it inside `CollectionOp`: one undo step, "Recall Drill handoff", and the main window refreshes.
 
 | Group | Rule | Action |
 |---|---|---|

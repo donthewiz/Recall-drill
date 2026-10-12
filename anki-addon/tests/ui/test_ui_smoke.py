@@ -46,6 +46,7 @@ def test_every_ui_module_is_listed() -> None:
         "recalldrill.ui.mapping_dialog",
         "recalldrill.ui.setup_dialog",
         "recalldrill.ui.tuning_dialog",
+        "recalldrill.ui.waiting_dialog",
     } <= set(UI_MODULES)
 
 
@@ -1161,3 +1162,82 @@ def test_the_panel_hides_finish_for_a_save_in_the_final_check(
     assert d.saved_info is not None and d.saved_info.check is not None
     assert d.saved_info.check.changed and not d.finish_btn.isVisibleTo(d)
     d.close()
+
+
+def test_waiting_cards_dialog_and_notice(
+    panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-12: Tools → Recall Drill: waiting cards lists the deck's waiting
+    drill cards; "Send to Anki undrilled…" plans, asks, applies and logs; the
+    notice shows once per Anki day."""
+    import aqt
+
+    from recalldrill import history_store
+    from recalldrill.storage import Storage
+    from recalldrill.ui import context, entry, waiting_dialog
+    from recalldrill.ui.context import AddonContext
+
+    col, did = panel_env
+    for nid in col.find_notes(f"did:{did}"):
+        note = col.get_note(nid)
+        note.add_tag("rd::drill::A")
+        col.update_note(note)
+    stub = aqt.mw
+    stub.update_undo_actions = lambda: None  # type: ignore[attr-defined]
+    tips: list[str] = []
+    asked: list[str] = []
+    opened: list[int] = []
+    for module in (waiting_dialog, context, entry):
+        monkeypatch.setattr(module, "mw", stub)
+    monkeypatch.setattr(waiting_dialog, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(waiting_dialog, "CollectionOp", _SyncCollectionOp)
+    monkeypatch.setattr(_SyncCollectionOp, "col", col)
+    monkeypatch.setattr(waiting_dialog, "tooltip", lambda text, **_k: tips.append(text))
+    monkeypatch.setattr(waiting_dialog, "ask_send", lambda _p, text: asked.append(text) or True)
+    ctx = AddonContext("recall_drill", str(window_env))
+    st = Storage(window_env, "p")
+    ctx.storage = lambda: st  # type: ignore[method-assign]
+    monkeypatch.setattr(entry, "_ctx", ctx)
+    monkeypatch.setattr(entry, "open_setup_for", lambda d: opened.append(d))
+
+    # Nothing is stale yet: no notice, and the day isn't used up.
+    waiting_dialog.maybe_notify(ctx)
+    assert tips == [] and history_store.handed_off_at(st) == {}
+
+    entry.open_waiting_cards()
+    (w,) = [d for d in ctx.dialogs if isinstance(d, waiting_dialog.WaitingDialog)]
+    cell: Any = w.table.item
+    assert w.table.rowCount() == 1 and cell(0, 1).text() == "6"
+    assert cell(0, 2).text() == "0"
+    w._drill(did)
+    assert opened == [did]
+
+    # A passed pacing target makes them stale: the notice shows, once a day.
+    from datetime import timedelta
+
+    from recalldrill import pacing
+    from recalldrill.measure import anki_day
+
+    today = anki_day(time_ms(), col.get_preferences().scheduling.rollover)
+    pacing.save(st, did, pacing.PacingSettings(target_date=today - timedelta(days=1)))
+    waiting_dialog.maybe_notify(ctx)
+    assert len(tips) == 1 and tips[0].startswith("Recall Drill: 6 drill cards are still suspended")
+    waiting_dialog.maybe_notify(ctx)
+    assert len(tips) == 1
+
+    # Send them to Anki undrilled.
+    w.refresh()
+    assert cell(0, 2).text() == "6"
+    w._send(w.rows[0])
+    assert asked and "Send 6 drill cards" in asked[0]
+    assert all(col.get_card(c).queue == 0 for c in col.find_cards(f"did:{did}"))
+    (line,) = history_store.read_all(st, str(did))
+    assert line["type"] == "release" and len(line["groups"]["released"]) == 6
+    assert w.table.rowCount() == 0
+    w.close()
+
+
+def time_ms() -> float:
+    import time
+
+    return time.time() * 1000

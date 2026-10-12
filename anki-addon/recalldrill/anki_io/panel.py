@@ -32,6 +32,7 @@ from ..pacing import DrillSpeed, minutes_text
 from ..prompts import parse_hint_overrides
 from ..sessions import SaveStatus
 from ..storage import HINTS, Storage
+from ..waiting import panel_line
 from .build import BuildResult, DifficultyInputs, build_session
 from .cards import NoteCache
 from .handoff import HARD_SEARCH
@@ -46,6 +47,7 @@ from .select import (
     scope_to_json,
     select_cards,
 )
+from .waiting import read_waiting, stale_in
 from .workload import drill_estimate, shapes, speed_for, top_level
 
 
@@ -105,6 +107,8 @@ class PanelData:
     """The held-out cards (``holdout_refs``), for the session save."""
     difficulty: DifficultySummary | None = None
     """The difficulty adjustment's counts (Phase 6)."""
+    waiting_line: str | None = None
+    """Deck scopes: the amber line when stale drill cards wait in the deck (2026-10-12)."""
 
     @property
     def stable_skipped(self) -> int:
@@ -243,7 +247,13 @@ def read_panel(
     top = top_level(col, home) if home is not None else None
     speed = speed_for(col, storage, top[1] if top is not None else None)
     est = drill_estimate(speed, card_shapes, len(build.deck_items))
+    stale = (
+        stale_in(read_waiting(col, storage, cfg, scope.deck_id))
+        if scope.deck_id is not None
+        else 0
+    )
     return PanelData(
+        waiting_line=panel_line(stale) if stale else None,
         scope=scope,
         label=scope_label(col, scope),
         key=key,

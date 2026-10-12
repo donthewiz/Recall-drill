@@ -145,7 +145,7 @@ or missing cards are added when there are any. **Finish** / **Cancel**.
 ## 4. The handoff
 
 Unchanged: `plan_handoff`, `build_plan`'s groups, the forecast, tags, flags, the confirmation
-dialog, `apply_handoff` as the only collection write and one undo step, rollback on failure, and
+dialog, `apply_handoff` as a collection write (with the 2026-10-12 release, one of two) and one undo step, rollback on failure, and
 the history line format. `drilled_cards` still requires every card to be `finalDone`, and the cut
 session meets that.
 

@@ -70,6 +70,12 @@ class AddonConfig:
     auto_advance_correct: bool = True
     """A correct cycle or Final-check answer moves on by itself after a short dwell
     (2026-10-12); wrong answers and reveals still wait for Enter."""
+    stale_drill_days: int = 7
+    """A drill card still suspended and waiting this many days after its note was
+    added is stale (2026-10-12)."""
+    waiting_notice: bool = True
+    """Once per Anki day, after the profile opens, a tooltip when stale drill
+    cards are waiting."""
     extra_display: ExtraDisplay = "first_and_misses"
     """When a card's Extra shows and holds the screen: "first_and_misses" (the first
     time its full answer is on screen, and after a miss or a reveal) or "always"."""
@@ -147,4 +153,6 @@ def parse_config(raw: object) -> AddonConfig:
         idle_cap_seconds=_int(d.get("idle_cap_seconds"), dc.idle_cap_seconds, 1, 3600),
         auto_advance_correct=_bool(d.get("auto_advance_correct"), dc.auto_advance_correct),
         extra_display=extra if extra in ("first_and_misses", "always") else dc.extra_display,
+        stale_drill_days=_int(d.get("stale_drill_days"), dc.stale_drill_days, 0, 3650),
+        waiting_notice=_bool(d.get("waiting_notice"), dc.waiting_notice),
     )

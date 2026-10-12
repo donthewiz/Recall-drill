@@ -27,5 +27,7 @@
   "exclude_handed_off_new": true,
   "idle_cap_seconds": 120,
   "auto_advance_correct": true,
-  "extra_display": "first_and_misses"
+  "extra_display": "first_and_misses",
+  "stale_drill_days": 7,
+  "waiting_notice": true
 }
