@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from .engine.jscompat import js_iso_string
 from .history_store import RELEASE_GROUPS
@@ -56,7 +56,8 @@ class WaitingRow:
     did: int
     deck: str
     cids: tuple[int, ...]
-    stale: int
+    stale_cids: tuple[int, ...]
+    """The waiting cards that are stale (a subset of ``cids``)."""
     oldest: date
     target: date | None
     """The pacing target that applies to this deck, if any."""
@@ -64,6 +65,10 @@ class WaitingRow:
     @property
     def waiting(self) -> int:
         return len(self.cids)
+
+    @property
+    def stale(self) -> int:
+        return len(self.stale_cids)
 
 
 def pacing_stale(settings: PacingSettings | None, today: date) -> bool:
@@ -99,7 +104,9 @@ def waiting_rows(
                 did=did,
                 deck=deck_name(did),
                 cids=tuple(sorted(c.cid for c in group)),
-                stale=sum(1 for c in group if is_stale(c.added, today, stale_days, pacing)),
+                stale_cids=tuple(
+                    sorted(c.cid for c in group if is_stale(c.added, today, stale_days, pacing))
+                ),
                 oldest=min(c.added for c in group),
                 target=pacing.target_date if pacing is not None else None,
             )
@@ -157,6 +164,39 @@ def save_last_shown(storage: Storage, day: date) -> None:
 
 
 # ---------------------------------------------------------------------------
+# What "Send to Anki undrilled" offers (2026-10-13)
+# ---------------------------------------------------------------------------
+
+ReleaseScope = Literal["stale", "all"]
+RELEASE_SCOPES: tuple[ReleaseScope, ...] = ("stale", "all")
+
+
+@dataclass(frozen=True)
+class ReleaseChoice:
+    """One thing the confirmation can send: a row's stale cards, or all of its
+    waiting cards."""
+
+    scope: ReleaseScope
+    cids: tuple[int, ...]
+
+    @property
+    def label(self) -> str:
+        """The confirmation's button: "Stale only (N)" or "All waiting (M)"."""
+        return f"{'Stale only' if self.scope == 'stale' else 'All waiting'} ({len(self.cids)})"
+
+
+def release_choices(row: WaitingRow) -> list[ReleaseChoice]:
+    """The row's choices, the default first: "Stale only" while any card is
+    stale (the default, so a deck whose exam is ahead keeps its fresh cards),
+    then "All waiting". With nothing stale, only "All waiting"."""
+    choices: list[ReleaseChoice] = []
+    if row.stale_cids:
+        choices.append(ReleaseChoice("stale", row.stale_cids))
+    choices.append(ReleaseChoice("all", row.cids))
+    return choices
+
+
+# ---------------------------------------------------------------------------
 # The release's history line
 # ---------------------------------------------------------------------------
 
@@ -167,12 +207,15 @@ def release_line(
     siblings: Sequence[int],
     tagged_notes: Sequence[int],
     at_ms: float,
+    scope: ReleaseScope,
 ) -> dict[str, Any]:
-    """``{"type": "release", …}`` in ``history/<did>.jsonl``."""
+    """``{"type": "release", …}`` in ``history/<did>.jsonl``. ``scope`` says which
+    choice was sent: ``"stale"`` (the deck's stale cards) or ``"all"``."""
     return {
         "type": "release",
         "timestamp": js_iso_string(at_ms),
         "deckId": did,
+        "scope": scope,
         "groups": {"released": list(released), "released_siblings": list(siblings)},
         "tags": {"added": len(tagged_notes), "byTag": {TAG_UNDRILLED: len(tagged_notes)}},
     }

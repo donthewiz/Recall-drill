@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -23,7 +23,14 @@ from recalldrill.anki_io.select import Scope
 from recalldrill.anki_io.waiting import read_waiting, read_waiting_cards, waiting_search
 from recalldrill.measure import anki_day
 from recalldrill.storage import Storage
-from recalldrill.waiting import TAG_UNDRILLED, UNDO_LABEL
+from recalldrill.waiting import (
+    TAG_UNDRILLED,
+    UNDO_LABEL,
+    WaitingCard,
+    WaitingRow,
+    release_choices,
+    waiting_rows,
+)
 
 DAY_MS = 86_400_000
 
@@ -201,6 +208,7 @@ def test_history_line_and_selection_wait_for_a_rating(col: Collection, tmp_path:
     history_store.append_release(st, str(lab), line)
     (stored,) = history_store.read_all(st, str(lab))
     assert stored["type"] == "release" and stored["deckId"] == lab
+    assert stored["scope"] == "all"  # plan_release's default
     assert stored["groups"] == {"released": fwd, "released_siblings": rev}
     assert stored["tags"] == {"added": 3, "byTag": {TAG_UNDRILLED: 3}}
     assert set(history_store.handed_off_at(st)) == set(fwd + rev)
@@ -231,3 +239,61 @@ def test_panel_amber_line_for_stale_waiting_cards(col: Collection, tmp_path: Pat
     pacing.save(st, lab, pacing.PacingSettings(target_date=parent_target - timedelta(days=2)))
     line = _panel(col, st, lab).waiting_line
     assert line is not None and line.startswith("3 drill cards have waited too long")
+
+
+def _row_with_two_stale(fwd: list[int], lab: int) -> WaitingRow:
+    """A "Lab" row whose first two Forward cards were added 20 days ago and the
+    third yesterday."""
+    today = date(2026, 10, 13)
+    added = [today - timedelta(days=20), today - timedelta(days=20), today - timedelta(days=1)]
+    cards = [WaitingCard(c, 1000 + i, lab, added[i]) for i, c in enumerate(fwd)]
+    (row,) = waiting_rows(cards, today, 7, lambda _d: None, lambda _d: "Lab")
+    return row
+
+
+def test_release_plan_for_each_choice_and_siblings_follow(col: Collection) -> None:
+    lab, fwd, rev = _two_decks(col)
+    row = _row_with_two_stale(fwd, lab)
+    stale, everything = release_choices(row)
+    sp = plan_release(col, lab, stale.cids, stale.scope)
+    assert sp.scope == "stale" and sp.released == tuple(fwd[:2])
+    assert sp.siblings == tuple(rev[:2])  # the released cards' notes' siblings
+    assert fwd[2] not in sp.unsuspend and rev[2] not in sp.unsuspend
+    assert "2 stale drill cards" in release_mod.describe(sp)
+    ap = plan_release(col, lab, everything.cids, everything.scope)
+    assert ap.scope == "all" and ap.released == tuple(fwd) and ap.siblings == tuple(rev)
+    assert "3 drill cards" in release_mod.describe(ap)
+    both = release_mod.describe_choices([sp, ap])
+    assert "Stale only: 2 cards and 2 siblings" in both
+    assert "All waiting: 3 cards and 3 siblings" in both
+
+    # Sending the stale choice leaves the fresh card's note waiting.
+    apply_release(col, sp)
+    assert all(col.get_card(c).queue == 0 for c in fwd[:2] + rev[:2])  # type: ignore[arg-type]
+    assert col.get_card(fwd[2]).queue == -1  # type: ignore[arg-type]
+    assert col.get_card(rev[2]).queue == -1  # type: ignore[arg-type]
+
+
+def test_the_history_line_records_the_scope(col: Collection, tmp_path: Path) -> None:
+    st = _storage(tmp_path)
+    lab, fwd, _rev = _two_decks(col)
+    row = _row_with_two_stale(fwd, lab)
+    stale, everything = release_choices(row)
+    sp = plan_release(col, lab, stale.cids, stale.scope)
+    assert history_line(sp, 0)["scope"] == "stale"
+    all_plan = plan_release(col, lab, everything.cids, everything.scope)
+    assert history_line(all_plan, 0)["scope"] == "all"
+    history_store.append_release(st, str(lab), history_line(sp, 0))
+    (stored,) = history_store.read_all(st, str(lab))
+    assert stored["scope"] == "stale" and stored["groups"]["released"] == fwd[:2]
+    # Selection treats a stale release like any other: the cards wait for a rating.
+    assert set(history_store.handed_off_at(st)) == set(fwd[:2] + _rev[:2])
+
+
+def test_nothing_stale_offers_only_all_waiting(col: Collection) -> None:
+    lab, fwd, _rev = _two_decks(col)
+    today = date(2026, 10, 13)
+    cards = [WaitingCard(c, 1000 + i, lab, today) for i, c in enumerate(fwd)]
+    (row,) = waiting_rows(cards, today, 7, lambda _d: None, lambda _d: "Lab")
+    (only,) = release_choices(row)
+    assert only.scope == "all" and only.cids == tuple(fwd)
