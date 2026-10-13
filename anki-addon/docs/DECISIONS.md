@@ -611,7 +611,7 @@ alternates, typo tolerance and the known grading bugs. Nothing shortens,
 splits or edits a card: these change how a card is drilled, not the card.
 Simulate before and after: `docs/BASELINE.md`, the four 2026-10-12 sections.
 
-### List chunking (Don, 2026-10-12)
+### List chunking (Don, 2026-10-12; wording and 3-item lists 2026-10-13)
 
 Engine (TS and Python, goldens). `listItems(text)`: split on `,` and `;`
 outside `()` and `[]`, trim, drop a leading "and "/"or ", keep each item's
@@ -620,20 +620,43 @@ so "radius and ulna" is one item). `chunkText` cuts a list answer at item
 boundaries when it has 4+ items whatever its word count, or 3 items and more
 words than the threshold (the card's `minWordsToChunkOverride`, else the
 session's): `max(2, round(items × chunkDifficulty / 100))` items per chunk, a
-lonely 1-item trailing chunk merged into the one before, items joined with ", ".
-Fewer than 2 chunks means none; `chunkDifficulty` ≥ 100 still means no
-chunking. Other answers keep the word rule, but a cut never falls inside
-parentheses (it moves to just after the word that closes them). Estimate,
-progress, combine windows and remediation read chunks through `buildItem`;
-`computeMinimumTrials` still equals a perfect run's attempts.
+lonely 1-item trailing chunk merged into the one before. Fewer than 2 chunks
+means none; `chunkDifficulty` ≥ 100 still means no chunking. Other answers keep
+the word rule, but a cut never falls inside parentheses (it moves to just after
+the word that closes them). Estimate, progress, combine windows and remediation
+read chunks through `buildItem`; `computeMinimumTrials` still equals a perfect
+run's attempts.
 
-As built, a 3-item list never chunks: 2 items per chunk leaves a lonely third
-that merges back. So a long 3-item list, or a prose sentence with two commas
-(it reads as a 3-item list), is drilled whole; a sentence with three commas
-("…evaporation, condensation, precipitation, and collection…") is cut at its
-commas. A list of 4-8 items of 8 words or fewer is now chunked, which costs a
-perfect learner more trials (presentations, blind chunk answers, windows) than
-one whole answer; the harness's learners don't model long lists being hard.
+**Chunks are slices of the card's own answer (2026-10-13).** A list chunk is the
+exact substring of the answer from its first item's start to its last item's
+end (`listItemSpans`), and a list combine window is the substring from the start
+of its first chunk to the end of its last: the card's commas or semicolons, the
+"and"/"or" before the last item, parentheticals and spacing as written, for
+ordered and any-order lists alike. v0.2 joined a chunk's items with ", " and a
+window's chunks with a space (", " for any order), which dropped the card's
+"and": typing "humerus, radius and ulna, carpals, metacarpals, and phalanges"
+exactly graded `near`, and `wrong` on a strict-punctuation deck. Typing a card
+as written must never be marked wrong (Don, Med Term). `joinWindow` and
+`findAllCulpritChunks` take the card's answer (`DrillItem.back`); the culprit
+search maps each chunk to the window words that overlap its own text, so the
+"and" between two chunks belongs to none. A chunk that isn't found in the
+answer, in order (a save from before this change, or a non-list answer), joins
+as before. Non-list answers keep today's behavior.
+
+**A 3-item list over the threshold chunks one item per chunk (2026-10-13)**:
+3 chunks, whatever the percentage below 100. v0.2 never chunked it (2 items per
+chunk left a lonely third that merged back), so a long 3-item list was drilled
+whole. Before v0.2 such lists were chunked by words and were among the hard
+cards (Don, 2026-10-13), so they are chunked again, by item. At or under the threshold a
+3-item list stays whole. A prose sentence with two commas reads as a 3-item
+list and now chunks at its commas too (proseDeck's 18-word encapsulation card:
+"In object-oriented programming", "encapsulation restricts … internal state",
+"exposing behavior only through defined methods."). Lists of 4+ items are
+unchanged: `max(2, round(items × pct))`. A list of 4-8 items of 8 words or fewer
+is chunked, which costs a perfect learner more trials (presentations, blind
+chunk answers, windows) than one whole answer; the harness's learners don't
+model long lists being hard. Simulate before and after: `docs/BASELINE.md`,
+"List chunks keep the card's own wording" (2026-10-13).
 
 ### Any-order lists (Don, 2026-10-12)
 
@@ -648,9 +671,9 @@ target item matched and nothing left over: exact if every pair is exact, else
 near; otherwise wrong. The diff marks a matched item's words matched (a dropped
 "and" counts with its item), `missingWords` lists the unmatched items' words.
 Typed text that can't be split into 2+ items (multi-word items typed without
-separators) grades as before. An any-order card's combine windows join their
-chunks with ", " (`joinWindow`), and remediation's culprit search uses the
-any-order diff, so the culprits are the chunks holding the missed items.
+separators) grades as before. An any-order card's combine windows are slices of the answer
+(`joinWindow`, 2026-10-13; v0.2 joined the chunks with ", "), and remediation's
+culprit search uses the any-order diff, so the culprits are the chunks holding the missed items.
 
 `listOrderFromWording(front)`: "ordered" when the front, cloze blank (`[...]`,
 `___`) removed and lower-cased, contains one of `ORDER_CUES` as whole words:
@@ -729,14 +752,25 @@ tests run with `auto_advance_correct` off and `extra_display` "always".
   deck) and **Send to Anki undrilled…**. The setup panel shows an amber line on
   a deck scope with stale waiting cards.
 - **Release** (the add-on's **second collection write**, next to the handoff):
-  plan, then apply, like the handoff. It unsuspends the row's waiting cards and
-  their notes' suspended new siblings; they stay new and keep their new-queue
+  plan, then apply, like the handoff. It unsuspends the cards sent and their
+  notes' suspended new siblings; they stay new and keep their new-queue
   positions (no reposition, no bury); the notes get `rd::undrilled`. One undo
   step, "Recall Drill: send undrilled", with the handoff's rollback on failure
   (tested with a forced failure). The confirmation gives the counts, the
   siblings and the days the deck's new/day spreads them over.
-- **History**: `{"type": "release", "timestamp", "deckId", "groups":
-  {"released", "released_siblings"}, "tags": {"added", "byTag"}}` in
+- **What a release sends (Don, 2026-10-13)**: the confirmation has two buttons,
+  **Stale only (N)** (the default) and **All waiting (M)**; with nothing stale,
+  only All waiting. `WaitingRow.stale_cids` holds the stale cards (`stale` is
+  their count); `release_choices(row)` gives the choices, default first, and
+  each is planned with `plan_release(col, did, cids, scope)`. Siblings follow
+  whichever cards are sent, as before, so a stale-only release also unsuspends
+  the siblings of those cards, not of the fresh ones. Why: a deck whose exam is
+  still ahead (Lab 2, 214 waiting, practical Oct 23) needs its old cards
+  released and its fresh ones left for drilling. v0.2 sent every waiting card
+  of the row.
+- **History**: `{"type": "release", "timestamp", "deckId", "scope": "stale" |
+  "all", "groups": {"released", "released_siblings"}, "tags": {"added",
+  "byTag"}}` (`scope` since 2026-10-13; older lines have none) in
   `history/<did>.jsonl`. `handed_off_at` reads release groups, so selection and
   pacing leave those cards out until Anki rates them. The tuning report never
   counts them as drilled outcomes: they get a "Released undrilled" row, measured
@@ -747,7 +781,7 @@ tests run with `auto_advance_correct` off and `extra_display` "always".
 
 Session saves keep each note type's CSS once (`addon.css`, by note type id);
 `SourceRef.css` resolves on load, and old saves with CSS in every source still
-load. `VERSION` 0.2.0.
+load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release).
 
 ## Changing the engine now
 
@@ -765,7 +799,7 @@ A TS change alone fails the drift guard. Regenerated goldens without the Python 
 A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addon/build.py` writes `anki-addon/dist/recall_drill-<human_version>.ankiaddon` (`dist/` is gitignored), a zip of the add-on folder's **contents**, no top-level folder.
 
 - **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
-- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.2.0), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
+- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.2.1), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
 - **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
 - **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
 - **The "(dev)" label** (Tools menu entry and About text) shows only when the add-on's folder is `recall_drill_dev` (`ui/about.py`, `display_name`, decided from the module's first name part); an installed package shows plain "Recall Drill".
