@@ -29,7 +29,7 @@ describe('listItems', () => {
 describe('chunkText on list answers', () => {
   const six = '1 frontal, 2 parietal, 2 temporal, 1 occipital, 1 sphenoid, 1 ethmoid';
 
-  it('cuts at item boundaries, never mid-item, joining items with ", "', () => {
+  it('cuts at item boundaries, never mid-item', () => {
     // 6 items x 35% = 2.1 -> 2 items per chunk.
     expect(chunkText(six, 35)).toEqual(['1 frontal, 2 parietal', '2 temporal, 1 occipital', '1 sphenoid, 1 ethmoid']);
   });
@@ -46,11 +46,19 @@ describe('chunkText on list answers', () => {
     expect(chunkText('a, b, c, d, e', 35)).toEqual(['a, b', 'c, d, e']);
   });
 
-  it('a 3-item list: never at or under the threshold; over it, 2 items per chunk merge to one, so none', () => {
+  it('a 3-item list: not at or under the threshold; over it, one item per chunk (2026-10-13)', () => {
     expect(chunkText('skeletal, cardiac, smooth', 35)).toBeNull();
     const long = 'fibrous joints (sutures, syndesmoses), cartilaginous joints (symphyses), synovial joints (freely movable)';
-    expect(chunkText(long, 35)).toBeNull();
+    expect(chunkText(long, 35)).toEqual([
+      'fibrous joints (sutures, syndesmoses)',
+      'cartilaginous joints (symphyses)',
+      'synovial joints (freely movable)',
+    ]);
+    // The card's own threshold: 11 words, so a limit of 20 keeps it whole.
     expect(chunkText(long, 35, 20)).toBeNull();
+    // Whatever the percentage, but 100 or more.
+    expect(chunkText(long, 15)).toHaveLength(3);
+    expect(chunkText(long, 100)).toBeNull();
   });
 
   it('chunkDifficulty >= 100 still means no chunking', () => {

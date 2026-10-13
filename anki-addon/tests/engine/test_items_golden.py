@@ -9,6 +9,7 @@ import pytest
 from engine_test_support import case_ids, check, load_golden
 
 from recalldrill.engine import items, rand
+from recalldrill.engine.grading import list_item_spans
 from recalldrill.engine.items import (
     build_combine_sequence,
     build_item,
@@ -73,6 +74,7 @@ def test_chunk_text_irregular_whitespace(case: Any) -> None:
 def test_list_items_and_list_chunking(case: Any) -> None:
     text = case["text"]
     check(list_items(text), case["items"], "listItems(text)", text=text)
+    check([list(s) for s in list_item_spans(text)], case["spans"], "listItemSpans(text)", text=text)
     for c in case["chunks"]:
         check(
             chunk_text(text, c["pct"], c["min"]),
@@ -108,16 +110,66 @@ ANY_ORDER_CULPRITS: list[Any] = GOLDEN["anyOrderItems"]["culprits"]
 @pytest.mark.parametrize("case", ANY_ORDER_CULPRITS, ids=case_ids(ANY_ORDER_CULPRITS))
 def test_any_order_culprits(case: Any) -> None:
     chunks, start, end = case["chunks"], case["startIdx"], case["endIdx"]
-    check(join_window(chunks, start, end + 1, True), case["window"], "joinWindow(anyOrder)")
+    check(
+        join_window(chunks, start, end + 1, True, case["back"]),
+        case["window"],
+        "joinWindow(anyOrder)",
+    )
     check(join_window(chunks, start, end + 1), case["spaceWindow"], "joinWindow")
     for strict, out in zip((True, False), case["out"], strict=True):
         check(
-            find_all_culprit_chunks(case["typed"], chunks, start, end, strict, True, True),
+            find_all_culprit_chunks(
+                case["typed"], chunks, start, end, strict, True, True, case["back"]
+            ),
             out,
             "findAllCulpritChunks(anyOrder)",
             typed=case["typed"],
             strict=strict,
         )
+
+
+LIST_SLICES: list[Any] = GOLDEN["listSlices"]
+
+
+@pytest.mark.parametrize("case", LIST_SLICES, ids=case_ids(LIST_SLICES))
+def test_list_chunks_and_windows_are_slices_of_the_answer(case: Any) -> None:
+    back, chunks = case["back"], case["chunks"]
+    check(chunk_text(back, case["pct"], case["min"]), chunks, "chunkText", text=back)
+    for w in case["windows"]:
+        s, e = w["start"], w["end"]
+        check(join_window(chunks, s, e, False, back), w["ordered"], "joinWindow", start=s, end=e)
+        check(
+            join_window(chunks, s, e, True, back),
+            w["anyOrder"],
+            "joinWindow(anyOrder)",
+            start=s,
+            end=e,
+        )
+    for c in case["culprits"]:
+        for o in c["out"]:
+            check(
+                find_all_culprit_chunks(
+                    c["typed"], chunks, c["startIdx"], c["endIdx"], o["strict"], False, None, back
+                ),
+                o["ordered"],
+                "findAllCulpritChunks",
+                typed=c["typed"],
+                strict=o["strict"],
+            )
+            check(
+                find_all_culprit_chunks(
+                    c["typed"], chunks, c["startIdx"], c["endIdx"], o["strict"], True, True, back
+                ),
+                o["anyOrder"],
+                "findAllCulpritChunks(anyOrder)",
+                typed=c["typed"],
+                strict=o["strict"],
+            )
+    check(
+        join_window(["x, y", "z, w"], 0, 2, False, back),
+        case["foreignWindow"],
+        "joinWindow(foreign)",
+    )
 
 
 @_cases("targets")

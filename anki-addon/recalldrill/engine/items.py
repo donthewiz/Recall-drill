@@ -20,6 +20,7 @@ TS name                       Python name
 ``culpritHalf``               ``culprit_half``
 ``findAllCulpritChunks``      ``find_all_culprit_chunks``
 ``joinWindow``                ``join_window``
+``locateChunks``              ``_locate_chunks``
 ``ORDER_CUES``                ``ORDER_CUES``
 ``listOrderFromWording``      ``list_order_from_wording``
 ``withListOrder``             ``with_list_order``
@@ -51,8 +52,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, NotRequired, TypedDict, cast
 
 from . import rand
-from .grading import compute_word_diff, exact_match, grade, split_list_items
-from .jscompat import WS_RE, js_round, js_split_ws, js_trim, truthy
+from .grading import compute_word_diff, exact_match, grade, list_item_spans, split_list_items
+from .jscompat import JS_WS_CHARS, WS_RE, js_round, js_split_ws, js_trim, truthy
 from .types import (
     CombineSequenceItem,
     DeckItem,
@@ -135,9 +136,12 @@ def chunk_text(
 
     A list answer (:func:`list_items`) with 4+ items, or 3 items and more than
     ``min_words_to_chunk`` words, is cut at item boundaries, ``max(2,
-    js_round(items x pct))`` items per chunk, joined with ", ". Any other answer
-    over the threshold is cut every ``js_round(words x pct)`` words, a cut inside
-    parentheses moving to just after the word that closes them."""
+    js_round(items x pct))`` items per chunk (a lonely 1-item trailing chunk
+    merges into the one before); a 3-item list chunks one item per chunk. A
+    chunk is the card's own text from its first item's start to its last item's
+    end, as written (2026-10-13). Any other answer over the threshold is cut
+    every ``js_round(words x pct)`` words, a cut inside parentheses moving to
+    just after the word that closes them."""
     words = [w for w in js_split_ws(text) if len(w) > 0]
     pct = max(15, min(100, chunk_percent))
 
@@ -146,11 +150,18 @@ def chunk_text(
         # 100% means full card at once (no chunking)
         if pct >= 100:
             return None
-        items_per_chunk = max(2, js_round(len(items) * (pct / 100)))
-        if items_per_chunk >= len(items):
+        n = len(items)
+        items_per_chunk = 1 if n == 3 else max(2, js_round(n * (pct / 100)))
+        if items_per_chunk >= n:
             return None
-        item_runs = [items[i : i + items_per_chunk] for i in range(0, len(items), items_per_chunk)]
-        return _join_runs(item_runs, ", ")
+        item_runs = [[i, min(i + items_per_chunk, n) - 1] for i in range(0, n, items_per_chunk)]
+        if n > 3 and len(item_runs) > 1 and item_runs[-1][0] == item_runs[-1][1]:
+            last = item_runs.pop()
+            item_runs[-1][1] = last[1]
+        if len(item_runs) < 2:
+            return None
+        spans = list_item_spans(text)
+        return [text[spans[first][0] : spans[last][1]] for first, last in item_runs]
 
     if len(words) <= min_words_to_chunk:
         return None
@@ -285,14 +296,18 @@ def find_all_culprit_chunks(
     strict: bool = False,
     any_order: bool = False,
     stem_tolerance: bool | None = None,
+    back: str | None = None,
 ) -> list[int]:
     """Chunk indices in ``start_idx..end_idx`` with an unmatched word in the LCS diff.
 
     Falls back to ``[end_idx]`` when every word matched. An any-order card (TS
-    ``anyOrder: {stemTolerance}``) joins the window with ", " and uses grade()'s
-    any-order diff, with ``stem_tolerance``.
+    ``anyOrder: {stemTolerance}``) uses grade()'s any-order diff, with
+    ``stem_tolerance``. With ``back`` (the card's answer), a list answer's window
+    is a slice of it (:func:`join_window`), and a chunk's words are the window's
+    words that overlap the chunk's own text; a word between two chunks (the
+    "and" before the last item) belongs to none.
     """
-    combined_target = join_window(chunks, start_idx, end_idx + 1, any_order)
+    combined_target = join_window(chunks, start_idx, end_idx + 1, any_order, back)
     if any_order:
         diff = grade(
             typed,
@@ -304,14 +319,28 @@ def find_all_culprit_chunks(
     else:
         diff = compute_word_diff(typed, combined_target, strict)
 
+    sliced = _locate_chunks(chunks, end_idx + 1, back) if back is not None else None
     culprits: list[int] = []
-    word_cursor = 0
-    for idx in range(start_idx, end_idx + 1):
-        chunk_word_count = len(chunks[idx].split(" "))
-        chunk_diff = diff[word_cursor : word_cursor + chunk_word_count]
-        if any(not d["matched"] for d in chunk_diff):
-            culprits.append(idx)
-        word_cursor += chunk_word_count
+    if sliced is not None:
+        base = sliced[start_idx][0]
+        word_ranges = [(m.start(), m.end()) for m in _NON_WS_RE.finditer(combined_target)]
+        for idx in range(start_idx, end_idx + 1):
+            frm = sliced[idx][0] - base
+            to = sliced[idx][1] - base
+            bad = any(
+                ws < to and we > frm and w < len(diff) and not diff[w]["matched"]
+                for w, (ws, we) in enumerate(word_ranges)
+            )
+            if bad:
+                culprits.append(idx)
+    else:
+        word_cursor = 0
+        for idx in range(start_idx, end_idx + 1):
+            chunk_word_count = len(chunks[idx].split(" "))
+            chunk_diff = diff[word_cursor : word_cursor + chunk_word_count]
+            if any(not d["matched"] for d in chunk_diff):
+                culprits.append(idx)
+            word_cursor += chunk_word_count
 
     if not culprits:
         culprits.append(end_idx)
@@ -319,9 +348,42 @@ def find_all_culprit_chunks(
     return culprits
 
 
-def join_window(chunks: Sequence[str], start: int, end: int, any_order: bool = False) -> str:
-    """``chunks[start:end]`` as one combine window: ", " for an any-order card
-    (its chunks are runs of list items), else a space."""
+_NON_WS_RE = re.compile("[^" + JS_WS_CHARS + "]+")
+
+
+def _locate_chunks(chunks: Sequence[str], up_to: int, back: str) -> list[tuple[int, int]] | None:
+    """TS ``locateChunks``: where ``chunks[:up_to]`` sit in a list answer, found
+    in order, or None when ``back`` isn't a list or a chunk isn't there (a save
+    from before list chunks were slices of the answer)."""
+    if list_items(back) is None:
+        return None
+    out: list[tuple[int, int]] = []
+    cursor = 0
+    for i in range(up_to):
+        at = back.find(chunks[i], cursor)
+        if at == -1 or len(chunks[i]) == 0:
+            return None
+        out.append((at, at + len(chunks[i])))
+        cursor = at + len(chunks[i])
+    return out
+
+
+def join_window(
+    chunks: Sequence[str],
+    start: int,
+    end: int,
+    any_order: bool = False,
+    back: str | None = None,
+) -> str:
+    """``chunks[start:end]`` as one combine window. For a list answer (``back``,
+    the card's answer) it is the card's own text from the start of the first
+    chunk to the end of the last, separators and all (2026-10-13). Otherwise a
+    prose answer, or chunks that aren't in ``back``: ", " for an any-order card
+    (its chunks are runs of list items), else a space, as before."""
+    if back is not None and end > start:
+        sliced = _locate_chunks(chunks, end, back)
+        if sliced is not None:
+            return back[sliced[start][0] : sliced[end - 1][1]]
     return (", " if any_order else " ").join(chunks[start:end])
 
 

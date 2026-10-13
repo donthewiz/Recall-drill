@@ -37,7 +37,7 @@ def test_list_needs_three_items() -> None:
 
 
 def test_cuts_at_item_boundaries() -> None:
-    """TS: cuts at item boundaries, never mid-item, joining items with ", " """
+    """TS: cuts at item boundaries, never mid-item"""
     assert chunk_text(SIX, 35) == [
         "1 frontal, 2 parietal",
         "2 temporal, 1 occipital",
@@ -58,15 +58,22 @@ def test_lonely_trailing_item_merges() -> None:
     assert chunk_text("a, b, c, d, e", 35) == ["a, b", "c, d, e"]
 
 
-def test_three_item_lists_do_not_chunk() -> None:
-    """TS: a 3-item list: never at or under the threshold; over it, 2 items per chunk
-    merge to one, so none"""
+def test_three_item_lists_chunk_one_item_each_over_the_threshold() -> None:
+    """TS: a 3-item list: not at or under the threshold; over it, one item per chunk
+    (2026-10-13)"""
     assert chunk_text("skeletal, cardiac, smooth", 35) is None
     long = (
         "fibrous joints (sutures, syndesmoses), cartilaginous joints (symphyses), "
         "synovial joints (freely movable)"
     )
-    assert chunk_text(long, 35) is None
+    assert chunk_text(long, 35) == [
+        "fibrous joints (sutures, syndesmoses)",
+        "cartilaginous joints (symphyses)",
+        "synovial joints (freely movable)",
+    ]
+    assert chunk_text(long, 35, 20) is None
+    assert chunk_text(long, 15) is not None and len(chunk_text(long, 15) or []) == 3
+    assert chunk_text(long, 100) is None
 
 
 def test_hundred_percent_means_no_chunking() -> None:

@@ -64,7 +64,7 @@ import {
   selectTrial,
   SESSION_COMPLETE_ID,
 } from '../../src/utils/session';
-import { computeWordDiff, exactMatch, grade, norm, splitListItems } from '../../src/utils/grading';
+import { computeWordDiff, exactMatch, grade, listItemSpans, norm, splitListItems } from '../../src/utils/grading';
 import {
   buildCombineSequence,
   buildItem,
@@ -761,6 +761,13 @@ const LIST_EDGE_TEXTS = [
   'w1 w2 (w3 w4 w5 w6 w7 w8 w9 w10) w11 w12',
   'a (b (c d) e f g h) i j k l m n o',
   '1 frontal, 2 parietal, 2 temporal, 1 occipital, 1 sphenoid, 1 ethmoid, 2 extra, 3 more, 4 again',
+  // List wording (2026-10-13): chunks and windows are slices of the answer.
+  'humerus, radius and ulna, carpals, metacarpals, and phalanges',
+  'cranial (frontal, parietal), facial, spinal (cervical; thoracic), sacral, coccygeal',
+  'red, orange, yellow, green, blue, indigo, violet, and white',
+  'alpha;  beta ;gamma; delta ,epsilon; zeta; eta;  theta',
+  'fibrous joints (sutures, syndesmoses), cartilaginous joints (symphyses), and synovial joints (freely movable)',
+  '  leading , and  trailing  ,  spaces and tabs\tinside ,   and  last  ',
 ];
 
 // listOrderFromWording: every cue, its plural or a near miss, a cloze blank.
@@ -792,7 +799,7 @@ function anyOrderItemCases(): unknown {
       const chunks = chunkText(back, pct);
       if (!chunks) continue;
       for (let end = 1; end < chunks.length; end++) {
-        const window = joinWindow(chunks, 0, end + 1, true);
+        const window = joinWindow(chunks, 0, end + 1, true, back);
         const items = splitListItems(window);
         const typedVariants = [
           [...items].reverse().join(', '),
@@ -803,19 +810,82 @@ function anyOrderItemCases(): unknown {
         ];
         for (const typed of typedVariants) {
           culprits.push({
+            back,
             chunks,
             startIdx: 0,
             endIdx: end,
             typed,
             window,
             spaceWindow: joinWindow(chunks, 0, end + 1),
-            out: [true, false].map(strict => findAllCulpritChunks(typed, chunks, 0, end, strict, { stemTolerance: true })),
+            out: [true, false].map(strict => findAllCulpritChunks(typed, chunks, 0, end, strict, { stemTolerance: true }, back)),
           });
         }
       }
     }
   }
   return { built, withOrder, culprits };
+}
+
+// List wording (2026-10-13): every list text chunked, every window of the
+// chunks as a slice of the answer (ordered and any-order), and the culprit
+// search over typed variants with the answer given. Chunks that aren't in the
+// answer (an old save) must join as before.
+function listSliceCases(): unknown[] {
+  const out: unknown[] = [];
+  for (const back of LIST_EDGE_TEXTS) {
+    for (const pct of [20, 35, 50]) {
+      for (const min of [3]) {
+        const chunks = chunkText(back, pct, min);
+        if (!chunks) continue;
+        const windows: unknown[] = [];
+        const culprits: unknown[] = [];
+        for (let start = 0; start < chunks.length; start++) {
+          for (let end = start + 1; end <= chunks.length; end++) {
+            windows.push({
+              start,
+              end,
+              ordered: joinWindow(chunks, start, end, false, back),
+              anyOrder: joinWindow(chunks, start, end, true, back),
+            });
+          }
+        }
+        for (let end = 1; end < chunks.length; end++) {
+          const window = joinWindow(chunks, 0, end + 1, false, back);
+          const wordsOf = window.trim().split(/\s+/);
+          const typedVariants = [
+            window,
+            wordsOf.slice(1).join(' '),
+            wordsOf.slice(0, -1).join(' '),
+            wordsOf.filter((_, i) => i !== Math.floor(wordsOf.length / 2)).join(' '),
+            [...splitListItems(window)].reverse().join(', '),
+            '',
+          ];
+          for (const typed of typedVariants) {
+            culprits.push({
+              startIdx: 0,
+              endIdx: end,
+              typed,
+              out: [true, false].map(strict => ({
+                strict,
+                ordered: findAllCulpritChunks(typed, chunks, 0, end, strict, undefined, back),
+                anyOrder: findAllCulpritChunks(typed, chunks, 0, end, strict, { stemTolerance: true }, back),
+              })),
+            });
+          }
+        }
+        out.push({
+          back,
+          pct,
+          min,
+          chunks,
+          windows,
+          culprits,
+          foreignWindow: joinWindow(['x, y', 'z, w'], 0, 2, false, back),
+        });
+      }
+    }
+  }
+  return out;
 }
 
 function words36(n: number): string {
@@ -843,6 +913,7 @@ function exportItems(gradingTargets: string[]): void {
   const listCases = [...listDeck.map(c => c.back), ...LIST_EDGE_TEXTS].map(text => ({
     text,
     items: listItems(text),
+    spans: listItemSpans(text),
     chunks: CHUNK_PERCENTS.flatMap(pct => [3, 8].map(min => ({ pct, min, out: chunkText(text, pct, min) }))),
   }));
 
@@ -1173,6 +1244,7 @@ function exportItems(gradingTargets: string[]): void {
     listOrder: LIST_ORDER_FRONTS.map(front => ({ front, out: listOrderFromWording(front) })),
     orderCues: ORDER_CUES,
     anyOrderItems: anyOrderItemCases(),
+    listSlices: listSliceCases(),
     combine,
     chunkings,
     windows,

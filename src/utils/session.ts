@@ -400,7 +400,7 @@ export function selectTrial(state: SessionState): Trial | null {
 
   if (it.stage === 'combine' && it.chunks && it.combineSeq) {
     const seqItem = it.combineSeq[it.combineSeqIdx];
-    const combined = joinWindow(it.chunks, seqItem.start - 1, seqItem.end, it.anyOrder === true);
+    const combined = joinWindow(it.chunks, seqItem.start - 1, seqItem.end, it.anyOrder === true, it.back);
     return {
       itemId: it.id,
       stage: 'combine',
@@ -649,7 +649,7 @@ function gradeAndAdvance(
 
     if (it.stage === 'combine' && it.chunks && it.combineSeq) {
       const seqItem = it.combineSeq[it.combineSeqIdx];
-      const combinedTarget = joinWindow(it.chunks, seqItem.start - 1, seqItem.end, it.anyOrder === true);
+      const combinedTarget = joinWindow(it.chunks, seqItem.start - 1, seqItem.end, it.anyOrder === true, it.back);
       const wasBlind = it.combineStreak >= 1;
       const gr = grade(typed, combinedTarget, gradeOpts);
       const isOk = gr.verdict !== 'wrong';
@@ -728,7 +728,8 @@ function gradeAndAdvance(
           seqItem.start - 1,
           seqItem.end - 1,
           gradeOpts.strictPunctuation,
-          it.anyOrder ? { stemTolerance: gradeOpts.stemTolerance } : undefined
+          it.anyOrder ? { stemTolerance: gradeOpts.stemTolerance } : undefined,
+          it.back
         );
         it.remediateStack = [{ text: it.chunks[culprits[0]], streak: 0, missCount: 0 }];
         it.remediateQueue = culprits.slice(1).map(idx => it.chunks![idx]);

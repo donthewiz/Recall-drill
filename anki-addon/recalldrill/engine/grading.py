@@ -17,6 +17,7 @@ TS name                   Python name
 ``STOPWORDS``             ``STOPWORDS``
 ``lightStem``             ``_light_stem``
 ``splitItemsWithParts``   ``_split_items_with_parts``
+``listItemSpans``         ``list_item_spans``
 ``splitListItems``        ``split_list_items``
 ``wordParts``             ``_word_parts``
 ``grade``                 ``grade``
@@ -240,6 +241,39 @@ def _split_items_with_parts(text: str) -> _SplitItems:
 def split_list_items(text: str) -> list[str]:
     """Every list item of ``text`` (any number; ``items.list_items`` needs 3)."""
     return _split_items_with_parts(text).items
+
+
+def list_item_spans(text: str) -> list[tuple[int, int]]:
+    """TS ``listItemSpans`` (2026-10-13): ``[start, end)`` of every item
+    :func:`split_list_items` returns, so ``text[start:end]`` is that item exactly
+    as the card wrote it."""
+    raw: list[tuple[int, int]] = []
+    depth = 0
+    frm = 0
+    for i, ch in enumerate(text):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]" and depth > 0:
+            depth -= 1
+        if ch in ",;" and depth == 0:
+            raw.append((frm, i))
+            frm = i + 1
+    raw.append((frm, len(text)))
+    spans: list[tuple[int, int]] = []
+    for a, b in raw:
+        s, e = a, b
+        while s < e and is_js_ws(text[s]):
+            s += 1
+        while e > s and is_js_ws(text[e - 1]):
+            e -= 1
+        lead = _LEADING_CONJUNCTION_RE.match(text[s:e])
+        if lead:
+            s += lead.end()
+            while s < e and is_js_ws(text[s]):
+                s += 1
+        if e > s:
+            spans.append((s, e))
+    return spans
 
 
 def _word_parts(text: str) -> list[int]:
