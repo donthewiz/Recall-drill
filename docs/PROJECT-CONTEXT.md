@@ -34,10 +34,10 @@ Recall Drill is a **session-only typed-recall drill** for prose and terminology 
 |---|---|
 | `npm run dev` | Dev server on port 3000 (`.claude/launch.json` has "Recall-drill dev") |
 | `npm run lint` | `tsc --noEmit` |
-| `npm test` | 313 tests (33 files), about 3–7s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
+| `npm test` | 345 tests (34 files), about 3–7s. Default env is node; specs touching localStorage start with `// @vitest-environment jsdom` |
 | `npm run build` | Production build |
 | `npm run simulate` | Trial-count scoreboard (`test/simulate*.ts`): "Current engine" (50 seeded runs × 3 decks × 3 learner models, the web app's old defaults) and, since 2026-10-12, "Your settings" (encodeReps 1, batchSize 10, shuffled cycle, over the 3 decks plus `listDeck`), mean ± SD. Deterministic. **Any engine change must report both sections before and after.** `docs/BASELINE.md` keeps the history. |
-| `anki-addon/.venv/bin/python -m pytest anki-addon/tests -q` | The add-on's tests, 11056 as of v0.2 (Windows: `anki-addon\.venv\Scripts\python`). Needs the venv (`anki-addon/requirements-dev.txt`, Python 3.13). Qt tests run on the offscreen platform and skip without `aqt`/a display. |
+| `anki-addon/.venv/bin/python -m pytest anki-addon/tests -q` | The add-on's tests, 11348 as of v0.2.1 with Qt available (Windows: `anki-addon\.venv\Scripts\python`). Needs the venv (`anki-addon/requirements-dev.txt`, Python 3.13). Qt tests run on the offscreen platform and skip without `aqt`/a display (on Linux that needs `libegl1`). |
 | `cd anki-addon && .venv/bin/ruff check . && .venv/bin/pyright` | Lint and type check for the add-on |
 | `anki-addon/.venv/bin/python anki-addon/tools/simulate.py` | The same "Current engine" and "Your settings" sections from the Python engine; must be **byte-identical** to `npm run simulate`'s first two sections. `--difficulty-overrides` adds a Python-only section (per-card reps and chunk threshold) |
 | `npx tsx anki-addon/tools/export_golden.ts` | Regenerates the golden traces in `anki-addon/tests/golden/` from the TS engine; CI fails if they change (`git diff --exit-code anki-addon/tests/golden`). `--full <deck>:<learner>[:<run>]` writes one run's full state for diffing |
@@ -82,7 +82,7 @@ After the last batch comes a **Final check**: one shuffled, cue-free pass over e
 - **Short answers (≤ 8 words, or difficulty 100%)** use the `full` stage:
   - attempt 0 shows a first-letter cue (`T__ h____ …`)
   - then it needs `encodeReps` (default 3) consecutive blind correct answers
-- **List answers** (3+ items separated by `,` or `;`, 2026-10-12): a list of 4+ items (or 3 items over the word threshold) is chunked at item boundaries, the `chunkDifficulty` percentage applied to items (at least 2 per chunk; so a 3-item list is never chunked). An unordered list (`anyOrder`: no order cue such as "in order", "steps", "proximal to distal" in the front) grades its items in any order, in every chunk, window and review.
+- **List answers** (3+ items separated by `,` or `;`, 2026-10-12): a list of 4+ items (or 3 items over the word threshold) is chunked at item boundaries, the `chunkDifficulty` percentage applied to items (at least 2 per chunk); a 3-item list over the threshold is one item per chunk (2026-10-13; v0.2 never chunked it, 2 + 1 merging back). An unordered list (`anyOrder`: no order cue such as "in order", "steps", "proximal to distal" in the front) grades its items in any order, in every chunk, window and review.
 - **Longer answers are chunked:**
   - Each chunk is shown once (an ungraded presentation), then needs one blind correct answer.
   - Then forward chaining: windows 1–2, 1–3, …, 1–n.
@@ -161,6 +161,12 @@ Backups (`schemaVersion` 1) contain folders plus each deck's items, saved sessio
 
 Simulate deltas are in `docs/BASELINE.md` (four 2026-10-12 sections); decisions in `anki-addon/docs/DECISIONS.md` ("v0.2").
 
+## 6c. What changed on 2026-10-13 (v0.2.1, 3 commits)
+
+1. **Engine:** list chunks and combine windows are slices of the card's own answer (its commas, "and", parentheticals, spacing), so typing the card exactly is exact on every chunk and window, strict punctuation or not; a 3-item list over the word threshold chunks one item per chunk (it was drilled whole). `docs/BASELINE.md`, "List chunks keep the card's own wording".
+2. **Add-on:** Send to Anki undrilled offers **Stale only (N)** (default) or **All waiting (M)**; the release history line records `scope`.
+3. Docs; version 0.2.1.
+
 ## 7. Decisions worth knowing
 
 - A "Count as correct" override counts as an attempt on the **card** (so the card's state matches a typed correct answer) but **not** in session `stats.attempts`. That matches the original C2 spec.
@@ -196,7 +202,7 @@ Simulate deltas are in `docs/BASELINE.md` (four 2026-10-12 sections); decisions 
 
 A desktop Anki add-on that drills the user's own Anki cards with the same engine, then hands them to Anki. Local `.ankiaddon`, not on AnkiWeb. Desktop only; the web app stays the phone tool. Details: `anki-addon/README.md` (user), `anki-addon/docs/DECISIONS.md` (decisions and checked Anki facts), `anki-addon/config.md` (the 31 config keys), `docs/V2-HANDOFF.md` ("Anki add-on (2026-10)"), `docs/SMOKE.md` §11 (manual checks).
 
-- **Folder:** `anki-addon/` (`__init__.py`, `manifest.json`, `config.json`, `build.py`, `recalldrill/`, `tests/`, `tools/`, `user_files/`). Target: Anki 26.08.1+ (`min_point_version` 260801), Python 3.13. Version in `recalldrill/__init__.py` (`VERSION`, 0.2.0).
+- **Folder:** `anki-addon/` (`__init__.py`, `manifest.json`, `config.json`, `build.py`, `recalldrill/`, `tests/`, `tools/`, `user_files/`). Target: Anki 26.08.1+ (`min_point_version` 260801), Python 3.13. Version in `recalldrill/__init__.py` (`VERSION`, 0.2.1).
 - **Layers** (`tests/test_layering.py`):
   - `engine/`: pure Python port of `src/utils/`, pinned to it by goldens and CI.
   - pure helpers (controller, sessions, storage, prompts, holdout, measure, tuning, difficulty, pacing): no `anki`, no Qt.
