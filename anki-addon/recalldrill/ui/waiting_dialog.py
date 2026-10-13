@@ -35,7 +35,7 @@ from .. import history_store
 from ..anki_io.release import (
     ReleasePlan,
     apply_release,
-    describe,
+    describe_choices,
     failure_text,
     history_line,
     plan_release,
@@ -44,10 +44,12 @@ from ..anki_io.waiting import read_waiting
 from ..measure import anki_day
 from ..pacing import short_date
 from ..waiting import (
+    ReleaseChoice,
     WaitingRow,
     load_last_shown,
     notice_due,
     notice_text,
+    release_choices,
     save_last_shown,
     stale_total,
 )
@@ -77,9 +79,9 @@ class WaitingDialog(QDialog):
         note = QLabel(
             "Stale: added more than the configured days ago (stale_drill_days), or in a deck "
             "whose pacing target has passed or has no drill days left. Sending to Anki "
-            "undrilled unsuspends the cards (and their notes' suspended new siblings) as new "
-            "cards in their current queue place, tags the notes rd::undrilled, and is one "
-            "undo step."
+            "undrilled offers the stale cards (the default) or all waiting cards: it "
+            "unsuspends them (and their notes' suspended new siblings) as new cards in their "
+            "current queue place, tags the notes rd::undrilled, and is one undo step."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: gray; font-size: small;")
@@ -148,19 +150,23 @@ class WaitingDialog(QDialog):
         self._open_setup(did)
 
     def _send(self, row: WaitingRow) -> None:
+        choices = release_choices(row)
         QueryOp(
             parent=self,
-            op=lambda col: plan_release(col, row.did, row.cids),
-            success=self._confirm,
+            op=lambda col: [plan_release(col, row.did, c.cids, c.scope) for c in choices],
+            success=lambda plans: self._confirm(choices, plans),
         ).run_in_background()
 
-    def _confirm(self, plan: ReleasePlan) -> None:
-        if not plan.has_changes:
+    def _confirm(self, choices: list[ReleaseChoice], plans: list[ReleasePlan]) -> None:
+        offered = [(c, p) for c, p in zip(choices, plans, strict=True) if p.has_changes]
+        if not offered:
             tooltip("Nothing to send: those cards are no longer waiting.")
             self.refresh()
             return
-        if not ask_send(self, describe(plan)):
+        picked = ask_send(self, [(c.label, p) for c, p in offered])
+        if picked is None:
             return
+        plan = picked
         storage = self.ctx.storage()
 
         def done(_changes: Any) -> None:
@@ -178,16 +184,25 @@ class WaitingDialog(QDialog):
         ).run_in_background()
 
 
-def ask_send(parent: QWidget, text: str) -> bool:
-    """The release's confirmation: Send to Anki / Cancel."""
+def ask_send(parent: QWidget, offered: list[tuple[str, ReleasePlan]]) -> ReleasePlan | None:
+    """The release's confirmation: one button per choice ("Stale only (N)" first and
+    the default, then "All waiting (M)"; only "All waiting" when nothing is stale)
+    and Cancel. Returns the chosen plan, or None."""
     box = QMessageBox(parent)
     box.setWindowTitle(TITLE)
     box.setIcon(QMessageBox.Icon.Question)
-    box.setText(text)
-    send = box.addButton("Send to Anki", QMessageBox.ButtonRole.AcceptRole)
+    box.setText(describe_choices([p for _label, p in offered]))
+    buttons = [
+        (box.addButton(label, QMessageBox.ButtonRole.AcceptRole), plan) for label, plan in offered
+    ]
     box.addButton(QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(buttons[0][0])
     box.exec()
-    return box.clickedButton() is send
+    clicked = box.clickedButton()
+    for button, plan in buttons:
+        if clicked is button:
+            return plan
+    return None
 
 
 def open_waiting(ctx: AddonContext, open_setup: Callable[[int], None]) -> WaitingDialog:

@@ -17,6 +17,7 @@ from recalldrill.waiting import (
     notice_due,
     notice_text,
     pacing_stale,
+    release_choices,
     release_line,
     released_cids,
     save_last_shown,
@@ -86,12 +87,50 @@ def test_rows_by_deck() -> None:
     assert stale_total([]) == (0, None)
 
 
+def test_rows_hold_the_stale_card_ids() -> None:
+    cards = [
+        WaitingCard(5, 10, 100, MON - timedelta(days=20)),
+        WaitingCard(1, 10, 100, MON - timedelta(days=1)),
+        WaitingCard(3, 11, 100, MON - timedelta(days=8)),
+    ]
+    (row,) = waiting_rows(cards, MON, 7, lambda _d: None, lambda _d: "Lab 2")
+    assert row.cids == (1, 3, 5) and row.stale_cids == (3, 5) and row.stale == 2
+
+
+def test_release_choices_default_to_stale_and_offer_all() -> None:
+    cards = [
+        WaitingCard(1, 10, 100, MON - timedelta(days=20)),
+        WaitingCard(2, 11, 100, MON - timedelta(days=1)),
+        WaitingCard(3, 12, 100, MON - timedelta(days=1)),
+    ]
+    (row,) = waiting_rows(cards, MON, 7, lambda _d: None, lambda _d: "Lab 2")
+    stale, everything = release_choices(row)  # the default first
+    assert (stale.scope, stale.cids, stale.label) == ("stale", (1,), "Stale only (1)")
+    assert (everything.scope, everything.cids, everything.label) == (
+        "all",
+        (1, 2, 3),
+        "All waiting (3)",
+    )
+
+
+def test_release_choices_with_nothing_stale_offer_only_all() -> None:
+    cards = [WaitingCard(1, 10, 100, MON - timedelta(days=1)), WaitingCard(2, 11, 100, MON)]
+    (row,) = waiting_rows(cards, MON, 7, lambda _d: None, lambda _d: "Lab 2")
+    (only,) = release_choices(row)
+    assert (only.scope, only.cids, only.label) == ("all", (1, 2), "All waiting (2)")
+    # Everything stale: both are offered, the same cards under two names.
+    old = [WaitingCard(1, 10, 100, MON - timedelta(days=9))]
+    (stale_row,) = waiting_rows(old, MON, 7, lambda _d: None, lambda _d: "Lab 2")
+    assert [c.scope for c in release_choices(stale_row)] == ["stale", "all"]
+
+
 def test_release_line() -> None:
-    line = release_line(7, [1, 2], [3], [10, 11], 0)
+    line = release_line(7, [1, 2], [3], [10, 11], 0, "stale")
     assert line == {
         "type": "release",
         "timestamp": "1970-01-01T00:00:00.000Z",
         "deckId": 7,
+        "scope": "stale",
         "groups": {"released": [1, 2], "released_siblings": [3]},
         "tags": {"added": 2, "byTag": {TAG_UNDRILLED: 2}},
     }

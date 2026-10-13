@@ -35,7 +35,7 @@ from anki.decks import DeckId
 from anki.errors import NotFoundError
 from anki.notes import NoteId
 
-from ..waiting import TAG_UNDRILLED, UNDO_LABEL, release_line
+from ..waiting import TAG_UNDRILLED, UNDO_LABEL, ReleaseScope, release_line
 from .cards import CardSnapshot, NoteCache, has_tag, snapshot
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,8 @@ class ReleasePlan:
     """Asked-for cards that are gone, or no longer new and suspended."""
     new_per_day: int
     """The deck's new cards per day (its own limit, else its preset's)."""
+    scope: ReleaseScope = "all"
+    """Which choice this plan is: the deck's stale cards, or all its waiting cards."""
 
     @property
     def unsuspend(self) -> tuple[int, ...]:
@@ -94,6 +96,7 @@ def build_release_plan(
     snaps: Mapping[int, CardSnapshot],
     note_cards: Mapping[int, Sequence[CardSnapshot]],
     new_per_day: int,
+    scope: ReleaseScope = "all",
 ) -> ReleasePlan:
     """Pure: ``snaps`` holds the asked-for cards that still exist,
     ``note_cards`` every card of their notes."""
@@ -117,7 +120,7 @@ def build_release_plan(
         if not any(has_tag(s.tags, TAG_UNDRILLED) for s in note_cards.get(n, ())[:1])
     )
     return ReleasePlan(
-        did, deck, released, tuple(siblings), tag_notes, skipped, max(0, new_per_day)
+        did, deck, released, tuple(siblings), tag_notes, skipped, max(0, new_per_day), scope
     )
 
 
@@ -130,8 +133,12 @@ def _new_per_day(col: Collection, did: int) -> int:
     return int(conf["new"]["perDay"])
 
 
-def plan_release(col: Collection, did: int, cids: Iterable[int]) -> ReleasePlan:
-    """What sending these waiting cards to Anki would do, read fresh. Writes nothing."""
+def plan_release(
+    col: Collection, did: int, cids: Iterable[int], scope: ReleaseScope = "all"
+) -> ReleasePlan:
+    """What sending these waiting cards to Anki would do, read fresh. Writes nothing.
+    ``scope`` labels the choice the cards came from (``waiting.ReleaseChoice``);
+    their notes' suspended new siblings follow whichever cards are sent."""
     asked = list(dict.fromkeys(int(c) for c in cids))
     notes = NoteCache(col)
     snaps: dict[int, CardSnapshot] = {}
@@ -148,7 +155,7 @@ def plan_release(col: Collection, did: int, cids: Iterable[int]) -> ReleasePlan:
         note = notes.get(s.nid)
         note_cards[s.nid] = [snapshot(c, note) for c in note.cards()]
     return build_release_plan(
-        did, col.decks.name(DeckId(did)), asked, snaps, note_cards, _new_per_day(col, did)
+        did, col.decks.name(DeckId(did)), asked, snaps, note_cards, _new_per_day(col, did), scope
     )
 
 
@@ -187,10 +194,16 @@ def _n(n: int, one: str, many: str | None = None) -> str:
     return f"{n} {one if n == 1 else (many or one + 's')}"
 
 
+def _cards_phrase(plan: ReleasePlan) -> str:
+    kind = "stale drill card" if plan.scope == "stale" else "drill card"
+    return _n(len(plan.released), kind)
+
+
 def describe(plan: ReleasePlan) -> str:
-    """The confirmation: counts, siblings, and the days new/day spreads them over."""
+    """The confirmation for one plan: counts, siblings, and the days new/day spreads
+    them over."""
     lines = [
-        f"Send {_n(len(plan.released), 'drill card')} in {plan.deck} to Anki undrilled?",
+        f"Send {_cards_phrase(plan)} in {plan.deck} to Anki undrilled?",
         "",
         "They are unsuspended and stay new cards, in their current place in the new "
         f"queue (nothing is buried or moved). Their notes get the tag {TAG_UNDRILLED}.",
@@ -217,8 +230,43 @@ def describe(plan: ReleasePlan) -> str:
     return "\n".join(lines)
 
 
+def _choice_line(plan: ReleasePlan) -> str:
+    head = "Stale only" if plan.scope == "stale" else "All waiting"
+    text = f"{head}: {_n(len(plan.released), 'card')}"
+    if plan.siblings:
+        text += f" and {_n(len(plan.siblings), 'sibling')}"
+    days = plan.days
+    if days is None:
+        return text + " (new cards/day is 0: Anki won't show them until you raise it)."
+    return text + f", about {_n(days, 'day')} at {plan.new_per_day} new cards/day."
+
+
+def describe_choices(plans: Sequence[ReleasePlan]) -> str:
+    """The confirmation when it offers a choice: what a release does, then each
+    choice's counts. One plan: :func:`describe`."""
+    if len(plans) == 1:
+        return describe(plans[0])
+    first = plans[0]
+    lines = [
+        f"Send drill cards in {first.deck} to Anki undrilled?",
+        "",
+        "They are unsuspended and stay new cards, in their current place in the new "
+        f"queue (nothing is buried or moved). Their notes get the tag {TAG_UNDRILLED}, "
+        "and their notes' other suspended new cards go too.",
+        "Stale cards were added more than the configured days ago, or their deck's "
+        "pacing target has passed.",
+        "",
+        *(_choice_line(p) for p in plans),
+        "",
+        f'Edit → Undo "{UNDO_LABEL}" reverts it.',
+    ]
+    return "\n".join(lines)
+
+
 def history_line(plan: ReleasePlan, at_ms: float) -> dict[str, Any]:
-    return release_line(plan.did, plan.released, plan.siblings, plan.tag_notes, at_ms)
+    return release_line(
+        plan.did, plan.released, plan.siblings, plan.tag_notes, at_ms, plan.scope
+    )
 
 
 def failure_text(exc: Exception) -> str:

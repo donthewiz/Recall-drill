@@ -1185,7 +1185,7 @@ def test_waiting_cards_dialog_and_notice(
     stub = aqt.mw
     stub.update_undo_actions = lambda: None  # type: ignore[attr-defined]
     tips: list[str] = []
-    asked: list[str] = []
+    asked: list[list[str]] = []
     opened: list[int] = []
     for module in (waiting_dialog, context, entry):
         monkeypatch.setattr(module, "mw", stub)
@@ -1193,7 +1193,11 @@ def test_waiting_cards_dialog_and_notice(
     monkeypatch.setattr(waiting_dialog, "CollectionOp", _SyncCollectionOp)
     monkeypatch.setattr(_SyncCollectionOp, "col", col)
     monkeypatch.setattr(waiting_dialog, "tooltip", lambda text, **_k: tips.append(text))
-    monkeypatch.setattr(waiting_dialog, "ask_send", lambda _p, text: asked.append(text) or True)
+    def pick_default(_parent: Any, offered: list[Any]) -> Any:
+        asked.append([label for label, _plan in offered])
+        return offered[0][1]  # the default button
+
+    monkeypatch.setattr(waiting_dialog, "ask_send", pick_default)
     ctx = AddonContext("recall_drill", str(window_env))
     st = Storage(window_env, "p")
     ctx.storage = lambda: st  # type: ignore[method-assign]
@@ -1229,12 +1233,55 @@ def test_waiting_cards_dialog_and_notice(
     w.refresh()
     assert cell(0, 2).text() == "6"
     w._send(w.rows[0])
-    assert asked and "Send 6 drill cards" in asked[0]
+    # All six are stale, so both choices show, "Stale only" first (the default).
+    assert asked == [["Stale only (6)", "All waiting (6)"]]
     assert all(col.get_card(c).queue == 0 for c in col.find_cards(f"did:{did}"))
     (line,) = history_store.read_all(st, str(did))
     assert line["type"] == "release" and len(line["groups"]["released"]) == 6
+    assert line["scope"] == "stale"
     assert w.table.rowCount() == 0
     w.close()
+
+
+def test_release_confirmation_buttons(qt_app: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-10-13: the confirmation has "Stale only (N)" (the default) and "All
+    waiting (M)"; with nothing stale only "All waiting"; the plan clicked is returned."""
+    from aqt.qt import QMessageBox
+
+    from recalldrill.anki_io.release import ReleasePlan
+    from recalldrill.ui import waiting_dialog
+
+    def plan(scope: Any, n: int) -> ReleasePlan:
+        return ReleasePlan(1, "Lab", tuple(range(n)), (), (), (), 20, scope)
+
+    seen: dict[str, Any] = {}
+    click = {"label": "All waiting (5)"}
+
+    def fake_exec(self: Any) -> int:
+        buttons = [b for b in self.buttons() if b.text()]
+        seen["labels"] = [b.text() for b in buttons]
+        seen["default"] = self.defaultButton().text()
+        seen["text"] = self.text()
+        self._clicked = next((b for b in buttons if b.text() == click["label"]), None)
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda self: self._clicked)
+    both = [("Stale only (2)", plan("stale", 2)), ("All waiting (5)", plan("all", 5))]
+    picked = waiting_dialog.ask_send(None, both)  # type: ignore[arg-type]
+    assert picked is both[1][1]
+    assert seen["labels"] == ["Stale only (2)", "All waiting (5)", "Cancel"]
+    assert seen["default"] == "Stale only (2)"
+    assert "Stale only: 2 cards" in seen["text"] and "All waiting: 5 cards" in seen["text"]
+
+    click["label"] = "Cancel"
+    assert waiting_dialog.ask_send(None, both) is None  # type: ignore[arg-type]
+
+    click["label"] = "All waiting (5)"
+    only = [("All waiting (5)", plan("all", 5))]
+    assert waiting_dialog.ask_send(None, only) is only[0][1]  # type: ignore[arg-type]
+    assert seen["labels"] == ["All waiting (5)", "Cancel"]
+    assert seen["default"] == "All waiting (5)"
 
 
 def time_ms() -> float:
