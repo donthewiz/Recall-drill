@@ -186,6 +186,42 @@ export function splitListItems(text: string): string[] {
   return splitItemsWithParts(text).items;
 }
 
+// Where each list item sits in the text (2026-10-13): [start, end) of every
+// item splitListItems returns, so text.slice(start, end) is that item exactly
+// as the card wrote it. List chunks and combine windows are slices from the
+// first item's start to the last item's end, which keeps the separators, the
+// "and"/"or" before the last item, parentheticals and spacing as written.
+export function listItemSpans(text: string): Array<[number, number]> {
+  const ws = /\s/;
+  const raw: Array<[number, number]> = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(' || ch === '[') depth++;
+    else if ((ch === ')' || ch === ']') && depth > 0) depth--;
+    if ((ch === ',' || ch === ';') && depth === 0) {
+      raw.push([from, i]);
+      from = i + 1;
+    }
+  }
+  raw.push([from, text.length]);
+  const spans: Array<[number, number]> = [];
+  for (const [a, b] of raw) {
+    let s = a;
+    let e = b;
+    while (s < e && ws.test(text[s])) s++;
+    while (e > s && ws.test(text[e - 1])) e--;
+    const lead = /^(?:and|or)\s+/i.exec(text.slice(s, e));
+    if (lead) {
+      s += lead[0].length;
+      while (s < e && ws.test(text[s])) s++;
+    }
+    if (e > s) spans.push([s, e]);
+  }
+  return spans;
+}
+
 // For each whitespace-separated word of text.trim() (computeWordDiff's
 // words), the raw part (see splitItemsWithParts) its first character is in.
 // A separator character belongs to the part it ends.

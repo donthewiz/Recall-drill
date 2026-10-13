@@ -8,7 +8,7 @@ import {
   SavedSessionState,
   LadderMode,
 } from '../types';
-import { exactMatch, computeWordDiff, grade, splitListItems } from './grading';
+import { exactMatch, computeWordDiff, grade, splitListItems, listItemSpans } from './grading';
 
 export function parseDeck(text: string): DeckItem[] {
   const lines = text.split('\n');
@@ -80,13 +80,17 @@ function joinRuns(runs: string[][], joiner: string): string[] | null {
   return runs.length > 1 ? runs.map(r => r.join(joiner)) : null;
 }
 
-// Chunking, two rules (2026-10-12):
+// Chunking, two rules (2026-10-12, list wording 2026-10-13):
 // - A list answer (listItems) is cut at item boundaries: when it has 4 or
 //   more items whatever its word count, or 3 items and more than
-//   minWordsToChunk words. Items per chunk = max(2, round(items x pct)), a
-//   lonely 1-item trailing chunk merges into the one before, and a chunk joins
-//   its items with ", " as typed. A 3-item list at or under the threshold is
-//   not chunked (nor is it by the word rule, which needs more words).
+//   minWordsToChunk words. Items per chunk = max(2, round(items x pct)) and a
+//   lonely 1-item trailing chunk merges into the one before; a 3-item list
+//   chunks one item per chunk (3 chunks), since 2 + 1 would merge back into
+//   one. A 3-item list at or under the threshold is not chunked (nor is it by
+//   the word rule, which needs more words). A chunk is the card's own text
+//   from its first item's start to its last item's end -- commas, the "and"
+//   before the last item, parentheticals and spacing as written -- never a
+//   re-join of the items.
 // - Any other answer over minWordsToChunk words is cut by word count, as
 //   before, except that a cut never falls inside parentheses: it moves to
 //   just after the word that closes them.
@@ -103,11 +107,18 @@ export function chunkText(
   if (items && (items.length >= 4 || words.length > minWordsToChunk)) {
     // 100% means full card at once (no chunking)
     if (pct >= 100) return null;
-    const itemsPerChunk = Math.max(2, Math.round(items.length * (pct / 100)));
-    if (itemsPerChunk >= items.length) return null;
-    const runs: string[][] = [];
-    for (let i = 0; i < items.length; i += itemsPerChunk) runs.push(items.slice(i, i + itemsPerChunk));
-    return joinRuns(runs, ', ');
+    const n = items.length;
+    const itemsPerChunk = n === 3 ? 1 : Math.max(2, Math.round(n * (pct / 100)));
+    if (itemsPerChunk >= n) return null;
+    const runs: Array<[number, number]> = [];
+    for (let i = 0; i < n; i += itemsPerChunk) runs.push([i, Math.min(i + itemsPerChunk, n) - 1]);
+    if (n > 3 && runs.length > 1 && runs[runs.length - 1][0] === runs[runs.length - 1][1]) {
+      const last = runs.pop()!;
+      runs[runs.length - 1][1] = last[1];
+    }
+    if (runs.length < 2) return null;
+    const spans = listItemSpans(text);
+    return runs.map(([first, last]) => text.slice(spans[first][0], spans[last][1]));
   }
 
   if (words.length <= minWordsToChunk) return null;
@@ -255,31 +266,53 @@ export function culpritHalf(typed: string, left: string, right: string, strict: 
 // any miss flagged the entire window for remediation regardless of where the
 // actual mistake was.
 //
-// anyOrder (2026-10-12): an unordered list card's window is joined with ", "
-// (joinWindow) and diffed by grade()'s any-order rule, so the culprits are
-// the chunks holding the missed items wherever they were typed.
+// anyOrder (2026-10-12): an unordered list card's window is diffed by grade()'s
+// any-order rule, so the culprits are the chunks holding the missed items
+// wherever they were typed.
+//
+// back (2026-10-13): the card's answer. For a list answer the window is a
+// slice of it (joinWindow), so a chunk's words are the window's words that
+// overlap the chunk's own text; a word between two chunks (the "and" before
+// the last item) belongs to none.
 export function findAllCulpritChunks(
   typed: string,
   chunks: string[],
   startIdx: number,
   endIdx: number,
   strict: boolean = false,
-  anyOrder?: { stemTolerance: boolean }
+  anyOrder?: { stemTolerance: boolean },
+  back?: string
 ): number[] {
-  const combinedTarget = joinWindow(chunks, startIdx, endIdx + 1, anyOrder !== undefined);
+  const combinedTarget = joinWindow(chunks, startIdx, endIdx + 1, anyOrder !== undefined, back);
   const diff = anyOrder
     ? grade(typed, combinedTarget, { strictPunctuation: strict, stemTolerance: anyOrder.stemTolerance, anyOrder: true }).diff
     : computeWordDiff(typed, combinedTarget, strict);
 
+  const sliced = back !== undefined ? locateChunks(chunks, endIdx + 1, back) : null;
   const culprits: number[] = [];
-  let wordCursor = 0;
-  for (let idx = startIdx; idx <= endIdx; idx++) {
-    const chunkWordCount = chunks[idx].split(' ').length;
-    const chunkDiff = diff.slice(wordCursor, wordCursor + chunkWordCount);
-    if (chunkDiff.some(d => !d.matched)) {
-      culprits.push(idx);
+  if (sliced) {
+    const base = sliced[startIdx][0];
+    const wordRanges: Array<[number, number]> = [];
+    const re = /\S+/g;
+    for (let m = re.exec(combinedTarget); m; m = re.exec(combinedTarget)) {
+      wordRanges.push([m.index, m.index + m[0].length]);
     }
-    wordCursor += chunkWordCount;
+    for (let idx = startIdx; idx <= endIdx; idx++) {
+      const from = sliced[idx][0] - base;
+      const to = sliced[idx][1] - base;
+      const bad = wordRanges.some(([ws, we], w) => ws < to && we > from && diff[w] !== undefined && !diff[w].matched);
+      if (bad) culprits.push(idx);
+    }
+  } else {
+    let wordCursor = 0;
+    for (let idx = startIdx; idx <= endIdx; idx++) {
+      const chunkWordCount = chunks[idx].split(' ').length;
+      const chunkDiff = diff.slice(wordCursor, wordCursor + chunkWordCount);
+      if (chunkDiff.some(d => !d.matched)) {
+        culprits.push(idx);
+      }
+      wordCursor += chunkWordCount;
+    }
   }
 
   if (culprits.length === 0) {
@@ -289,11 +322,38 @@ export function findAllCulpritChunks(
   return culprits;
 }
 
-// The text of chunks[start..end) as one combine window. An any-order card's
-// chunks are runs of list items, so they join with ", " (any-order grading
-// splits the window back into items); every other card's join with a space,
-// as before.
-export function joinWindow(chunks: string[], start: number, end: number, anyOrder: boolean = false): string {
+// Where chunks[0..upTo) sit in a list answer, found in order, or null when
+// back isn't a list or a chunk isn't there (a save from before list chunks
+// were slices of the answer): the caller then joins the chunks as before.
+function locateChunks(chunks: string[], upTo: number, back: string): Array<[number, number]> | null {
+  if (!listItems(back)) return null;
+  const out: Array<[number, number]> = [];
+  let cursor = 0;
+  for (let i = 0; i < upTo; i++) {
+    const at = back.indexOf(chunks[i], cursor);
+    if (at === -1 || chunks[i].length === 0) return null;
+    out.push([at, at + chunks[i].length]);
+    cursor = at + chunks[i].length;
+  }
+  return out;
+}
+
+// The text of chunks[start..end) as one combine window. For a list answer
+// (back, the card's answer) it is the card's own text from the start of the
+// first chunk to the end of the last, separators and all. Otherwise -- a
+// prose answer, or chunks that aren't in back -- the chunks join with a space,
+// or ", " for an any-order card (its chunks are runs of list items), as before.
+export function joinWindow(
+  chunks: string[],
+  start: number,
+  end: number,
+  anyOrder: boolean = false,
+  back?: string
+): string {
+  if (back !== undefined && end > start) {
+    const sliced = locateChunks(chunks, end, back);
+    if (sliced) return back.slice(sliced[start][0], sliced[end - 1][1]);
+  }
   return chunks.slice(start, end).join(anyOrder ? ', ' : ' ');
 }
 

@@ -58,8 +58,9 @@ A scenario drives the same deck, config and answers as the `it`, and the golden 
 | 31 | `src/test/listChunking.spec.ts` | 12 | ported + golden | `test_list_chunking_spec.py`; `items.json` (`lists`) |
 | 32 | `src/test/anyOrder.spec.ts` | 13 | ported + golden | `test_any_order_spec.py`; `grading.json` (`anyOrder`), `items.json` (`listOrder`, `anyOrderItems`), scenario `any-order-list` |
 | 33 | `src/test/cleanCycle.spec.ts` | 10 | ported | `test_clean_cycle_spec.py` (plus the add-on's `encodeRepsOverride`) |
+| 34 | `src/test/listWording.spec.ts` | 32 | ported + golden | `test_list_wording_spec.py`; `items.json` (`lists` spans, `listSlices`, `anyOrderItems`) |
 
-**Totals:** 313 TS tests. 280 are covered (ported, golden, or both) and 33 are N/A. Nothing that exercises engine behavior is left uncovered.
+**Totals:** 345 TS tests. 312 are covered (ported, golden, or both) and 33 are N/A. Nothing that exercises engine behavior is left uncovered.
 
 ## Not covered, and why
 
@@ -417,6 +418,7 @@ Files that were already fully ported in Phase 1a (`chunkText`, `grade`) and the 
 ### v0.2 (2026-10-12)
 
 - `src/test/listChunking.spec.ts`: every `it` has a twin in `test_list_chunking_spec.py`; `items.json` `lists` records `listItems` and `chunkText` over listDeck and edge texts, every percent, thresholds 3 and 8.
+- `src/test/listWording.spec.ts` (2026-10-13): twins in `test_list_wording_spec.py` (the session walks, strict on and off, ordered and any order, the minimum-trials check and the remediation cases); `items.json` `listSlices` records every window of every chunking of the list edge texts as a slice of the answer (ordered and any order) and the culprit search over typed variants, `lists` the item spans. `test_list_chunking_spec.py`'s 3-item case now expects one item per chunk.
 - `src/test/anyOrder.spec.ts`: twins in `test_any_order_spec.py`; `grading.json` `anyOrder` (every list target × typed variants × three option sets, diff included), `items.json` `listOrder`/`orderCues`/`anyOrderItems` (build, normalize, `withListOrder`, `joinWindow`, the any-order culprit search), and the scripted session `any-order-list`.
 - `src/test/cleanCycle.spec.ts`: twins in `test_clean_cycle_spec.py`, which also checks the rule under the add-on's `encodeRepsOverride`.
 - `src/test/cycleOrder.spec.ts` "clean cards: a perfect run is one pass in deck order": the rule is `test_clean_cycle_spec.py`'s; the order is the other `inOrder` tests'.

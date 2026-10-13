@@ -400,9 +400,11 @@ def _word_count_by_space(text: str) -> int:
     return len(text.split(" "))
 
 
-def _join_window(chunks: Sequence[str], start: int, end: int, any_order: bool = False) -> str:
-    """TS ``joinWindow(chunks, start - 1, end, anyOrder)`` (start >= 1 in every window)."""
-    return join_window(chunks, start - 1, end, any_order)
+def _join_window(
+    chunks: Sequence[str], start: int, end: int, any_order: bool = False, back: str | None = None
+) -> str:
+    """TS ``joinWindow(chunks, start - 1, end, anyOrder, back)`` (start >= 1 in every window)."""
+    return join_window(chunks, start - 1, end, any_order, back)
 
 
 def select_trial(state: SessionState) -> Trial | None:
@@ -458,7 +460,7 @@ def select_trial(state: SessionState) -> Trial | None:
     if it["stage"] == "combine" and chunks is not None and combine_seq is not None:
         seq_item = combine_seq[it["combineSeqIdx"]]
         combined = _join_window(
-            chunks, seq_item["start"], seq_item["end"], it.get("anyOrder") is True
+            chunks, seq_item["start"], seq_item["end"], it.get("anyOrder") is True, it["back"]
         )
         return {
             "itemId": it["id"],
@@ -702,7 +704,9 @@ def _grade_and_advance(
         combine_seq = it["combineSeq"]
         if it["stage"] == "combine" and chunks is not None and combine_seq is not None:
             seq_item = combine_seq[it["combineSeqIdx"]]
-            combined_target = _join_window(chunks, seq_item["start"], seq_item["end"], any_order)
+            combined_target = _join_window(
+                chunks, seq_item["start"], seq_item["end"], any_order, it["back"]
+            )
             was_blind = it["combineStreak"] >= 1
             gr = grade_against(combined_target)
             is_ok = gr["verdict"] != "wrong"
@@ -788,6 +792,7 @@ def _grade_and_advance(
                     strict,
                     any_order,
                     stem_tolerance,
+                    it["back"],
                 )
                 it["remediateStack"] = [{"text": chunks[culprits[0]], "streak": 0, "missCount": 0}]
                 it["remediateQueue"] = [chunks[idx] for idx in culprits[1:]]
