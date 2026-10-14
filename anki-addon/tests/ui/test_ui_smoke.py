@@ -1509,10 +1509,11 @@ def test_the_sections_dialog_lists_subdecks_and_opens_the_setup_panel(
         lab = int(deck(col, "Lab 2"))
         w: Any = sections_dialog.SectionsDialog(ctx, opened.append, lab)
         assert w.deck_combo.currentText() == "Lab 2"
-        assert [r.label for r in w.rows] == ["Bones", "Muscles"]
-        assert w.summary.text() == "0 of 2 sections done."
+        # Subdecks come in the order their cards were made (Muscles first), v0.3.1.
+        assert [r.label for r in w.rows] == ["Muscles", "Bones"]
+        assert w.summary.text() == "0 of 2 sections done. Next: Muscles."
         cell: Any = w.table.item
-        assert cell(0, 0).text() == "Bones" and cell(0, 5).text() == "1"
+        assert cell(0, 0).text() == "Muscles" and cell(0, 5).text() == "1"
         assert cell(0, 7).text() == "1 to go"
         # Read-only: no cell is editable. Clicking a row opens that subdeck's setup panel.
         assert not (cell(0, 1).flags() & sections_dialog.Qt.ItemFlag.ItemIsEditable)
@@ -1521,6 +1522,109 @@ def test_the_sections_dialog_lists_subdecks_and_opens_the_setup_panel(
         w.close()
     finally:
         col.close()
+
+
+def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    import sys
+
+    import aqt
+    from anki.collection import Collection
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "anki_io"))
+    from layer_scene import CHAPTERS, build
+
+    from recalldrill.storage import Storage
+    from recalldrill.ui import context, sections_dialog
+    from recalldrill.ui.context import AddonContext
+
+    col = Collection(str(tmp_path / "progress.anki2"))
+    try:
+        ctx = AddonContext("recall_drill", str(window_env))
+        storage = Storage(window_env, "p")
+        ctx.storage = lambda: storage  # type: ignore[method-assign]
+        scene = build(col, storage)
+        stub = aqt.mw
+        stub.col = col  # type: ignore[attr-defined]
+        for module in (sections_dialog, context):
+            monkeypatch.setattr(module, "mw", stub)
+        monkeypatch.setattr(sections_dialog, "QueryOp", _SyncQueryOp)
+        monkeypatch.setattr(_SyncQueryOp, "col", col)
+        opened: list[int] = []
+        driven: list[tuple[int, str]] = []
+        w: Any = sections_dialog.SectionsDialog(
+            ctx, opened.append, scene.lab, lambda did, order: driven.append((did, order))
+        )
+        assert w.windowTitle() == "Recall Drill: progress"
+        assert [r.label for r in w.rows] == ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
+        assert w.summary.text() == "0 of 4 layers done. Next: Layer 1."
+        headers = [w.table.horizontalHeaderItem(i).text() for i in range(w.table.columnCount())]
+        assert headers[-1 - len(CHAPTERS) : -1] == list(CHAPTERS)
+        assert headers[-1] == "Next" and "Can't drill" in headers
+        cell: Any = w.table.item
+        last = w.table.columnCount() - 1
+        assert cell(0, last).text() == "Next" and cell(1, last).text() == ""
+        assert cell(0, 0).font().bold() and not cell(1, 0).font().bold()
+        assert cell(0, headers.index("Can't drill")).text() == "2"
+        assert cell(0, headers.index("Muscles")).text() == "1/2"
+        # Drill next: the chosen deck, Order = Deck order.
+        assert w.next_btn.text() == "Drill next" and w.next_btn.isEnabled()
+        w.next_btn.click()
+        assert driven == [(scene.lab, "deck_order")] and opened == []
+        # A row opens the setup panel on the chosen deck.
+        w._clicked(2, 0)
+        assert opened == [scene.lab]
+        w.close()
+    finally:
+        col.close()
+
+
+def test_setup_panel_opens_with_the_order_the_progress_table_asks_for(
+    hold_env: Any, window_env: Path
+) -> None:
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    ctx = AddonContext("recall_drill", str(window_env))
+    plain: Any = SetupDialog(ctx, hold_env.did)
+    assert plain.order.currentData() == "priority_first"
+    plain.close()
+    asked: Any = SetupDialog(ctx, hold_env.did, None, "deck_order")
+    assert asked.order.currentData() == "deck_order"
+    asked.close()
+
+
+def test_hold_back_button_offers_to_release_held_undrillable_cards(
+    hold_env: Any, window_env: Path
+) -> None:
+    from anki_fixtures import add_bqe_note, add_io_note
+
+    from recalldrill import deck_settings
+    from recalldrill.holdback import TAG_HELD
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    col, did = hold_env.col, hold_env.did
+    ctx = AddonContext("recall_drill", str(window_env))
+    deck_settings.set_hold_back(ctx.storage(), did, True)
+    d: Any = SetupDialog(ctx, did)
+    d.hold_back_btn.click()  # holds the six cards back
+    assert len(_suspended(col, did)) == 6 and not d.hold_back_btn.isVisibleTo(d)
+    # v0.3.0 also held an image-occlusion card; a new card arrived too.
+    io = add_io_note(col, did).cards()[0]
+    col.tags.bulk_add([io.nid], TAG_HELD)
+    col.sched.suspend_cards([io.id])
+    d._refresh()
+    assert d.hold_back_btn.isVisibleTo(d) and d.hold_back_btn.text() == "Release 1 undrillable"
+    add_bqe_note(col, did, "ankyl/o", "stiff")
+    d._refresh()
+    assert d.hold_back_btn.text() == "Hold back 2 / release 1 undrillable"
+    d.hold_back_btn.click()
+    io.load()
+    assert io.queue == 0 and TAG_HELD not in col.get_note(io.nid).tags
+    assert not d.hold_back_btn.isVisibleTo(d)
+    d.close()
 
 
 # -- v0.3: the outcomes export ------------------------------------------------------------
