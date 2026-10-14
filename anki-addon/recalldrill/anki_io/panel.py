@@ -132,6 +132,8 @@ class PanelData:
     hold_back_from: str | None = None
     """The parent deck's name when the setting is inherited from it."""
     hold_back_count: int = 0
+    hold_back_release: int = 0
+    """Held undrillable cards the hold-back plan would release (v0.3.1)."""
     """Unsuspended undrilled new cards a hold-back would suspend now (the button's N)."""
 
     @property
@@ -279,8 +281,10 @@ def read_panel(
     exam_own, exam_inherited, today = exam_info(col, storage, scope.deck_id)
     hold = hold_back_state(col, storage, scope.deck_id) if scope.deck_id is not None else None
     held_n = 0
+    release_n = 0
     if hold is not None and hold.on and scope.deck_id is not None:
-        held_n = plan_hold_back(col, storage, scope.deck_id).cards
+        hb_plan = plan_hold_back(col, storage, scope.deck_id, table)
+        held_n, release_n = hb_plan.cards, hb_plan.undrillable_held
     unrated = (
         read_unrated(col, storage, scope.deck_id)
         if cfg.unrated_warning and scope.deck_id is not None
@@ -300,6 +304,7 @@ def read_panel(
             else None
         ),
         hold_back_count=held_n,
+        hold_back_release=release_n,
         scope=scope,
         label=scope_label(col, scope),
         key=key,

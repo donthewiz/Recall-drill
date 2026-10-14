@@ -67,7 +67,14 @@ def hold_back(parent: QWidget, ctx: AddonContext, did: int, then: Callable[[], N
             return
 
         def done(_changes: Any) -> None:
-            tooltip(f"Held back {plan.cards} cards. Edit → Undo reverts it.", parent=parent)
+            try:
+                history_store.append_holdback(
+                    storage, str(plan.did), hb.history_line(plan, time.time() * 1000)
+                )
+            except Exception as exc:
+                showWarning(f"The cards were held back, but the history line failed: {exc}")
+            freed = f", released {plan.undrillable_held} undrillable" if plan.release else ""
+            tooltip(f"Held back {plan.cards} cards{freed}. Edit → Undo reverts it.", parent=parent)
             then()
 
         CollectionOp(parent, lambda col: hb.apply_hold_back(col, plan)).success(done).failure(

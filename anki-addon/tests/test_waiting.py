@@ -70,6 +70,21 @@ def test_stale_by_age_and_by_pacing() -> None:
     assert is_stale(fresh, MON, 7, PacingSettings(target_date=MON))
 
 
+def test_held_cards_are_never_stale_by_age() -> None:
+    old = MON - timedelta(days=90)
+    assert is_stale(old, MON, 7, None)  # an ordinary rd::drill card: the age rule
+    assert not is_stale(old, MON, 7, None, held_back=True)
+    # Exam date: stale only once it has passed.
+    assert not is_stale(old, MON, 7, None, True, MON)
+    assert is_stale(old, MON, 7, None, True, MON - timedelta(days=1))
+    assert not is_stale(old, MON, 7, None, True, MON + timedelta(days=1))
+    # Pacing still applies.
+    assert is_stale(old, MON, 7, PacingSettings(target_date=MON - timedelta(days=1)), True)
+    assert not is_stale(old, MON, 7, PacingSettings(target_date=MON + timedelta(days=10)), True)
+    # An ordinary card is not made stale by an exam date alone.
+    assert not is_stale(MON, MON, 7, None, False, MON - timedelta(days=1))
+
+
 def test_rows_by_deck() -> None:
     cards = [
         WaitingCard(1, 10, 100, MON - timedelta(days=20)),

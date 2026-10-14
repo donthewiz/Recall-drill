@@ -10,13 +10,20 @@ parent's explicit value. Turning it on, and the **Hold back N** button, run
 the third collection write (``anki_io/holdback.py``): it suspends the deck's
 new, unsuspended cards that aren't already handed off and waiting for Anki, and
 tags their notes ``rd::held``. The handoff and the release remove the tag.
+
+v0.3.1: cards the drill can never take (``content_check``: image occlusion, marked
+ineligible, unmapped, empty answer) are left out of that. The same plan releases
+the ones already held (unsuspend, and ``rd::held`` off notes with no held card
+left), in the same undo step.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
+
+from .engine.jscompat import js_iso_string
 
 TAG_HELD = "rd::held"
 """The note tag a hold-back adds and a handoff or release removes."""
@@ -48,9 +55,44 @@ def default_order(hold_back: bool) -> OrderName:
     return "deck_order" if hold_back else "priority_first"
 
 
-def button_label(n: int) -> str:
-    return f"Hold back {n}"
+def button_label(n: int, undrillable: int = 0) -> str:
+    """ "Hold back N", or with held undrillable cards to let go "Hold back N /
+    release K undrillable" (just "Release K undrillable" when N is 0)."""
+    if not undrillable:
+        return f"Hold back {n}"
+    if not n:
+        return f"Release {undrillable} undrillable"
+    return f"Hold back {n} / release {undrillable} undrillable"
 
 
 def release_question(n: int) -> str:
     return f"Release {n} held card{'' if n == 1 else 's'} to Anki now?"
+
+
+def holdback_line(
+    did: int,
+    held: Sequence[int],
+    released_undrillable: Sequence[int],
+    left_alone: Sequence[int],
+    tagged_notes: Sequence[int],
+    untagged_notes: Sequence[int],
+    at_ms: float,
+) -> dict[str, Any]:
+    """``{"type": "holdback", …}`` in ``history/<did>.jsonl``: the cards suspended
+    (``held``), the held undrillable cards let go, and the undrillable new cards
+    left alone."""
+    line: dict[str, Any] = {
+        "type": "holdback",
+        "timestamp": js_iso_string(at_ms),
+        "deckId": did,
+        "groups": {
+            "held": list(held),
+            "released_undrillable": list(released_undrillable),
+            "left_alone_undrillable": list(left_alone),
+        },
+        "tags": {"added": len(tagged_notes), "byTag": {TAG_HELD: len(tagged_notes)}},
+    }
+    if untagged_notes:
+        line["tags"]["removed"] = len(untagged_notes)
+        line["tags"]["removedByTag"] = {TAG_HELD: len(untagged_notes)}
+    return line
