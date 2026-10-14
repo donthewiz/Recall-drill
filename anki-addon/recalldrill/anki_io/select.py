@@ -2,10 +2,12 @@
 
 Order:
 
-- **Deck order**: new cards (type 0) by new-queue position (``due``), then
-  everything else by ``(note id, ord)``. New cards keep their queue position,
-  so a deck whose new cards were laid out ``Layer::1 -> 4`` keeps that order;
-  they are never re-sorted by note id.
+- **Deck order**: new cards (type 0) by ``(layer, new-queue position (``due``),
+  note id, ord)``, then everything else by ``(note id, ord)``. The layer is the
+  note's lowest ``Layer::N`` tag (v0.3.1: the anki-cards skill's layers; no tag
+  sorts after every layer), so cards the skill added later still drill in layer
+  order. Within a layer, new cards keep their queue position; a deck with no
+  ``Layer::`` tag is ordered by queue position alone, never re-sorted by note id.
 - **Priority first** (default): by class rank (:data:`PRIORITY_RANK`), then
   deck order.
 
@@ -59,6 +61,7 @@ from anki.decks import DeckId
 
 from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY
 from ..holdout import HOLDOUT_CLASSES, TAG_HOLDOUT, is_holdout
+from ..layers import layer_rank
 from .cards import (
     CARD_CLASSES,
     DEFAULT_ENABLED,
@@ -268,10 +271,13 @@ class Selection:
 # ---------------------------------------------------------------------------
 
 
-def deck_order_key(snap: CardSnapshot) -> tuple[int, int, int, int]:
+def deck_order_key(snap: CardSnapshot) -> tuple[int, int, int, int, int]:
+    """New cards by (layer, new-queue position, nid, ord), a note without a
+    ``Layer::N`` tag after every numbered layer (v0.3.1); the rest by (nid, ord).
+    A deck with no ``Layer::`` tag sorts as before: the layer is the same for all."""
     if snap.type == 0:
-        return (0, snap.new_position, snap.nid, snap.ord)
-    return (1, 0, snap.nid, snap.ord)
+        return (0, layer_rank(snap.tags), snap.new_position, snap.nid, snap.ord)
+    return (1, 0, 0, snap.nid, snap.ord)
 
 
 def order_candidates(cands: Iterable[Candidate], order: OrderMode) -> list[Candidate]:
