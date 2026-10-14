@@ -784,7 +784,7 @@ tests run with `auto_advance_correct` off and `extra_display` "always".
 
 Session saves keep each note type's CSS once (`addon.css`, by note type id);
 `SourceRef.css` resolves on load, and old saves with CSS in every source still
-load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release; 0.3.0 on 2026-10-13: see "v0.3"; 0.3.1 on 2026-10-14: see "v0.3.1").
+load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release; 0.3.0 on 2026-10-13: see "v0.3"; 0.3.1 on 2026-10-14: see "v0.3.1"; 0.3.2 on 2026-10-14: see "v0.3.1").
 
 ## v0.3: whole-section drilling, exam dates, export (2026-10-13)
 
@@ -862,6 +862,10 @@ v0.3.0 failed that deck four ways: cards the skill added later (Layer 3 list-ite
 - **Status:** "done" when the row has no held or open drillable new card; "done (no new cards)" as before; otherwise "N to go". The **first row (table order) that isn't done** is **Next**: its cells are bold and its Next cell reads "Next".
 - **Drill next** (button): opens the setup panel with Order = Deck order. For layer rows it opens the **chosen deck**, since Deck order now starts at the lowest unfinished layer, so the session begins where the table says. When the rows are subdecks (no layers) it opens the Next subdeck instead, which is where the marker points. Clicking a row opens that row's setup panel (a layer row: the chosen deck). Read in a `QueryOp`, as before.
 
+### Drill next filters to the layer (v0.3.2, 2026-10-14)
+
+By layer, **Drill next** opens the chosen deck with Order = Deck order **and Only with tag = `Layer::N`** (`Progress.next_tag`, N from the Next row; written as the skill writes it, matched by Anki's case-insensitive exact `tag:` search); by subdeck it opens the next subdeck with no tag. The tag goes `SectionsDialog._go_next` → `entry.open_setup_for(deck, order, tag)` → `open_setup(..., tag)` → `SetupDialog`, applied once on the first load like the forced order. A session saved for the deck is keyed by deck only, so its banner stays and now says when it was built with another tag; Start fresh builds from the tagged selection.
+
 ### Hold back, two fixes
 
 - **Skip undrillable cards.** `plan_hold_back` leaves out every new card `content_check` rejects; those cards go to Anki normally. The confirmation lists them: "Left alone: K cards the drill can't take (e.g. image occlusion); they go to Anki as usual."
@@ -884,7 +888,7 @@ A TS change alone fails the drift guard. Regenerated goldens without the Python 
 A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addon/build.py` writes `anki-addon/dist/recall_drill-<human_version>.ankiaddon` (`dist/` is gitignored), a zip of the add-on folder's **contents**, no top-level folder.
 
 - **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
-- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.3.1), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
+- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.3.2), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
 - **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
 - **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
 - **The "(dev)" label** (Tools menu entry and About text) shows only when the add-on's folder is `recall_drill_dev` (`ui/about.py`, `display_name`, decided from the module's first name part); an installed package shows plain "Recall Drill".

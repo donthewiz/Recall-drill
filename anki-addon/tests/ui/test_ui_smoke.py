@@ -1552,9 +1552,9 @@ def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
         monkeypatch.setattr(sections_dialog, "QueryOp", _SyncQueryOp)
         monkeypatch.setattr(_SyncQueryOp, "col", col)
         opened: list[int] = []
-        driven: list[tuple[int, str]] = []
+        driven: list[tuple[int, str, str | None]] = []
         w: Any = sections_dialog.SectionsDialog(
-            ctx, opened.append, scene.lab, lambda did, order: driven.append((did, order))
+            ctx, opened.append, scene.lab, lambda did, order, tag: driven.append((did, order, tag))
         )
         assert w.windowTitle() == "Recall Drill: progress"
         assert [r.label for r in w.rows] == ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
@@ -1571,10 +1571,78 @@ def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
         # Drill next: the chosen deck, Order = Deck order.
         assert w.next_btn.text() == "Drill next" and w.next_btn.isEnabled()
         w.next_btn.click()
-        assert driven == [(scene.lab, "deck_order")] and opened == []
+        assert driven == [(scene.lab, "deck_order", "Layer::1")] and opened == []
         # A row opens the setup panel on the chosen deck.
         w._clicked(2, 0)
         assert opened == [scene.lab]
+        w.close()
+    finally:
+        col.close()
+
+
+def test_drill_next_fills_the_layer_tag_and_the_panel_picks_only_that_layer(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    import sys
+
+    import aqt
+    from anki.collection import Collection
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "anki_io"))
+    from layer_scene import build
+
+    from recalldrill.storage import Storage
+    from recalldrill.ui import context, entry, sections_dialog, setup_dialog
+    from recalldrill.ui.context import AddonContext
+
+    col = Collection(str(tmp_path / "drillnext.anki2"))
+    try:
+        ctx = AddonContext("recall_drill", str(window_env))
+        storage = Storage(window_env, "p")
+        ctx.storage = lambda: storage  # type: ignore[method-assign]
+        scene = build(col, storage)
+        stub = aqt.mw
+        stub.col = col  # type: ignore[attr-defined]
+        stub.addonManager = type("AM", (), {"getConfig": lambda self, m: None})()  # type: ignore[attr-defined]
+        for module in (sections_dialog, setup_dialog, context, entry):
+            monkeypatch.setattr(module, "mw", stub)
+        for module in (sections_dialog, setup_dialog):
+            monkeypatch.setattr(module, "QueryOp", _SyncQueryOp)
+        monkeypatch.setattr(_SyncQueryOp, "col", col)
+        monkeypatch.setattr(entry, "_ctx", ctx)
+        panels: list[Any] = []
+        monkeypatch.setattr(
+            setup_dialog,
+            "open_setup",
+            lambda c, did, search=None, order=None, tag=None: (
+                panels.append(setup_dialog.SetupDialog(c, did, search, order, tag)) and panels[-1]
+            ),
+        )
+        w: Any = sections_dialog.open_sections(
+            ctx, entry.open_setup_for, scene.lab, entry.open_setup_for
+        )
+        w.next_btn.click()
+        (panel,) = panels
+        assert panel.order.currentData() == "deck_order"
+        assert panel.tag_edit.text() == "Layer::1"
+        layer1 = col.find_cards('deck:"AP Lab::Lab 2" tag:Layer::1')
+        assert 0 < len(layer1) < len(col.find_cards('deck:"AP Lab::Lab 2"'))
+        data = panel.data
+        assert data is not None and data.selection.total == len(layer1)
+        # Picked = the layer's drillable cards still to go (not the whole deck's).
+        left = w.progress.next_row.to_go
+        assert 0 < left < data.selection.total
+        assert len(data.selection.picked) == len(data.build.deck_items) == left
+        assert f"{len(layer1)} cards in scope; {left} picked" in panel.summary_label.text()
+        # The tag was applied once: editing it sticks and a refresh doesn't put it back.
+        panel.tag_edit.setText("")
+        panel._load_scope()
+        assert panel.tag_edit.text() == ""
+        # A saved session built with another tag keeps its banner, and says so.
+        saved = {"addon": {"selectOptions": {"extra_tag": "Layer::2"}}}
+        assert setup_dialog._saved_tag(saved) == "Layer::2"
+        assert setup_dialog._saved_tag({"addon": {}}) == ""
+        panel.close()
         w.close()
     finally:
         col.close()
