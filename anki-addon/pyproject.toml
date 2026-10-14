@@ -49,6 +49,7 @@ strict = [
     "recalldrill/unrated.py",
     "recalldrill/holdback.py",
     "recalldrill/sections.py",
+    "recalldrill/outcomes.py",
 ]
 
 [tool.pytest.ini_options]

@@ -118,6 +118,9 @@ class CardRow:
     cycle_rule: str | None = None
     """The session's cycle rule (``encode.cycleRule``): "clean-one", or "two" for
     lines from before 2026-10-12; None for holdout and baseline cards."""
+    active_ms: int | None = None
+    """The card's share of the session's active drill time (v0.3: the outcomes
+    export); None on lines from before Phase 6 and for holdout and baseline cards."""
 
     @property
     def struggle(self) -> int | None:
@@ -261,6 +264,7 @@ class _SessionCard:
     misses: int | None
     reveals: int | None
     final_misses: int | None
+    active_ms: int | None = None
 
 
 @dataclass
@@ -294,6 +298,7 @@ def _session(line: Mapping[str, Any]) -> _Session:
             misses=_int(c.get("misses")),
             reveals=_int(c.get("reveals")),
             final_misses=_int(c.get("finalMisses")),
+            active_ms=_int(a.get("activeMs")),
         )
     reps = _int(_key(line.get("encode"), "encodeReps"))
     # Lines from before the clean-card rule (2026-10-12) have no cycleRule.
@@ -410,6 +415,7 @@ def card_rows(
                     reveals=sc.reveals if sc else None,
                     final_misses=sc.final_misses if sc else _int(d.get("finalMisses")),
                     cycle_rule=sess.cycle_rule if sess is not None else "two",
+                    active_ms=sc.active_ms if sc else None,
                 )
             )
         held = _ints(_key(line.get("groups"), "holdout"))

@@ -30,5 +30,6 @@
   "extra_display": "first_and_misses",
   "stale_drill_days": 7,
   "waiting_notice": true,
-  "unrated_warning": true
+  "unrated_warning": true,
+  "export_on_open": true
 }

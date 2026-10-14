@@ -79,6 +79,9 @@ class AddonConfig:
     unrated_warning: bool = True
     """A line in the setup panel when handed-off drilled or holdout cards haven't had
     their first Anki rating and their primary window is still open (v0.3)."""
+    export_on_open: bool = True
+    """Write ``exports/outcomes.csv`` once when the profile opens (it is also written after
+    every handoff, and by Tools → Recall Drill: export outcomes now) (v0.3)."""
     extra_display: ExtraDisplay = "first_and_misses"
     """When a card's Extra shows and holds the screen: "first_and_misses" (the first
     time its full answer is on screen, and after a miss or a reveal) or "always"."""
@@ -159,4 +162,5 @@ def parse_config(raw: object) -> AddonConfig:
         stale_drill_days=_int(d.get("stale_drill_days"), dc.stale_drill_days, 0, 3650),
         waiting_notice=_bool(d.get("waiting_notice"), dc.waiting_notice),
         unrated_warning=_bool(d.get("unrated_warning"), dc.unrated_warning),
+        export_on_open=_bool(d.get("export_on_open"), dc.export_on_open),
     )

@@ -53,6 +53,10 @@ SESSIONS_DIR = "sessions"
 """``sessions/<session key>.json``: one saved drill session each."""
 HISTORY_DIR = "history"
 """``history/<deck or search key>.jsonl``: completed-session log, append-only."""
+EXPORTS_DIR = "exports"
+"""``exports/``: files written for people and Claude to read, never read back."""
+OUTCOMES = "exports/outcomes.csv"
+"""The light outcomes export (``outcomes.py``): rewritten after every handoff and at open."""
 
 log = logging.getLogger(__name__)
 
@@ -209,6 +213,26 @@ class Storage:
             except OSError:
                 pass
             raise
+
+    def write_text(self, name: str, text: str) -> Path:
+        """Atomically replaces a plain text file (temp file in the same folder, fsync,
+        rename; LF line endings). Raises on failure; the old file stays. Returns the path."""
+        path = self.path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        return path
 
     def _set_aside(self, path: Path, exc: Exception) -> None:
         stamp = time.strftime("%Y%m%d-%H%M%S")

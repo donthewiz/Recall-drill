@@ -100,6 +100,7 @@ PURE_MODULES = (
     "unrated.py",
     "holdback.py",
     "sections.py",
+    "outcomes.py",
 )
 
 

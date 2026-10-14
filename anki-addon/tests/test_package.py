@@ -71,6 +71,8 @@ def test_config_defaults_match_web_app() -> None:
         "waiting_notice": True,
         # Add-on only (v0.3): a line when handed-off cards still need their first rating.
         "unrated_warning": True,
+        # Add-on only (v0.3): the light outcomes export once at profile open.
+        "export_on_open": True,
     }
 
 
