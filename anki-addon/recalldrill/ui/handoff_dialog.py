@@ -7,8 +7,10 @@
    and the main window refreshes. On success the history line is written and
    the save deleted; on failure the session stays pending and the error shows.
 
-``apply_handoff`` is one of the add-on's two collection writes (the other is
-``release.apply_release``, from the waiting-cards dialog).
+``apply_handoff`` is one of the add-on's three collection writes (the others are
+``release.apply_release``, from the waiting-cards dialog, and
+``holdback.apply_hold_back``, from the setup panel). After a handoff the light
+outcomes export is rewritten (``export_ui``).
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ from ..anki_io.handoff import (
     top_deck_for,
 )
 from .context import AddonContext
+from .export_ui import export_in_background
 
 Choice = Literal["handoff", "later", "decline"]
 
@@ -193,6 +196,7 @@ def _run(
             )
         else:
             tooltip(DONE_MESSAGE, period=8000)
+            export_in_background(ctx)  # v0.3: the light outcomes export, quietly
         if on_done is not None:
             on_done()
 

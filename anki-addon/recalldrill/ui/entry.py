@@ -6,7 +6,7 @@ Tools also has the ``rd::hard`` entries: the setup panel scoped to
 search (Don builds the deck there; the add-on creates nothing by itself). And
 the tuning report (Phase 5), and the waiting drill cards (2026-10-12), with
 their once-a-day notice after the profile opens, and (v0.3) the section
-progress table.
+progress table and the outcomes export (once at profile open, `export_on_open`).
 
 Checked on 26.08.1 (docs/DECISIONS.md, "Entry points"):
 
@@ -36,6 +36,7 @@ HARD_FILTERED_LABEL = "Recall Drill: filtered deck for rd::hard"
 TUNING_LABEL = "Recall Drill: tuning report"
 WAITING_LABEL = "Recall Drill: waiting cards"
 SECTIONS_LABEL = "Recall Drill: sections"
+EXPORT_LABEL = "Recall Drill: export outcomes now"
 GEAR_LABEL = "Recall Drill this deck"
 OVERVIEW_LABEL = "Recall Drill"
 OVERVIEW_CMD = "recalldrill:setup"
@@ -102,12 +103,24 @@ def open_sections() -> None:
     show(_ctx, open_setup_for, _current_deck())
 
 
+def export_outcomes_now() -> None:
+    """Tools → export outcomes now: the light export, then its folder."""
+    if _ctx is None or mw.col is None:
+        return
+    from .export_ui import export_now
+
+    export_now(_ctx)
+
+
 def on_profile_did_open() -> None:
     if _ctx is None:
         return
+    from .export_ui import export_in_background
     from .waiting_dialog import maybe_notify
 
     maybe_notify(_ctx)
+    if _ctx.config().export_on_open:
+        export_in_background(_ctx)
 
 
 def _current_deck() -> int | None:
@@ -161,6 +174,7 @@ def register(module: str, user_files: str) -> None:
         (TUNING_LABEL, open_tuning),
         (WAITING_LABEL, open_waiting_cards),
         (SECTIONS_LABEL, open_sections),
+        (EXPORT_LABEL, export_outcomes_now),
     ):
         action = QAction(label, mw)
         qconnect(action.triggered, fn)

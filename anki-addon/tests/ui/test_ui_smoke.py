@@ -1520,3 +1520,86 @@ def test_the_sections_dialog_lists_subdecks_and_opens_the_setup_panel(
         w.close()
     finally:
         col.close()
+
+
+# -- v0.3: the outcomes export ------------------------------------------------------------
+
+
+def test_outcomes_export_after_a_handoff_at_open_and_from_tools(
+    handoff_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aqt
+
+    from recalldrill.storage import OUTCOMES
+    from recalldrill.ui import entry, export_ui, waiting_dialog
+    from recalldrill.ui.context import AddonContext
+
+    env = handoff_env
+    col, did = env.col, env.did
+    stub = aqt.mw
+    config: dict[str, Any] = {}
+    stub.addonManager = type("AM", (), {"getConfig": lambda self, m: config})()  # type: ignore[attr-defined]
+    shown: list[str] = []
+    monkeypatch.setattr(export_ui, "mw", stub)
+    monkeypatch.setattr(export_ui, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(export_ui, "showInfo", lambda text, **_k: shown.append(text))
+    monkeypatch.setattr(waiting_dialog, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(waiting_dialog, "mw", stub)
+    monkeypatch.setattr(_SyncQueryOp, "col", col)
+    monkeypatch.setattr(entry, "mw", stub)
+    ctx = AddonContext("recall_drill", str(window_env))
+    monkeypatch.setattr(entry, "_ctx", ctx)
+    target = ctx.storage().path(OUTCOMES)
+    assert not target.exists()
+
+    # A handoff rewrites it.
+    w = _finish_in_window(ctx, did)
+    env.choices = ["handoff"]
+    w.handoff_btn.click()
+    assert target.is_file()
+    lines = target.read_text(encoding="utf-8").splitlines()
+    assert lines[0].startswith("group,cid,nid,homeDeck,sessionId,t0,status,")
+    assert len(lines) == 1 + 3  # the three drilled cards
+    assert all(line.startswith("drilled,") for line in lines[1:])
+    w.close()
+
+    # Profile open: written once when export_on_open is on, not when it is off.
+    target.unlink()
+    config["export_on_open"] = False
+    entry.on_profile_did_open()
+    assert not target.exists()
+    config["export_on_open"] = True
+    entry.on_profile_did_open()
+    assert target.is_file()
+
+    # Tools → export outcomes now: the same file, then the folder path.
+    target.unlink()
+    entry.export_outcomes_now()
+    assert target.is_file()
+    assert len(shown) == 1
+    assert "Wrote 3 rows" in shown[0] and str(target) in shown[0]
+    assert f"Folder: {target.parent}" in shown[0]
+    assert entry.EXPORT_LABEL == "Recall Drill: export outcomes now"
+
+
+def test_a_failing_automatic_export_is_quiet(
+    handoff_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aqt
+
+    from recalldrill.ui import export_ui
+    from recalldrill.ui.context import AddonContext
+
+    stub = aqt.mw
+    monkeypatch.setattr(export_ui, "mw", stub)
+    monkeypatch.setattr(export_ui, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(_SyncQueryOp, "col", handoff_env.col)
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(export_ui, "export_outcomes", boom)
+    ctx = AddonContext("recall_drill", str(window_env))
+    seen: list[Any] = []
+    export_ui.export_in_background(ctx, seen.append)  # no exception, no warning dialog
+    assert seen == []
