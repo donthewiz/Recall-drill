@@ -71,6 +71,7 @@ from ..addon_config import AddonConfig, HandoffMode
 from ..engine.history import card_trouble_score
 from ..engine.jscompat import js_iso_string
 from ..engine.types import DrillItem
+from ..holdback import TAG_HELD
 from ..holdout import TAG_HOLDOUT
 from ..sessions import saved_sources
 from .cards import RED_FLAG, CardSnapshot, NoteCache, has_tag, snapshot
@@ -401,6 +402,17 @@ def build_plan(inp: HandoffInput, settings: HandoffSettings) -> HandoffPlan:
     for nid in holdout_notes:
         if not has_tag(snaps[next(c for c in holdout if snaps[c].nid == nid)].tags, TAG_HOLDOUT):
             tag_add.setdefault(TAG_HOLDOUT, []).append(nid)
+    # v0.3: a note leaves the held-back pile (loses rd::held) when none of its cards stays
+    # suspended and new after this handoff (a sibling left suspended keeps it).
+    sent = set(unsuspend)
+    for nid in dict.fromkeys([*notes, *holdout_notes]):
+        cards = [snaps[c] for c in inp.note_cards.get(nid, ()) if c in snaps]
+        still_held = any(
+            s.type == CARD_TYPE_NEW and s.queue == QUEUE_TYPE_SUSPENDED and s.cid not in sent
+            for s in cards
+        )
+        if cards and has_tag(cards[0].tags, TAG_HELD) and not still_held:
+            tag_remove.setdefault(TAG_HELD, []).append(nid)
 
     return HandoffPlan(
         session_id=inp.session_id,

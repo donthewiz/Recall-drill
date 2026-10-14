@@ -98,6 +98,8 @@ PURE_MODULES = (
     "pacing.py",
     "exam.py",
     "unrated.py",
+    "holdback.py",
+    "sections.py",
 )
 
 

@@ -71,6 +71,7 @@ from aqt.utils import disable_help_button, restoreGeom, saveGeom, showWarning, t
 
 from .. import deck_settings, holdout, launch, pacing, sessions
 from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
+from ..anki_io.holdback import hold_back_state
 from ..anki_io.panel import (
     PanelData,
     SavedInfo,
@@ -88,6 +89,8 @@ from ..anki_io.panel import (
 from ..anki_io.select import INELIGIBLE_REASONS, OrderMode, Scope, scope_to_json
 from ..anki_io.workload import read_pacing
 from ..deck_settings import DeckSettings
+from ..holdback import button_label, default_order
+from . import holdback_ui
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
 from .handoff_dialog import confirm_finish_early, offer_handoff
@@ -384,6 +387,34 @@ class SetupDialog(QDialog):
         sform.addRow("", self.hints)
         sform.addRow("", self.difficulty_adjust)
         stl.addLayout(sform)
+        # v0.3: keep a deck's new cards out of Anki until they are drilled.
+        self.hold_back_box = QWidget()
+        hbl = QHBoxLayout(self.hold_back_box)
+        hbl.setContentsMargins(0, 0, 0, 0)
+        self.hold_back = QCheckBox("Keep new cards out of Anki until drilled")
+        self.hold_back.setToolTip(
+            "For this deck and its subdecks. Turning it on offers to suspend the new "
+            "cards that are out of Anki undrilled (tagged rd::held; one undo step). The "
+            "handoff unsuspends drilled cards; Tools → Recall Drill: waiting cards sends "
+            "the rest undrilled. Turning it off offers to release the held cards."
+        )
+        self.hold_back_btn = QPushButton(button_label(0))
+        self.hold_back_btn.setAutoDefault(False)
+        self.hold_back_btn.setToolTip(
+            "Suspend this deck's new, unsuspended cards that aren't handed off and waiting "
+            "for Anki, and tag their notes rd::held. One undo step."
+        )
+        self.hold_back_btn.hide()
+        hbl.addWidget(self.hold_back)
+        hbl.addWidget(self.hold_back_btn)
+        hbl.addStretch(1)
+        stl.addWidget(self.hold_back_box)
+        self.hold_back_note = QLabel()
+        self.hold_back_note.setStyleSheet("color: gray; font-size: small;")
+        self.hold_back_note.hide()
+        stl.addWidget(self.hold_back_note)
+        qconnect(self.hold_back.toggled, self._on_hold_back)
+        qconnect(self.hold_back_btn.clicked, self._hold_back_now)
         self.settings_note = QLabel()
         self.settings_note.setWordWrap(True)
         stl.addWidget(self.settings_note)
@@ -497,6 +528,10 @@ class SetupDialog(QDialog):
         bottom = QHBoxLayout()
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
+        self.sections_btn = QPushButton("Sections…")
+        self.sections_btn.setAutoDefault(False)
+        self.sections_btn.setToolTip("Which sections (subdecks) of this deck are drilled.")
+        qconnect(self.sections_btn.clicked, self._open_sections)
         self.start_btn = QPushButton("Start")
         self.start_btn.setDefault(True)
         close = QPushButton("Close")
@@ -504,6 +539,7 @@ class SetupDialog(QDialog):
         qconnect(self.start_btn.clicked, self._start)
         qconnect(close.clicked, self.close)
         bottom.addWidget(self.status_label, 1)
+        bottom.addWidget(self.sections_btn)
         bottom.addWidget(self.start_btn)
         bottom.addWidget(close)
         outer.addLayout(bottom)
@@ -534,23 +570,36 @@ class SetupDialog(QDialog):
 
         def op(
             col: Any,
-        ) -> tuple[str, int | None, DeckSettings, SavedInfo | None, frozenset[int]]:
+        ) -> tuple[str, int | None, DeckSettings, SavedInfo | None, frozenset[int], bool]:
             did = settings_deck(col, storage, scope)
+            held = (
+                hold_back_state(col, storage, scope.deck_id).on
+                if scope.deck_id is not None
+                else False
+            )
             return (
                 scope_label(col, scope),
                 did,
                 initial_settings(storage, did),
                 read_saved(col, storage, scope_key(scope)),
                 hard_exclusions(storage, scope),
+                held,
             )
 
         def done(
-            result: tuple[str, int | None, DeckSettings, SavedInfo | None, frozenset[int]],
+            result: tuple[str, int | None, DeckSettings, SavedInfo | None, frozenset[int], bool],
         ) -> None:
             if self._closed or scope != self.scope:
                 return
-            label, did, draft, saved, exclude = result
+            label, did, draft, saved, exclude, held = result
             self.settings_did = did
+            # A deck that holds cards back drills in deck order (new-queue position) by default.
+            self._updating = True
+            try:
+                self.order.setCurrentIndex(max(0, self.order.findData(default_order(held))))
+            finally:
+                self._updating = False
+            self.sections_btn.setEnabled((scope.deck_id or self.deck_id) is not None)
             self.draft = draft
             self.hard_exclude = exclude
             self.hard_only.setVisible(bool(exclude))
@@ -746,6 +795,13 @@ class SetupDialog(QDialog):
         self.hints.setChecked(data.build.hints_on)
         self.holdout_pct.setValue(r["holdoutPct"])
         self.difficulty_adjust.setChecked(r["difficultyAdjust"])
+        self.hold_back_box.setVisible(data.scope.deck_id is not None)
+        self.hold_back.setChecked(data.hold_back)
+        self.hold_back_note.setText(f"Set on {data.hold_back_from}." if data.hold_back_from else "")
+        self.hold_back_note.setVisible(bool(data.hold_back_from))
+        offer = data.hold_back and data.hold_back_count > 0
+        self.hold_back_btn.setVisible(offer)
+        self.hold_back_btn.setText(button_label(data.hold_back_count))
         proposal = data.proposal
         self.proposal_row.setVisible(
             proposal is not None and any(self.draft.get(k) != v for k, v in proposal.items())
@@ -999,6 +1055,30 @@ class SetupDialog(QDialog):
             d["hints"] = self.hints.isChecked()
         self.stem.setEnabled(not self.strict.isChecked())
         self._schedule()
+
+    def _on_hold_back(self, checked: bool) -> None:
+        """The switch: saved at once (only this key), then the write it offers."""
+        did = self.scope.deck_id
+        if self._updating or did is None:
+            return
+        deck_settings.set_hold_back(self.ctx.storage(), did, checked)
+        self.draft["holdBack"] = checked
+        if checked:
+            self.order.setCurrentIndex(max(0, self.order.findData(default_order(True))))
+            holdback_ui.hold_back(self, self.ctx, did, self._refresh)
+        else:
+            holdback_ui.release_held(self, self.ctx, did, self._refresh)
+
+    def _hold_back_now(self) -> None:
+        did = self.scope.deck_id
+        if did is not None:
+            holdback_ui.hold_back(self, self.ctx, did, self._refresh)
+
+    def _open_sections(self) -> None:
+        from .entry import open_setup_for
+        from .sections_dialog import open_sections
+
+        open_sections(self.ctx, open_setup_for, self.scope.deck_id or self.deck_id)
 
     def _use_proposal(self) -> None:
         if self.data is None or self.data.proposal is None:

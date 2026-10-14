@@ -41,6 +41,7 @@ from .build import BuildResult, DifficultyInputs, build_session
 from .cards import NoteCache
 from .exam import inherited_exam
 from .handoff import HARD_SEARCH
+from .holdback import hold_back_state, plan_hold_back
 from .notetypes import MappingTable, field_names, load_overrides
 from .resume import ResumeCheck, check_resume
 from .revlog import waiting_for_anki
@@ -126,6 +127,12 @@ class PanelData:
     """The date and deck name inherited from a parent, if any."""
     today: date | None = None
     """Anki's today, for the exam line the panel redraws when the date is edited."""
+    hold_back: bool = False
+    """Deck scopes: the deck holds its new cards back until drilled (v0.3, own or inherited)."""
+    hold_back_from: str | None = None
+    """The parent deck's name when the setting is inherited from it."""
+    hold_back_count: int = 0
+    """Unsuspended undrilled new cards a hold-back would suspend now (the button's N)."""
 
     @property
     def stable_skipped(self) -> int:
@@ -270,6 +277,10 @@ def read_panel(
         else 0
     )
     exam_own, exam_inherited, today = exam_info(col, storage, scope.deck_id)
+    hold = hold_back_state(col, storage, scope.deck_id) if scope.deck_id is not None else None
+    held_n = 0
+    if hold is not None and hold.on and scope.deck_id is not None:
+        held_n = plan_hold_back(col, storage, scope.deck_id).cards
     unrated = (
         read_unrated(col, storage, scope.deck_id)
         if cfg.unrated_warning and scope.deck_id is not None
@@ -282,6 +293,13 @@ def read_panel(
         exam_own=exam_own,
         exam_inherited=exam_inherited,
         today=today,
+        hold_back=hold is not None and hold.on,
+        hold_back_from=(
+            col.decks.name(DeckId(hold.did))
+            if hold is not None and hold.on and hold.did not in (None, scope.deck_id)
+            else None
+        ),
+        hold_back_count=held_n,
         scope=scope,
         label=scope_label(col, scope),
         key=key,

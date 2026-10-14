@@ -1,8 +1,8 @@
 """Read the drill cards left waiting (2026-10-12). Read only.
 
-``waiting.py`` (pure) has the rules. Here: the exact search (``tag:rd::drill
-is:new is:suspended``, built with ``SearchNode(tag=…)`` so nothing else in
-``rd::`` matches), the cards waiting for Anki after a handoff or release left
+``waiting.py`` (pure) has the rules. Here: the exact search (``(tag:rd::drill OR
+tag:rd::held) is:new is:suspended``, built with ``SearchNode(tag=…)`` so nothing
+else in ``rd::`` matches), the cards waiting for Anki after a handoff or release left
 out, each card's home deck and added day, and each deck's pacing (its own
 target, else its nearest parent's).
 """
@@ -25,14 +25,20 @@ from ..history_store import handed_off_at
 from ..measure import anki_day
 from ..pacing import PacingSettings
 from ..storage import Storage
-from ..waiting import WAITING_STATES, WAITING_TAG, WaitingCard, WaitingRow, waiting_rows
+from ..waiting import HELD_TAG, WAITING_TAG, WaitingCard, WaitingRow, waiting_rows
 from .revlog import waiting_for_anki
 
 
 def waiting_search(col: Collection, deck_id: int | None = None) -> str:
-    """``tag:rd::drill is:new is:suspended`` (exact tag), optionally in one deck
-    (with its subdecks)."""
-    terms: list[str | SearchNode] = [SearchNode(tag=WAITING_TAG), WAITING_STATES]
+    """``(tag:rd::drill OR tag:rd::held) is:new is:suspended`` (exact tags),
+    optionally in one deck (with its subdecks)."""
+    group = SearchNode.Group
+    either = SearchNode(
+        group=group(
+            joiner=group.OR, nodes=[SearchNode(tag=WAITING_TAG), SearchNode(tag=HELD_TAG)]
+        )
+    )
+    terms: list[str | SearchNode] = [either, "is:new", "is:suspended"]
     if deck_id is not None:
         terms.insert(0, SearchNode(deck=col.decks.name(DeckId(deck_id))))
     return col.build_search_string(*terms)

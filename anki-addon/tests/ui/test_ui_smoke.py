@@ -1344,3 +1344,179 @@ def time_ms() -> float:
     import time
 
     return time.time() * 1000
+
+
+# -- v0.3: hold back, sections --------------------------------------------------------
+
+
+@pytest.fixture
+def hold_env(panel_env: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """The panel's deck with its six cards unsuspended and new (nothing held back
+    yet), the hold-back ops run synchronously and the two questions answered from
+    ``env.answers``."""
+    import types
+
+    from recalldrill.ui import holdback_ui
+
+    col, did = panel_env
+    col.sched.unsuspend_cards(col.find_cards(f"did:{did}"))
+    env = types.SimpleNamespace(
+        col=col, did=did, confirms=[], asks=[], tips=[], answer_confirm=True, answer_ask=True
+    )
+
+    def confirm(_parent: Any, plan: Any) -> bool:
+        env.confirms.append(plan.cards)
+        return env.answer_confirm
+
+    def ask(_parent: Any, n: int) -> bool:
+        env.asks.append(n)
+        return env.answer_ask
+
+    monkeypatch.setattr(holdback_ui, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(holdback_ui, "CollectionOp", _SyncCollectionOp)
+    monkeypatch.setattr(_SyncCollectionOp, "col", col)
+    monkeypatch.setattr(holdback_ui, "confirm_hold_back", confirm)
+    monkeypatch.setattr(holdback_ui, "ask_release_held", ask)
+    monkeypatch.setattr(holdback_ui, "tooltip", lambda text, **_k: env.tips.append(text))
+    return env
+
+
+def _suspended(col: Any, did: int) -> list[int]:
+    return [int(c) for c in col.find_cards(f"did:{did}") if col.get_card(c).queue == -1]
+
+
+def test_setup_panel_hold_back_switch_button_and_order(hold_env: Any, window_env: Path) -> None:
+    from recalldrill import deck_settings
+    from recalldrill.holdback import TAG_HELD
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    col, did = hold_env.col, hold_env.did
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    assert d.hold_back_box.isVisibleTo(d) and not d.hold_back.isChecked()
+    assert d.hold_back.text() == "Keep new cards out of Anki until drilled"
+    assert d.order.currentData() == "priority_first" and not d.hold_back_btn.isVisibleTo(d)
+    assert deck_settings.explicit_hold_back(ctx.storage(), did) is None
+
+    # Turning it on: asked first; a No still saves the switch and leaves every card alone.
+    hold_env.answer_confirm = False
+    d.hold_back.setChecked(True)
+    assert hold_env.confirms == [6] and _suspended(col, did) == []
+    assert deck_settings.explicit_hold_back(ctx.storage(), did) is True
+    assert d.order.currentData() == "deck_order"  # drills in the order the skill added them
+    assert d.hold_back_btn.isVisibleTo(d) and d.hold_back_btn.text() == "Hold back 6"
+
+    # The button runs the same write; Yes suspends and tags, one undo step.
+    hold_env.answer_confirm = True
+    d.hold_back_btn.click()
+    assert hold_env.confirms == [6, 6] and len(_suspended(col, did)) == 6
+    assert all(TAG_HELD in col.get_note(n).tags for n in col.find_notes(f"did:{did}"))
+    assert col.undo_status().undo == "Recall Drill: hold back"
+    assert not d.hold_back_btn.isVisibleTo(d)  # nothing left to hold back
+    assert hold_env.tips == ["Held back 6 cards. Edit → Undo reverts it."]
+
+    # A new card added to the held-back deck brings the button back.
+    from anki_fixtures import add_bqe_note
+
+    add_bqe_note(col, did, "ankyl/o", "stiff")
+    d._refresh()
+    assert d.hold_back_btn.isVisibleTo(d) and d.hold_back_btn.text() == "Hold back 2"
+    d.close()
+
+    # Reopened: the saved switch defaults the order to deck order.
+    again: Any = SetupDialog(ctx, did)
+    assert again.hold_back.isChecked() and again.order.currentData() == "deck_order"
+    # The user can still change it.
+    again.order.setCurrentIndex(again.order.findData("priority_first"))
+    assert again.order.currentData() == "priority_first"
+    again.close()
+
+
+def test_turning_hold_back_off_with_and_without_release(hold_env: Any, window_env: Path) -> None:
+    from recalldrill import deck_settings, history_store
+    from recalldrill.anki_io.waiting import read_waiting_cards
+    from recalldrill.holdback import TAG_HELD
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    col, did = hold_env.col, hold_env.did
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    d.hold_back.setChecked(True)  # asked, answered Yes
+    assert len(_suspended(col, did)) == 6
+
+    # Off, and No to "Release 6 held cards to Anki now?": they stay held and listed.
+    hold_env.answer_ask = False
+    d.hold_back.setChecked(False)
+    assert hold_env.asks == [6]
+    assert deck_settings.explicit_hold_back(ctx.storage(), did) is False
+    assert len(_suspended(col, did)) == 6
+    assert len(read_waiting_cards(col, ctx.storage(), did)) == 6
+    assert history_store.read_all(ctx.storage(), str(did)) == []
+
+    # On again (nothing new to hold), off again, Yes: released, keeping queue positions.
+    positions = {c: col.get_card(c).due for c in _suspended(col, did)}
+    d.hold_back.setChecked(True)
+    hold_env.answer_ask = True
+    d.hold_back.setChecked(False)
+    assert hold_env.asks == [6, 6]
+    assert _suspended(col, did) == []
+    assert {c: col.get_card(c).due for c in col.find_cards(f"did:{did}")} == positions
+    assert not any(TAG_HELD in col.get_note(n).tags for n in col.find_notes(f"did:{did}"))
+    (line,) = history_store.read_all(ctx.storage(), str(did))
+    assert line["type"] == "release" and len(line["groups"]["released"]) == 6
+    assert "Released 6 cards to Anki. Edit → Undo reverts it." in hold_env.tips
+    assert read_waiting_cards(col, ctx.storage(), did) == []
+    d.close()
+
+    # Off with nothing held: no question.
+    hold_env.answer_confirm = False  # turning it on writes nothing
+    quiet: Any = SetupDialog(ctx, did)
+    quiet.hold_back.setChecked(True)
+    assert _suspended(col, did) == []
+    asked = len(hold_env.asks)
+    quiet.hold_back.setChecked(False)
+    assert len(hold_env.asks) == asked  # nothing was held, so nothing to release
+    quiet.close()
+
+
+def test_the_sections_dialog_lists_subdecks_and_opens_the_setup_panel(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    import aqt
+    from anki.collection import Collection
+    from anki_fixtures import add_note, deck
+
+    from recalldrill.storage import Storage
+    from recalldrill.ui import context, sections_dialog
+    from recalldrill.ui.context import AddonContext
+
+    col = Collection(str(tmp_path / "sections.anki2"))
+    try:
+        for name in ("Lab 2::Muscles", "Lab 2::Bones"):
+            add_note(col, "Basic", deck(col, name), {"Front": name, "Back": "b"})  # type: ignore[arg-type]
+        stub = aqt.mw
+        stub.col = col  # type: ignore[attr-defined]
+        for module in (sections_dialog, context):
+            monkeypatch.setattr(module, "mw", stub)
+        monkeypatch.setattr(sections_dialog, "QueryOp", _SyncQueryOp)
+        monkeypatch.setattr(_SyncQueryOp, "col", col)
+        ctx = AddonContext("recall_drill", str(window_env))
+        ctx.storage = lambda: Storage(window_env, "p")  # type: ignore[method-assign]
+        opened: list[int] = []
+        lab = int(deck(col, "Lab 2"))
+        w: Any = sections_dialog.SectionsDialog(ctx, opened.append, lab)
+        assert w.deck_combo.currentText() == "Lab 2"
+        assert [r.label for r in w.rows] == ["Bones", "Muscles"]
+        assert w.summary.text() == "0 of 2 sections done."
+        cell: Any = w.table.item
+        assert cell(0, 0).text() == "Bones" and cell(0, 5).text() == "1"
+        assert cell(0, 7).text() == "1 to go"
+        # Read-only: no cell is editable. Clicking a row opens that subdeck's setup panel.
+        assert not (cell(0, 1).flags() & sections_dialog.Qt.ItemFlag.ItemIsEditable)
+        w._clicked(1, 0)
+        assert opened == [w.rows[1].did]
+        w.close()
+    finally:
+        col.close()
