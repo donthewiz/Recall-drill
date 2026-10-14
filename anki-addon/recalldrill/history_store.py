@@ -296,6 +296,31 @@ def handed_off_at(storage: Storage) -> dict[int, int]:
     return out
 
 
+def handed_off_by_addon(storage: Storage) -> set[int]:
+    """Every card a handoff (declined ones aside) sent to Anki: the drilled cards
+    (``cards``) and the siblings, holdout and holdout-sibling groups. Section
+    progress calls these "drilled"; releases are not in it."""
+    out: set[int] = set()
+    for name in storage.list_names(HISTORY_DIR, ".jsonl"):
+        for raw in storage.read_jsonl(name):
+            if not isinstance(raw, dict):
+                continue
+            line = cast(dict[str, Any], raw)
+            if line.get("type") != "handoff" or line.get("declined"):
+                continue
+            ids: list[Any] = [
+                cast(dict[str, Any], c).get("cid")
+                for c in cast(list[Any], line.get("cards") or [])
+                if isinstance(c, dict)
+            ]
+            groups = line.get("groups")
+            if isinstance(groups, dict):
+                for key in HANDED_OFF_GROUPS:
+                    ids += cast(list[Any], cast(dict[str, Any], groups).get(key) or [])
+            out.update(i for i in ids if isinstance(i, int) and not isinstance(i, bool))
+    return out
+
+
 def measured_handoffs(storage: Storage) -> dict[int, int]:
     """Card id -> its latest handoff's time (epoch ms), for the cards the
     measurement counts as handed off: every drilled card of a handoff line

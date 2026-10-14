@@ -5,7 +5,8 @@ Tools also has the ``rd::hard`` entries: the setup panel scoped to
 ``tag:rd::hard``, and Anki's own filtered-deck dialog pre-filled with that
 search (Don builds the deck there; the add-on creates nothing by itself). And
 the tuning report (Phase 5), and the waiting drill cards (2026-10-12), with
-their once-a-day notice after the profile opens.
+their once-a-day notice after the profile opens, and (v0.3) the section
+progress table.
 
 Checked on 26.08.1 (docs/DECISIONS.md, "Entry points"):
 
@@ -34,6 +35,7 @@ HARD_LABEL = "Recall Drill: my rd::hard cards"
 HARD_FILTERED_LABEL = "Recall Drill: filtered deck for rd::hard"
 TUNING_LABEL = "Recall Drill: tuning report"
 WAITING_LABEL = "Recall Drill: waiting cards"
+SECTIONS_LABEL = "Recall Drill: sections"
 GEAR_LABEL = "Recall Drill this deck"
 OVERVIEW_LABEL = "Recall Drill"
 OVERVIEW_CMD = "recalldrill:setup"
@@ -89,6 +91,15 @@ def open_waiting_cards() -> None:
     from .waiting_dialog import open_waiting
 
     open_waiting(_ctx, open_setup_for)
+
+
+def open_sections() -> None:
+    """Which sections (subdecks) of the current deck are drilled."""
+    if _ctx is None or mw.col is None:
+        return
+    from .sections_dialog import open_sections as show
+
+    show(_ctx, open_setup_for, _current_deck())
 
 
 def on_profile_did_open() -> None:
@@ -149,6 +160,7 @@ def register(module: str, user_files: str) -> None:
         (HARD_FILTERED_LABEL, open_hard_filtered_deck),
         (TUNING_LABEL, open_tuning),
         (WAITING_LABEL, open_waiting_cards),
+        (SECTIONS_LABEL, open_sections),
     ):
         action = QAction(label, mw)
         qconnect(action.triggered, fn)

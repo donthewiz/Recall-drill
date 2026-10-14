@@ -57,7 +57,7 @@ def _waiting_deck(col: Collection) -> tuple[int, dict[str, int]]:
 def test_the_search_is_exact(col: Collection, tmp_path: Path) -> None:
     did, cids = _waiting_deck(col)
     search = waiting_search(col)
-    assert search.startswith("tag:rd::drill ") and "is:new" in search and "is:suspended" in search
+    assert search == "(tag:rd::drill OR tag:rd::held) is:new is:suspended"  # v0.3: held too
     found = {int(c) for c in col.find_cards(waiting_search(col))}
     assert found == {cids["rd::drill"], cids["rd::drill::A"]}  # not rd::drilled / rd::undrilled
     # The wildcard the add-on never uses would match both other rd:: tags.

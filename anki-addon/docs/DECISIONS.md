@@ -783,6 +783,39 @@ Session saves keep each note type's CSS once (`addon.css`, by note type id);
 `SourceRef.css` resolves on load, and old saves with CSS in every source still
 load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release).
 
+## v0.3: whole-section drilling, exam dates, export (2026-10-13)
+
+Decided by Don, 2026-10-13. Add-on only: no engine change, no change to how a card is drilled.
+
+### Hold back: the third collection write (approved by Don, 2026-10-13)
+
+Why: a course section should be drilled whole and in order, tagged and untagged cards together, and only then handed to Anki. Drilling a section's tagged cards while Anki shows the rest "doesn't connect", and Anki can show cards from sections not drilled yet.
+
+- **Setting:** `holdBack` per deck in `deck_settings.json` (default off), the setup panel's checkbox "Keep new cards out of Anki until drilled". It applies to the deck and its subdecks: a deck's own saved value wins, else the nearest parent's, else off (`holdback.effective`). It is saved at once and on its own (`deck_settings.set_hold_back` writes only this key).
+- **The write** (`anki_io/holdback.py`), the add-on's **third collection write** next to the handoff and the release, with the release's rules: plan, then apply; **one undo step**, "Recall Drill: hold back"; on any failure the steps that ran are merged into that step and undone (tested with a forced failure); exact tags only.
+  - It suspends the deck's **new, unsuspended** cards (type new, queue new, in their home deck) and tags their notes `rd::held`. Tagged and untagged cards alike.
+  - It never touches a card Anki has already introduced (not new), a card in a filtered deck, a buried card, or a card **handed off and waiting for Anki** (`revlog.waiting_for_anki` over `handed_off_at`).
+  - It never runs by itself. The two clicks that run it: turning the switch on, and the **Hold back N** button, shown whenever the deck holds back and N unsuspended undrilled new cards exist. Both plan, show the counts, and ask.
+  - Planning again right after plans nothing.
+- **Release paths:**
+  - Drilled held cards are suspended new cards (class `suspended_new`), so they go to Anki through the existing handoff, which unsuspends them.
+  - "Send to Anki undrilled" (`release.py`) covers held cards: the waiting search is exactly `(tag:rd::drill OR tag:rd::held) is:new is:suspended`, built with `SearchNode(tag=…)`, so it never matches `rd::drilled`, `rd::undrilled` or `rd::heldx` (tested). Held cards count in the waiting-cards dialog, the stale rule and the once-a-day notice like skill drill cards.
+  - **`rd::held` leaves with the cards:** the handoff removes it from the notes it hands off and from holdout notes; the release removes it from the notes it sends. A note keeps the tag while one of its cards stays suspended and new (a sibling left behind with `handoff_siblings` off, or a card returned to the pool), so that card stays listed as waiting.
+  - Turning the switch **off** asks "Release N held cards to Anki now?": Yes runs the existing release over the deck's held cards (queue positions kept, `rd::undrilled`, one undo step "Recall Drill: send undrilled", its history line); No leaves them suspended and listed as waiting.
+- **Order:** for a deck scope with hold-back on, the setup panel defaults Order to **Deck order** (new-queue position), so a section drills in the order the skill added it. It can still be changed.
+
+### Section progress (Tools → Recall Drill: sections; "Sections…" in the setup panel)
+
+Read only, in a `QueryOp`. One row per direct subdeck of the chosen deck, in deck-tree order (`col.decks.deck_tree()`), counting that subdeck and its own subdecks; cards sitting directly in the chosen deck get a row of their own, first. A card falls in the first matching bucket:
+
+1. **drilled**: a handoff line names it (a drilled card, sibling, holdout card or holdout sibling: "handed off by the add-on");
+2. **released undrilled**: its note has `rd::undrilled`;
+3. **introduced**: not new;
+4. **held / waiting**: new, suspended, note tagged `rd::drill` (or a child) or `rd::held`;
+5. **not in Anki, not held**: any other new card (unsuspended and never drilled; a new card suspended by hand is here too).
+
+A row is **done** when no new card is held or open (every new card is drilled or released). A row with no new card at all is "done (no new cards)". `% drilled` = drilled ÷ the section's cards. Clicking a row opens the setup panel on that subdeck.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:

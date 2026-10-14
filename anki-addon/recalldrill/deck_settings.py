@@ -40,6 +40,9 @@ class DeckSettings(TypedDict):
     """Holdout percentage for this deck's sessions (0 = off)."""
     difficultyAdjust: NotRequired[bool]
     """Per-card encode reps and chunk threshold from FSRS difficulty (``difficulty.py``)."""
+    holdBack: NotRequired[bool]
+    """v0.3: keep the deck's (and its subdecks') new cards out of Anki until they are
+    drilled (``holdback.py``). Absent = not set on this deck (a parent's value applies)."""
 
 
 class ResolvedSettings(TypedDict):
@@ -81,7 +84,7 @@ def sanitize(raw: object) -> DeckSettings:
     if not isinstance(raw, dict):
         return out
     d = {str(k): v for k, v in cast(dict[object, Any], raw).items()}
-    for key in ("strictPunctuation", "stemTolerance", "hints", "difficultyAdjust"):
+    for key in ("strictPunctuation", "stemTolerance", "hints", "difficultyAdjust", "holdBack"):
         if isinstance(d.get(key), bool):
             out[key] = d[key]
     batch = d.get("batchSize")
@@ -127,6 +130,20 @@ def save(storage: Storage, did: int, settings: DeckSettings) -> None:
     all_settings = load_all(storage)
     all_settings[str(did)] = sanitize(settings)
     storage.write_json(DECK_SETTINGS, all_settings)
+
+
+def explicit_hold_back(storage: Storage, did: int) -> bool | None:
+    """The deck's own saved ``holdBack``, or None when it has none."""
+    saved = get_saved(storage, did)
+    return None if saved is None else saved.get("holdBack")
+
+
+def set_hold_back(storage: Storage, did: int, on: bool) -> None:
+    """Saves only ``holdBack`` into the deck's saved settings (everything else the
+    panel is still drafting stays unsaved)."""
+    saved = dict(get_saved(storage, did) or {})
+    saved["holdBack"] = on
+    save(storage, did, cast(DeckSettings, saved))
 
 
 def resolve(settings: DeckSettings | None, base: ResolvedSettings = DEFAULTS) -> ResolvedSettings:

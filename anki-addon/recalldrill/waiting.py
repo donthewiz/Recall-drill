@@ -6,10 +6,11 @@ drilled they wait forever. This module decides which are **stale**, when the
 once-a-day notice shows, and what a release writes to the history; reading
 the collection is ``anki_io/waiting.py``, the write ``anki_io/release.py``.
 
-- **Waiting**: a new, suspended card whose note has a ``rd::drill`` tag (the
-  search is exactly :data:`WAITING_SEARCH`, never ``tag:rd::*``, which would also
-  match ``rd::drilled`` and ``rd::undrilled``), and that isn't waiting for Anki
-  after a handoff or release. **Added**: the note id's date (its Anki day).
+- **Waiting**: a new, suspended card whose note has a ``rd::drill`` or (v0.3)
+  ``rd::held`` tag (the search is exactly :data:`WAITING_SEARCH`, never
+  ``tag:rd::*``, which would also match ``rd::drilled`` and ``rd::undrilled``),
+  and that isn't waiting for Anki after a handoff or release. **Added**: the note
+  id's date (its Anki day).
 - **Stale**: added more than ``stale_drill_days`` days ago, or in a deck whose
   pacing target has passed or that pacing says has no drill days left (the
   card's home deck's pacing, else the nearest parent deck's with a target).
@@ -24,14 +25,18 @@ from typing import Any, Literal, cast
 
 from .engine.jscompat import js_iso_string
 from .history_store import RELEASE_GROUPS
+from .holdback import TAG_HELD
 from .pacing import PacingSettings, drill_days, short_date
 from .storage import Storage
 
 WAITING_TAG = "rd::drill"
 """The anki-cards skill's tag family (``rd::drill``, ``rd::drill::A``, …)."""
+HELD_TAG = TAG_HELD
+"""v0.3: the tag a hold-back adds; held cards wait like skill drill cards."""
 WAITING_STATES = "is:new is:suspended"
-WAITING_SEARCH = f"tag:{WAITING_TAG} {WAITING_STATES}"
-"""``tag:rd::drill`` matches the tag and its children, not ``rd::drilled``."""
+WAITING_SEARCH = f"(tag:{WAITING_TAG} OR tag:{HELD_TAG}) {WAITING_STATES}"
+"""``tag:rd::drill`` matches the tag and its children, not ``rd::drilled``; the same
+for ``tag:rd::held`` (v0.3: held cards wait like skill drill cards)."""
 TAG_UNDRILLED = "rd::undrilled"
 """The note tag a release adds."""
 NOTICE_FILE = "waiting_notice.json"
@@ -208,10 +213,11 @@ def release_line(
     tagged_notes: Sequence[int],
     at_ms: float,
     scope: ReleaseScope,
+    untagged_held: Sequence[int] = (),
 ) -> dict[str, Any]:
     """``{"type": "release", …}`` in ``history/<did>.jsonl``. ``scope`` says which
     choice was sent: ``"stale"`` (the deck's stale cards) or ``"all"``."""
-    return {
+    line: dict[str, Any] = {
         "type": "release",
         "timestamp": js_iso_string(at_ms),
         "deckId": did,
@@ -219,6 +225,10 @@ def release_line(
         "groups": {"released": list(released), "released_siblings": list(siblings)},
         "tags": {"added": len(tagged_notes), "byTag": {TAG_UNDRILLED: len(tagged_notes)}},
     }
+    if untagged_held:  # v0.3: absent when the release removed no rd::held
+        line["tags"]["removed"] = len(untagged_held)
+        line["tags"]["removedByTag"] = {HELD_TAG: len(untagged_held)}
+    return line
 
 
 def released_cids(lines: Iterable[Mapping[str, Any]]) -> set[int]:

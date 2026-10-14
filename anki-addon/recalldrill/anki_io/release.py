@@ -12,7 +12,8 @@ What a release does to a deck's waiting cards (``waiting.py``):
 - ``released_siblings``: their notes' other suspended new cards: unsuspended.
 - Both stay new and keep their new-queue positions (no reposition, no bury),
   so Anki introduces them in deck order at the deck's new/day.
-- Their notes get the tag ``rd::undrilled`` (where missing).
+- Their notes get the tag ``rd::undrilled`` (where missing), and lose ``rd::held``
+  (v0.3) once none of their cards stays held back.
 
 Cards that are gone, no longer new or no longer suspended are left alone, so
 planning again right after a release plans nothing.
@@ -35,6 +36,7 @@ from anki.decks import DeckId
 from anki.errors import NotFoundError
 from anki.notes import NoteId
 
+from ..holdback import TAG_HELD
 from ..waiting import TAG_UNDRILLED, UNDO_LABEL, ReleaseScope, release_line
 from .cards import CardSnapshot, NoteCache, has_tag, snapshot
 
@@ -55,6 +57,8 @@ class ReleasePlan:
     """The deck's new cards per day (its own limit, else its preset's)."""
     scope: ReleaseScope = "all"
     """Which choice this plan is: the deck's stale cards, or all its waiting cards."""
+    untag_held: tuple[int, ...] = ()
+    """Notes that lose ``rd::held``: they have it, and none of their cards stays held."""
 
     @property
     def unsuspend(self) -> tuple[int, ...]:
@@ -73,7 +77,7 @@ class ReleasePlan:
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.unsuspend or self.tag_notes)
+        return bool(self.unsuspend or self.tag_notes or self.untag_held)
 
 
 class ReleaseFailed(Exception):
@@ -119,8 +123,23 @@ def build_release_plan(
         for n in nids
         if not any(has_tag(s.tags, TAG_UNDRILLED) for s in note_cards.get(n, ())[:1])
     )
+    sent = taken
+    untag_held = tuple(
+        n
+        for n in nids
+        if any(has_tag(s.tags, TAG_HELD) for s in note_cards.get(n, ())[:1])
+        and not any(_waiting(s) and s.cid not in sent for s in note_cards.get(n, ()))
+    )
     return ReleasePlan(
-        did, deck, released, tuple(siblings), tag_notes, skipped, max(0, new_per_day), scope
+        did,
+        deck,
+        released,
+        tuple(siblings),
+        tag_notes,
+        skipped,
+        max(0, new_per_day),
+        scope,
+        untag_held,
     )
 
 
@@ -174,6 +193,8 @@ def _roll_back(col: Collection, pos: int) -> bool:
 def _apply_steps(col: Collection, plan: ReleasePlan) -> None:
     if plan.tag_notes:
         col.tags.bulk_add([NoteId(n) for n in plan.tag_notes], TAG_UNDRILLED)
+    if plan.untag_held:
+        col.tags.bulk_remove([NoteId(n) for n in plan.untag_held], TAG_HELD)
     if plan.unsuspend:
         # Only suspended cards are passed: unsuspend_cards also unburies.
         col.sched.unsuspend_cards([CardId(c) for c in plan.unsuspend])
@@ -206,7 +227,8 @@ def describe(plan: ReleasePlan) -> str:
         f"Send {_cards_phrase(plan)} in {plan.deck} to Anki undrilled?",
         "",
         "They are unsuspended and stay new cards, in their current place in the new "
-        f"queue (nothing is buried or moved). Their notes get the tag {TAG_UNDRILLED}.",
+        f"queue (nothing is buried or moved). Their notes get the tag {TAG_UNDRILLED}"
+        + (f" and lose {TAG_HELD}." if plan.untag_held else "."),
     ]
     if plan.siblings:
         lines.append(
@@ -265,7 +287,7 @@ def describe_choices(plans: Sequence[ReleasePlan]) -> str:
 
 def history_line(plan: ReleasePlan, at_ms: float) -> dict[str, Any]:
     return release_line(
-        plan.did, plan.released, plan.siblings, plan.tag_notes, at_ms, plan.scope
+        plan.did, plan.released, plan.siblings, plan.tag_notes, at_ms, plan.scope, plan.untag_held
     )
 
 
