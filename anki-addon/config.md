@@ -1,4 +1,4 @@
-Global defaults for new drill sessions. They match the web app's `recall_drill_*` defaults. A deck's own settings (set in the Recall Drill panel: batch size, blind typings, cycle order, strict punctuation, word-ending tolerance, hints) win over `encode_reps`, `batch_size`, `stem_tolerance` and `cycle_order`. A value that is missing or of the wrong type takes its default. Each key shows its default and the phase that introduced it (Phase 0 is the scaffold: the keys that mirror the web app's `recall_drill_*` defaults). Change them in Tools → Add-ons → Recall Drill → Config. 31 keys in all.
+Global defaults for new drill sessions. They match the web app's `recall_drill_*` defaults. A deck's own settings (set in the Recall Drill panel: batch size, blind typings, cycle order, strict punctuation, word-ending tolerance, hints) win over `encode_reps`, `batch_size`, `stem_tolerance` and `cycle_order`. A value that is missing or of the wrong type takes its default. Each key shows its default and the phase that introduced it (Phase 0 is the scaffold: the keys that mirror the web app's `recall_drill_*` defaults). Change them in Tools → Add-ons → Recall Drill → Config. 33 keys in all.
 
 - `encode_reps` (default 3; Phase 0): consecutive blind correct answers a card needs on its whole-answer step.
 - `chunk_difficulty` (default 35; Phase 0): chunking percentage. 100 means never chunk.
@@ -43,6 +43,16 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 
 - `stale_drill_days` (default 7): a drill card (note tagged `rd::drill` or a child of it) still suspended and new this many days after its note was added is **stale**. A card in a deck whose pacing target has passed, or that has no drill days left, is stale whatever its age.
 - `waiting_notice` (default true): once per Anki day, after the profile opens, a tooltip says how many stale drill cards are waiting. false: no tooltip (the Tools entry and the panel's line stay).
+
+**Unrated cards and the outcomes export** (v0.3):
+
+- `unrated_warning` (default true; v0.3): in the setup panel of a deck, an amber line when handed-off drilled or holdout cards have no counted Anki rating yet and their primary window is still open: "N drilled cards are waiting for their first Anki rating. Rate them by <weekday, date> (before <rollover hour>) to keep them in the comparison." The deadline is the end of Anki day (handoff day + 2); with several handoffs pending it is the earliest. Cards in a filtered deck are noted. false: no line.
+- `export_on_open` (default true; v0.3): once when the profile opens, write `exports/outcomes.csv` in the profile's `user_files` folder (one row per drilled and holdout card: next-day outcome, the 14-day Anki cost, the drill counters, the exam date and the predicted recall on exam day). It is also written after every handoff, and by Tools → Recall Drill: export outcomes now. false: not at profile open.
+
+**Per-deck settings that are not in this config** (saved with the deck in `deck_settings.json`):
+
+- `holdBack` (default off; v0.3): the setup panel's **Keep new cards out of Anki until drilled**. For the deck and its subdecks (the deck's own value wins, else the nearest parent's). Turning it on, and the **Hold back N** button, ask first and then suspend the deck's new, unsuspended cards that aren't handed off and waiting for Anki, and tag their notes `rd::held` (one undo step, Edit → Undo "Recall Drill: hold back"). The handoff unsuspends drilled cards and removes `rd::held`; Tools → Recall Drill: waiting cards sends held cards to Anki undrilled; turning the switch off offers to release them. A deck that holds cards back defaults the panel's Order to Deck order.
+- The **Exam date** (Pacing box) is saved per deck in `pacing.json`, with the target date: a card's exam date is its deck's, else the nearest parent deck's.
 
 **Pacing** (Recall Drill panel → Pacing; target date and drill weekdays are saved per deck in `pacing.json`):
 
