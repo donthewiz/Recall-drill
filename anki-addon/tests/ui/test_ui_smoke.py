@@ -1453,7 +1453,8 @@ def test_turning_hold_back_off_with_and_without_release(hold_env: Any, window_en
     assert deck_settings.explicit_hold_back(ctx.storage(), did) is False
     assert len(_suspended(col, did)) == 6
     assert len(read_waiting_cards(col, ctx.storage(), did)) == 6
-    assert history_store.read_all(ctx.storage(), str(did)) == []
+    # Only the hold-back's own line so far (v0.3.1); no release.
+    assert [x["type"] for x in history_store.read_all(ctx.storage(), str(did))] == ["holdback"]
 
     # On again (nothing new to hold), off again, Yes: released, keeping queue positions.
     positions = {c: col.get_card(c).due for c in _suspended(col, did)}
@@ -1464,8 +1465,8 @@ def test_turning_hold_back_off_with_and_without_release(hold_env: Any, window_en
     assert _suspended(col, did) == []
     assert {c: col.get_card(c).due for c in col.find_cards(f"did:{did}")} == positions
     assert not any(TAG_HELD in col.get_note(n).tags for n in col.find_notes(f"did:{did}"))
-    (line,) = history_store.read_all(ctx.storage(), str(did))
-    assert line["type"] == "release" and len(line["groups"]["released"]) == 6
+    (line,) = [x for x in history_store.read_all(ctx.storage(), str(did)) if x["type"] == "release"]
+    assert len(line["groups"]["released"]) == 6
     assert "Released 6 cards to Anki. Edit → Undo reverts it." in hold_env.tips
     assert read_waiting_cards(col, ctx.storage(), did) == []
     d.close()

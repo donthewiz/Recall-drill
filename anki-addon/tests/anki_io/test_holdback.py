@@ -14,17 +14,20 @@ import pytest
 from anki.cards import Card
 from anki.collection import Collection
 from anki.consts import CARD_TYPE_REV, QUEUE_TYPE_REV
-from anki_fixtures import add_bqe_model, add_bqe_note, add_note, deck
+from anki_fixtures import add_bqe_model, add_bqe_note, add_io_note, add_note, deck
 
 from recalldrill import deck_settings, history_store, pacing
 from recalldrill.addon_config import DEFAULT_CONFIG
-from recalldrill.anki_io.cards import DEFAULT_ENABLED
+from recalldrill.anki_io.cards import DEFAULT_ENABLED, NoteCache, read_snapshots
 from recalldrill.anki_io.handoff import HandoffSettings, apply_handoff, plan_handoff
 from recalldrill.anki_io.holdback import (
     HoldBackFailed,
     apply_hold_back,
+    build_hold_back_plan,
+    describe,
     failure_text,
     held_cards,
+    history_line,
     hold_back_state,
     plan_hold_back,
 )
@@ -32,7 +35,7 @@ from recalldrill.anki_io.panel import options_for, read_panel
 from recalldrill.anki_io.release import apply_release, plan_release
 from recalldrill.anki_io.select import Scope
 from recalldrill.anki_io.waiting import read_waiting, read_waiting_cards, waiting_search
-from recalldrill.holdback import TAG_HELD, UNDO_LABEL
+from recalldrill.holdback import TAG_HELD, UNDO_LABEL, button_label
 from recalldrill.measure import anki_day
 from recalldrill.sources import SourceRef, source_to_json
 from recalldrill.storage import Storage
@@ -352,7 +355,9 @@ def test_the_waiting_search_covers_held_cards_and_never_the_drilled_tags(
     assert {c.cid for c in read_waiting_cards(col, st, did)} == found
 
 
-def test_held_cards_count_as_waiting_and_stale(col: Collection, tmp_path: Path) -> None:
+def test_held_cards_count_as_waiting_and_are_stale_by_exam_or_pacing_not_age(
+    col: Collection, tmp_path: Path
+) -> None:
     st = _storage(tmp_path)
     lab = int(deck(col, "Lab"))
     _bqe_session(col, lab, 3)
@@ -360,11 +365,144 @@ def test_held_cards_count_as_waiting_and_stale(col: Collection, tmp_path: Path) 
     now = time.time() * 1000
     (row,) = read_waiting(col, st, DEFAULT_CONFIG, now_ms=now)
     assert (row.deck, row.waiting, row.stale) == ("Lab", 6, 0)
-    (later,) = read_waiting(col, st, DEFAULT_CONFIG, now_ms=now + 8 * DAY_MS)
-    assert later.stale == 6  # the stale rule treats them like skill drill cards
+    # Age alone never makes a held card stale (v0.3.1).
+    (later,) = read_waiting(col, st, DEFAULT_CONFIG, now_ms=now + 80 * DAY_MS)
+    assert later.stale == 0
     short = replace(DEFAULT_CONFIG, stale_drill_days=3)
-    assert read_waiting(col, st, short, now_ms=now + 4 * DAY_MS)[0].stale == 6
-    # A passed pacing target makes them stale at once.
+    assert read_waiting(col, st, short, now_ms=now + 40 * DAY_MS)[0].stale == 0
+    # The exam date passing does.
     today = anki_day(now, col.get_preferences().scheduling.rollover)
+    pacing.save(st, lab, pacing.PacingSettings(exam_date=today + timedelta(days=5)))
+    assert read_waiting(col, st, DEFAULT_CONFIG, now_ms=now + 5 * DAY_MS)[0].stale == 0
+    assert read_waiting(col, st, DEFAULT_CONFIG, now_ms=now + 6 * DAY_MS)[0].stale == 6
+    # A passed pacing target does too.
     pacing.save(st, lab, pacing.PacingSettings(target_date=today - timedelta(days=1)))
     assert read_waiting(col, st, DEFAULT_CONFIG, now_ms=now)[0].stale == 6
+
+
+def test_stale_rule_for_held_held_back_deck_and_ordinary_cards(
+    col: Collection, tmp_path: Path
+) -> None:
+    """Ordinary rd::drill cards keep the age rule; a rd::held card, and any waiting
+    card in a deck with hold back on (its own or a parent's), skip it."""
+    st = _storage(tmp_path)
+    plain = int(deck(col, "Plain"))
+    kept = int(deck(col, "Kept::Sub"))
+    deck_settings.set_hold_back(st, int(deck(col, "Kept")), True)
+    c = {
+        "ordinary": _basic(col, plain, "ordinary", ("rd::drill",)),
+        "held_tag": _basic(col, plain, "held tag", (TAG_HELD,)),
+        "in_held_deck": _basic(col, kept, "in held deck", ("rd::drill",)),
+    }
+    col.sched.suspend_cards([x.id for x in c.values()])  # type: ignore[misc]
+    now = time.time() * 1000
+    old = now + 30 * DAY_MS
+    rows = {r.deck: r for r in read_waiting(col, st, DEFAULT_CONFIG, now_ms=old)}
+    assert set(rows["Plain"].stale_cids) == {c["ordinary"].id}
+    assert rows["Kept::Sub"].stale == 0
+    # Exam passed: stale in the held-back deck (the date is inherited from the parent).
+    today = anki_day(now, col.get_preferences().scheduling.rollover)
+    pacing.save(st, int(deck(col, "Kept")), pacing.PacingSettings(exam_date=today))
+    rows = {r.deck: r for r in read_waiting(col, st, DEFAULT_CONFIG, now_ms=old)}
+    assert rows["Kept::Sub"].stale == 1
+    assert set(rows["Plain"].stale_cids) == {c["ordinary"].id}
+
+
+def _io_scene(col: Collection) -> dict[str, Card]:
+    top = deck(col, "Course")
+    c = {
+        "good": _basic(col, int(top), "good"),
+        "io": add_io_note(col, top).cards()[0],
+    }
+    mm = col.models
+    m = mm.new("No answer side")
+    mm.add_field(m, mm.new_field("F"))
+    t = mm.new_template("Card 1")
+    t["qfmt"] = t["afmt"] = "{{F}}"
+    mm.add_template(m, t)
+    mm.add(m)
+    c["unmapped"] = add_note(col, "No answer side", top, {"F": "unmapped"}).cards()[0]
+    return c
+
+
+def test_plan_skips_cards_the_drill_cannot_take(col: Collection, tmp_path: Path) -> None:
+    c = _io_scene(col)
+    st = _storage(tmp_path)
+    course = int(deck(col, "Course"))
+    plan = plan_hold_back(col, st, course)
+    assert plan.suspend == (c["good"].id,)
+    assert set(plan.left_alone) == {c["io"].id, c["unmapped"].id}
+    assert dict(plan.left_alone_reasons) == {"image_occlusion": 1, "unmapped": 1}
+    assert plan.tag_notes == (c["good"].nid,)
+    assert not plan.release
+    text = describe(plan)
+    assert "Left alone: 2 cards the drill can't take" in text
+    assert "they go to Anki as usual" in text
+    apply_hold_back(col, plan)
+    for key in ("io", "unmapped"):
+        c[key].load()
+        assert c[key].queue == 0 and TAG_HELD not in _tags(col, c[key])
+    assert not plan_hold_back(col, st, course).has_changes
+
+
+def test_plan_repairs_held_undrillable_cards_in_one_undo_step(
+    col: Collection, tmp_path: Path
+) -> None:
+    c = _io_scene(col)
+    st = _storage(tmp_path)
+    course = int(deck(col, "Course"))
+    # v0.3.0 held everything: the image-occlusion card too.
+    col.tags.bulk_add([c[k].nid for k in ("good", "io")], TAG_HELD)  # type: ignore[misc]
+    col.sched.suspend_cards([c[k].id for k in ("good", "io")])  # type: ignore[misc]
+    plan = plan_hold_back(col, st, course)
+    assert plan.release == (c["io"].id,)
+    assert plan.untag_notes == (c["io"].nid,)
+    assert plan.suspend == () and plan.has_changes
+    assert plan.undrillable_held == 1
+    assert button_label(plan.cards, plan.undrillable_held) == "Release 1 undrillable"
+    assert button_label(3, 2) == "Hold back 3 / release 2 undrillable"
+    assert "Release 1 held card the drill can't take" in describe(plan)
+
+    apply_hold_back(col, plan)
+
+    c["io"].load()
+    c["good"].load()
+    assert c["io"].queue == 0 and TAG_HELD not in _tags(col, c["io"])
+    assert c["good"].queue == -1 and TAG_HELD in _tags(col, c["good"])
+    assert col.undo_status().undo == UNDO_LABEL
+    assert not plan_hold_back(col, st, course).has_changes
+    line = history_line(plan, 0)
+    assert line["type"] == "holdback"
+    assert line["groups"]["released_undrillable"] == [c["io"].id]
+    assert line["tags"]["removedByTag"] == {TAG_HELD: 1}
+
+    col.undo()  # one step puts the card and the tag back
+    c["io"].load()
+    assert c["io"].queue == -1 and TAG_HELD in _tags(col, c["io"])
+
+
+def test_a_note_keeps_rd_held_while_another_card_of_it_stays_held(
+    col: Collection,
+) -> None:
+    did = int(deck(col, "Course"))
+    add_bqe_model(col)
+    n = add_bqe_note(col, deck(col, "Course"), "osteo", "bone")
+    first, second = n.cards()
+    col.tags.bulk_add([n.id], TAG_HELD)
+    col.sched.suspend_cards([first.id, second.id])
+    # Only the first is undrillable (pretend): the note must keep its tag.
+    snaps = read_snapshots(col, [first.id, second.id], NoteCache(col))
+    plan = build_hold_back_plan(
+        did, "Course", [], (), {first.id: "empty_answer"}, snaps, {n.id: snaps}
+    )
+    assert plan.release == (first.id,) and plan.untag_notes == ()
+    both = build_hold_back_plan(
+        did,
+        "Course",
+        [],
+        (),
+        {first.id: "empty_answer", second.id: "empty_answer"},
+        snaps,
+        {n.id: snaps},
+    )
+    assert set(both.release) == {first.id, second.id} and both.untag_notes == (n.id,)

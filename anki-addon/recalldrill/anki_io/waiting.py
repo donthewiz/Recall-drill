@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from datetime import date
 
 # anki.collection must load before anki.cards (circular import).
 import anki.collection  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -26,6 +27,9 @@ from ..measure import anki_day
 from ..pacing import PacingSettings
 from ..storage import Storage
 from ..waiting import HELD_TAG, WAITING_TAG, WaitingCard, WaitingRow, waiting_rows
+from .cards import has_tag
+from .exam import exam_for_deck
+from .holdback import hold_back_state
 from .revlog import waiting_for_anki
 
 
@@ -53,18 +57,27 @@ def read_waiting_cards(
     waiting_for = waiting_for_anki(col, {c: handed[c] for c in cids if c in handed})
     rollover = col.get_preferences().scheduling.rollover
     out: list[WaitingCard] = []
+    hold_cache: dict[int, bool] = {}
+    exam_cache: dict[int, date | None] = {}
     for cid in cids:
         card = col.get_card(CardId(cid))
         # Waiting for Anki after a handoff or release: only while not suspended,
         # as in selection (an undone handoff re-suspends its cards).
         if cid in waiting_for and card.queue != QUEUE_TYPE_SUSPENDED:
             continue
+        home = int(card.odid or card.did)
+        if home not in hold_cache:
+            hold_cache[home] = hold_back_state(col, storage, home).on
+            exam = exam_for_deck(col, storage, home)
+            exam_cache[home] = exam.day if exam is not None else None
         out.append(
             WaitingCard(
                 cid=cid,
                 nid=int(card.nid),
-                did=int(card.odid or card.did),
+                did=home,
                 added=anki_day(int(card.nid), rollover),
+                held_back=hold_cache[home] or has_tag(col.get_note(card.nid).tags, HELD_TAG),
+                exam=exam_cache[home],
             )
         )
     return out

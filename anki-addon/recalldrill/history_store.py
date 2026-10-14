@@ -202,6 +202,13 @@ def append_release(storage: Storage, history_key: str, line: Mapping[str, Any]) 
     storage.append_jsonl(history_name(history_key), dict(line))
 
 
+def append_holdback(storage: Storage, history_key: str, line: Mapping[str, Any]) -> None:
+    """Appends a ``type: "holdback"`` line (cards held back, held undrillable cards let go)."""
+    if line.get("type") != "holdback":
+        raise ValueError("not a holdback line")
+    storage.append_jsonl(history_name(history_key), dict(line))
+
+
 def append_handoff(storage: Storage, history_key: str, line: Mapping[str, Any]) -> None:
     """Appends a ``type: "handoff"`` line (a handoff, or a declined one)."""
     if line.get("type") != "handoff":

@@ -801,9 +801,9 @@ class SetupDialog(QDialog):
         self.hold_back.setChecked(data.hold_back)
         self.hold_back_note.setText(f"Set on {data.hold_back_from}." if data.hold_back_from else "")
         self.hold_back_note.setVisible(bool(data.hold_back_from))
-        offer = data.hold_back and data.hold_back_count > 0
+        offer = data.hold_back and (data.hold_back_count > 0 or data.hold_back_release > 0)
         self.hold_back_btn.setVisible(offer)
-        self.hold_back_btn.setText(button_label(data.hold_back_count))
+        self.hold_back_btn.setText(button_label(data.hold_back_count, data.hold_back_release))
         proposal = data.proposal
         self.proposal_row.setVisible(
             proposal is not None and any(self.draft.get(k) != v for k, v in proposal.items())

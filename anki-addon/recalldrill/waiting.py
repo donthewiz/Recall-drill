@@ -14,6 +14,11 @@ the collection is ``anki_io/waiting.py``, the write ``anki_io/release.py``.
 - **Stale**: added more than ``stale_drill_days`` days ago, or in a deck whose
   pacing target has passed or that pacing says has no drill days left (the
   card's home deck's pacing, else the nearest parent deck's with a target).
+- **Held** (v0.3.1): a card whose note is tagged ``rd::held``, or any waiting card
+  in a deck where hold back is on, was parked on purpose; its age says nothing. It
+  is stale only when its exam date (``exam.py`` inheritance) has passed or the
+  pacing rule says so. Skill ``rd::drill`` cards in decks without hold back keep
+  the age rule.
 """
 
 from __future__ import annotations
@@ -52,6 +57,11 @@ class WaitingCard:
     """The card's home deck."""
     added: date
     """The note id's Anki day."""
+    held_back: bool = False
+    """v0.3.1: parked on purpose (note tagged ``rd::held``, or the home deck holds
+    cards back): never stale by age."""
+    exam: date | None = None
+    """The exam date that applies to the card's home deck (inherited)."""
 
 
 @dataclass(frozen=True)
@@ -85,7 +95,18 @@ def pacing_stale(settings: PacingSettings | None, today: date) -> bool:
     return not drill_days(today, settings, done_today=False)
 
 
-def is_stale(added: date, today: date, stale_days: int, pacing: PacingSettings | None) -> bool:
+def is_stale(
+    added: date,
+    today: date,
+    stale_days: int,
+    pacing: PacingSettings | None,
+    held_back: bool = False,
+    exam: date | None = None,
+) -> bool:
+    """Age, pacing, or (held cards) the exam date. A held-back card is never stale
+    by age: only a passed exam date or the pacing rule makes it so."""
+    if held_back:
+        return (exam is not None and today > exam) or pacing_stale(pacing, today)
     return (today - added).days > stale_days or pacing_stale(pacing, today)
 
 
@@ -110,7 +131,11 @@ def waiting_rows(
                 deck=deck_name(did),
                 cids=tuple(sorted(c.cid for c in group)),
                 stale_cids=tuple(
-                    sorted(c.cid for c in group if is_stale(c.added, today, stale_days, pacing))
+                    sorted(
+                        c.cid
+                        for c in group
+                        if is_stale(c.added, today, stale_days, pacing, c.held_back, c.exam)
+                    )
                 ),
                 oldest=min(c.added for c in group),
                 target=pacing.target_date if pacing is not None else None,
