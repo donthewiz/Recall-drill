@@ -6,7 +6,7 @@ Layers (enforced by tests/test_layering.py):
 - ui/: may import Qt.
 """
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 """The packaged version (build.py writes it to the manifest)."""
 
 __version__ = VERSION
