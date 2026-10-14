@@ -151,9 +151,12 @@ class SetupDialog(QDialog):
         deck_id: int | None,
         search: str | None = None,
         order: str | None = None,
+        tag: str | None = None,
     ) -> None:
         super().__init__(None, Qt.WindowType.Window)
         self.ctx = ctx
+        self._forced_tag = tag
+        """"Only with tag" asked for by the caller (Drill next: Layer::N); first load only."""
         self._forced_order = order
         """Order asked for by the caller (the progress table's Drill next); None: the default."""
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -608,6 +611,9 @@ class SetupDialog(QDialog):
             try:
                 wanted = self._forced_order or default_order(held)
                 self._forced_order = None  # only for the first load
+                if self._forced_tag is not None:
+                    self.tag_edit.setText(self._forced_tag)
+                    self._forced_tag = None
                 self.order.setCurrentIndex(max(0, self.order.findData(wanted)))
             finally:
                 self._updating = False
@@ -988,6 +994,16 @@ class SetupDialog(QDialog):
             )
         else:
             text = f"<b>Saved session:</b> {saved.mastered} of {saved.total} mastered."
+            was = _saved_tag(saved.saved)
+            now = self.tag_edit.text().strip()
+            if was.casefold() != now.casefold():
+                # The save is per deck, whatever the tag; say what it was built with.
+                text += (
+                    f"<br>It was built with tag {was}, the panel now has {now or 'no tag'}."
+                    if was
+                    else f"<br>It was built with no tag, the panel now has tag {now}."
+                )
+                text += "<br>Resume continues it as saved; Start fresh builds from the panel."
             if problems:
                 lines = [f"Missing: {m}" for m in saved.missing] + [
                     f"Changed: {c}" for c in saved.changed
@@ -1274,10 +1290,21 @@ class SetupDialog(QDialog):
             a0.accept()
 
 
+def _saved_tag(saved: dict[str, Any]) -> str:
+    """The "Only with tag" a saved session was built with ('' for none)."""
+    addon = saved.get("addon") or {}
+    options = addon.get("selectOptions") or {}
+    return str(options.get("extra_tag") or "").strip()
+
+
 def open_setup(
-    ctx: AddonContext, deck_id: int | None, search: str | None = None, order: str | None = None
+    ctx: AddonContext,
+    deck_id: int | None,
+    search: str | None = None,
+    order: str | None = None,
+    tag: str | None = None,
 ) -> SetupDialog:
-    dialog = SetupDialog(ctx, deck_id, search, order)
+    dialog = SetupDialog(ctx, deck_id, search, order, tag)
     dialog.show()
     dialog.activateWindow()
     return dialog

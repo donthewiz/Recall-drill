@@ -193,6 +193,16 @@ class Progress:
             return None
         return self.did if self.by_layer else row.did
 
+    @property
+    def next_tag(self) -> str | None:
+        """The "Only with tag" value "Drill next" pre-fills: ``Layer::N`` for the next
+        layer row (the tag as the skill writes it; Anki's tag search is case-insensitive),
+        else None (subdeck rows, a "No layer" row, all done)."""
+        row = self.next_row
+        if row is None or not self.by_layer or row.layer is None:
+            return None
+        return f"Layer::{row.layer}"
+
 
 NO_LAYER_LABEL = "No layer"
 SELF_LABEL = "(cards in this deck itself)"

@@ -87,3 +87,28 @@ def test_without_layers_rows_are_the_chapters_in_the_given_order() -> None:
     assert p.next_target == 7  # the first row not done: the deck's own cards
     only = build_progress(7, "L", CHAPTERS, [card(2, None, 1)], set())
     assert only.rows[0].did == 11 and only.next_target == 12
+
+
+def test_drill_next_targets_the_next_layer_with_its_tag_or_the_next_subdeck() -> None:
+    # Layer 1 done, Layer 2 has a card left: the chosen deck, Only with tag = Layer::2.
+    by_layer = build_progress(
+        7, "L", CHAPTERS, [card(1, 1), card(2, 1), card(3, 2), card(4, 2)], {1, 2}
+    )
+    assert by_layer.by_layer and by_layer.next_row is not None and by_layer.next_row.layer == 2
+    assert (by_layer.next_target, by_layer.next_tag) == (7, "Layer::2")
+    # The tag is written as the skill writes it, whatever the note's own case.
+    cased = build_progress(7, "L", CHAPTERS, [card(1, 3, tags=()), card(2, None)], set())
+    assert cased.next_tag == "Layer::3"
+    # A "No layer" row next: no tag (it has no layer to name).
+    bare = build_progress(7, "L", CHAPTERS, [card(1, 1), card(2, None)], {1})
+    assert bare.next_row is not None and bare.next_row.layer is None
+    assert (bare.next_target, bare.next_tag) == (7, None)
+    # Subdeck rows: the next subdeck, no tag.
+    subdecks = build_progress(
+        7, "L", CHAPTERS, [card(1, None, chapter=0), card(2, None, chapter=1)], {1}
+    )
+    assert not subdecks.by_layer
+    assert (subdecks.next_target, subdecks.next_tag) == (12, None)
+    # Everything done: nothing to drill.
+    done = build_progress(7, "L", CHAPTERS, [card(1, 1), card(2, 2)], {1, 2})
+    assert (done.next_target, done.next_tag) == (None, None)

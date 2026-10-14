@@ -26,6 +26,10 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.3.2
+
+- **Drill next now drills only the next layer.** In a deck with layers, **Drill next** opens the setup panel in Deck order with **Only with tag** already set to `Layer::N` for the layer marked Next, so the panel counts just that layer's cards instead of the whole deck. A deck without layers still opens the next subdeck.
+
 ## What's new in 0.3.1
 
 - **Drill a deck by layer.** If your notes carry the anki-cards skill's `Layer::1` … `Layer::4` tags, **Deck order** now goes Layer 1 of every chapter first, then Layer 2, and so on, even for cards the skill added days later. A deck without those tags is ordered as before.

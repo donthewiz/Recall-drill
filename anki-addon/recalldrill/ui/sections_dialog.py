@@ -5,7 +5,8 @@ A read-only table. With ``Layer::N`` tags in the chosen deck the rows are layers
 subdeck); otherwise the rows are the subdecks, in the order their cards were
 made. Columns: cards, drilled, released undrilled, held, not yet in Anki, %
 drilled, status, can't drill. The first row not done is marked **Next** and
-**Drill next** opens the setup panel with Order = Deck order. Clicking a row
+**Drill next** opens the setup panel with Order = Deck order
+and, by layer, Only with tag = ``Layer::N`` (v0.3.2). Clicking a row
 opens the setup panel on its deck. Read in a ``QueryOp``; nothing is written.
 The rules are in ``sections.py``, the reading in ``anki_io/sections.py``.
 """
@@ -46,7 +47,7 @@ class SectionsDialog(QDialog):
         ctx: AddonContext,
         open_setup: Callable[[int], None],
         deck_id: int | None,
-        drill_next: Callable[[int, str], None] | None = None,
+        drill_next: Callable[..., None] | None = None,
     ) -> None:
         super().__init__(None)
         self.ctx = ctx
@@ -94,8 +95,8 @@ class SectionsDialog(QDialog):
         self.next_btn = QPushButton("Drill next")
         self.next_btn.setAutoDefault(False)
         self.next_btn.setToolTip(
-            "Opens the setup panel on this deck with Order = Deck order, which starts at "
-            "the lowest unfinished layer."
+            "Opens the setup panel with Order = Deck order, limited to the lowest "
+            "unfinished layer (Only with tag = Layer::N); for subdecks, on the next subdeck."
         )
         self.next_btn.setEnabled(False)
         qconnect(self.next_btn.clicked, self._go_next)
@@ -176,13 +177,15 @@ class SectionsDialog(QDialog):
             self._open_setup(rows[row].did)
 
     def _go_next(self) -> None:
-        """Drill next: the setup panel on the chosen deck (or the next subdeck, when
-        the rows are subdecks) with Order = Deck order."""
-        target = self.progress.next_target if self.progress is not None else None
-        if target is None:
+        """Drill next: the setup panel on the chosen deck with Order = Deck order and
+        "Only with tag" = Layer::N (or on the next subdeck, no tag, when the rows are
+        subdecks)."""
+        progress = self.progress
+        target = progress.next_target if progress is not None else None
+        if progress is None or target is None:
             return
         if self._drill_next is not None:
-            self._drill_next(target, "deck_order")
+            self._drill_next(target, "deck_order", progress.next_tag)
         else:
             self._open_setup(target)
 
@@ -191,7 +194,7 @@ def open_sections(
     ctx: AddonContext,
     open_setup: Callable[[int], None],
     deck_id: int | None,
-    drill_next: Callable[[int, str], None] | None = None,
+    drill_next: Callable[..., None] | None = None,
 ) -> SectionsDialog:
     w = SectionsDialog(ctx, open_setup, deck_id, drill_next)
     w.show()
