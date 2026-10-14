@@ -26,6 +26,14 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.3.1
+
+- **Drill a deck by layer.** If your notes carry the anki-cards skill's `Layer::1` … `Layer::4` tags, **Deck order** now goes Layer 1 of every chapter first, then Layer 2, and so on, even for cards the skill added days later. A deck without those tags is ordered as before.
+- **Progress by layer, with a "Next" marker.** Tools → **Recall Drill: sections** is now titled **Recall Drill: progress**. When your cards have layers, each row is a layer, with a done/total column for every chapter. The first layer that isn't finished is marked **Next**, and **Drill next** opens the setup panel on the deck in Deck order. Without layers you still get one row per subdeck, now in the order the cards were made instead of alphabetical.
+- **Cards the drill can't take no longer get stuck.** Hold back leaves out Image Occlusion and other cards the drill can't use, and releases the ones already held, in one undo step. They are counted as "can't drill" and never keep a layer from being done.
+- **Held cards don't go "stale" just for being held.** A held-back deck's cards count as stale only after its exam date has passed (or its pacing target says so), so the daily notice stops nagging the day you hold a deck back.
+- Nothing about how a card is drilled changed.
+
 ## What's new in 0.3.0
 
 - **Drill a whole section, then hand it to Anki.** Each deck has a switch, **Keep new cards out of Anki until drilled** (the setup panel, for the deck and its subdecks). Turn it on and the add-on asks, then suspends the deck's new cards that Anki would otherwise show you undrilled (tagging their notes `rd::held`), so a section is drilled whole and in order, tagged and untagged cards together. The handoff brings the drilled ones into Anki; **Send to Anki undrilled** (Tools → Recall Drill: waiting cards) releases the rest. A deck that holds cards back drills in **Deck order** by default. It is one undo step, and nothing is suspended without your click.
