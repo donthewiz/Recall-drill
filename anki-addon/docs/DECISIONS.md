@@ -358,6 +358,9 @@ Controller side (Phase 3a): `begin_edit()` returns the card to open (or None whe
 | Tools → **Recall Drill: tuning report** | `mw.form.menuTools` action (Phase 5) | works (headless test; Don's manual check) |
 | Tools → **Recall Drill: waiting cards** | `mw.form.menuTools` action (v0.2) | headless test; not yet checked in Anki |
 | Profile open → waiting-cards notice | `profile_did_open()` (v0.2), read in a `QueryOp` | headless test of the notice; the hook itself is untested |
+| Tools → **Recall Drill: sections** | `mw.form.menuTools` action (v0.3) | headless test; not yet checked in Anki |
+| Tools → **Recall Drill: export outcomes now** | `mw.form.menuTools` action (v0.3) | headless test; not yet checked in Anki |
+| Profile open → outcomes export | `profile_did_open()` (v0.3, config `export_on_open`), in a `QueryOp` | headless test of the handler; the hook itself is untested |
 
 "Works" is from the installed source and headless tests; Don's manual check confirms it in Anki. The Phase 2 dev preview (`Recall Drill (dev): preview current deck`) is gone; its content is the setup panel's. The About box stays.
 
@@ -781,11 +784,25 @@ tests run with `auto_advance_correct` off and `extra_display` "always".
 
 Session saves keep each note type's CSS once (`addon.css`, by note type id);
 `SourceRef.css` resolves on load, and old saves with CSS in every source still
-load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release).
+load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release; 0.3.0 on 2026-10-13: see "v0.3").
 
 ## v0.3: whole-section drilling, exam dates, export (2026-10-13)
 
-Decided by Don, 2026-10-13. Add-on only: no engine change, no change to how a card is drilled.
+Decided by Don, 2026-10-13. Add-on only: `VERSION` 0.3.0. **No fast exit and no engine change:** clean cards already finish after one correct cycle answer (v0.2, "Clean cards master the cycle with one answer"). No file under `recalldrill/engine/`, `src/` or `tests/golden/` changes, and nothing about how a card is drilled (reps, grading, chunking, the clean-card rule). The add-on still never writes note fields; its new files live in `user_files/profiles/<profile>/` (local, not synced).
+
+### Exam date per deck
+
+- **Setting:** an optional `exam_date` in each deck's `pacing.json` entry (`pacing.PacingSettings.exam_date`), edited with the **Exam date** checkbox and date field in the setup panel's Pacing box (deck scopes). Unticking clears it; the key is then absent from the file. It is independent of the pacing target.
+- **Inheritance** (`exam.inherited`, `anki_io/exam.py`): a card's exam date is its home deck's, else the nearest parent deck's that has one, the walk pacing uses for its target.
+- **Display:** "Exam: Fri Oct 23 (10 days)" (also "1 day", "today", "passed yesterday", "passed 3 days ago"); an inherited date adds ", set on <parent deck>". Days count from Anki's today.
+
+### The unrated-cards warning
+
+- **What it counts** (`anki_io/unrated.py`): the measurement's handed-off cards (every drilled card of a handoff line, and its holdout cards: `history_store.measured_handoffs`) with **no counted rating since their handoff** (`revlog.waiting_for_anki`, which uses `measure.is_counted`), that still exist and aren't suspended (an undone handoff re-suspends its cards).
+- **When it is open:** `measure.py` keeps a first rating on Anki day `day(t0) + 1` or `+ 2` in the comparison (`PRIMARY_ELAPSED`); later is `late`. So the deadline is the **end of Anki day `day(t0) + 2`**: the rollover hour on the calendar day after it. With several pending handoffs the line names the earliest deadline among the cards whose window is still open; the count is those cards. It is hidden once that deadline has passed for every card, and at 0.
+- **The line:** "N drilled cards are waiting for their first Anki rating. Rate them by <weekday, date> (before <rollover hour>) to keep them in the comparison." (singular for 1). Cards sitting in a filtered deck add "(M are in the filtered deck '<name>')" (several decks: "(in filtered decks: 'A' 2, 'B' 1)").
+- **Where:** an amber line in the setup panel for a deck scope (the panel the Recall Drill button on Anki's deck overview opens, which is where the stale-waiting line lives too; the overview screen itself has only that button). Read in the same `read_panel` background op as the waiting-cards count. Config `unrated_warning` (true).
+
 
 ### Hold back: the third collection write (approved by Don, 2026-10-13)
 
@@ -816,6 +833,16 @@ Read only, in a `QueryOp`. One row per direct subdeck of the chosen deck, in dec
 
 A row is **done** when no new card is held or open (every new card is drilled or released). A row with no new card at all is "done (no new cards)". `% drilled` = drilled ÷ the section's cards. Clicking a row opens the setup panel on that subdeck.
 
+### The light outcomes export
+
+So Claude can check results without digging through logs. `exports/outcomes.csv` in the profile folder (local, rewritten, never read back).
+
+- **When:** after every handoff, once at profile open (config `export_on_open`, default true: it governs the open-time run only), and from Tools → **Recall Drill: export outcomes now** (which shows the file's path and folder). Always in a `QueryOp`; the automatic runs are quiet (a failure is logged and never interrupts a handoff or the profile). Written atomically: a temp file in the same folder, fsync, then rename (`Storage.write_text`), LF line endings.
+- **Rows:** the tuning report's drilled and holdout rows (`tuning.card_rows`: a drilled card once per handoff, `t0` = handoff; a holdout card, `t0` = its introduction), so every definition is `measure.py`'s. Columns: `group, cid, nid, homeDeck, sessionId, t0, status, elapsed_days, ease, again` (the next-day outcome, named as in the tuning CSV), `ankiSeconds, ankiAgain, complete, activeMs, attempts, misses, reveals, words, chunks, encodeReps, examDate, recallOnExam`. Empty cells are unknown (a holdout card has no drill counters; a holdout card not introduced yet has no `t0` or cost). `activeMs` is the card's share of its session's active drill time (`anki[i].activeMs`).
+- **14-day cost** (`outcomes.window_cost`, next to `measure.py`, which it doesn't redefine): over the counted ratings on Anki days `day(t0)` through `day(t0) + 13` (day 14 is out): `ankiSeconds` = the sum of the revlog `time` (milliseconds) in seconds, `ankiAgain` = the count of `ease == 1`, `complete` = 1 once day 13 has passed (4 AM rollover included), else 0. The window is by Anki day, so a counted rating earlier on day 0 than the handoff is in; a new card has none.
+- **Predicted recall on exam day** (`outcomes.recall_on_exam`): `R = (1 + factor · t / S) ^ -decay`, `factor = 0.9 ^ (-1 / decay) - 1`, so `R = 0.9` at `t = S`. `S` is the card's FSRS stability, `decay` the card's own, else its preset's, and 0.1542 only as a last resort (neither readable). `t` = days from the card's last counted review (its Anki day) to its exam date. **Empty, never a guess,** for a new card, a card with no memory state, a card with no exam date, or an exam date already past. Unit-tested against two hand-computed values (`sqrt(27/46)` for decay 0.5, S 10, t 30; and exactly 0.9 at `t = S`).
+- **How the memory state is read (26.08.1, `tests/anki_io/test_export.py`, `anki_io/export.py`):** `card.memory_state` is `None` or carries `.stability` and `.difficulty` (the state after the last review; a new card has none); `card.decay` is the decay stored on the card (`None` until a review stores it; Anki rounds it, e.g. 0.154 for the preset's 0.1542); `col.compute_memory_state(card_id).decay` is the preset's decay (always set, 0.1542 without parameters). The preset's decay is looked up once per preset, and only when a card lacks its own and an exam date makes it matter.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
@@ -832,7 +859,7 @@ A TS change alone fails the drift guard. Regenerated goldens without the Python 
 A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addon/build.py` writes `anki-addon/dist/recall_drill-<human_version>.ankiaddon` (`dist/` is gitignored), a zip of the add-on folder's **contents**, no top-level folder.
 
 - **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
-- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.2.1), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
+- **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.3.0), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
 - **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
 - **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
 - **The "(dev)" label** (Tools menu entry and About text) shows only when the add-on's folder is `recall_drill_dev` (`ui/about.py`, `display_name`, decided from the module's first name part); an installed package shows plain "Recall Drill".

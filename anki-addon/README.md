@@ -26,6 +26,15 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.3.0
+
+- **Drill a whole section, then hand it to Anki.** Each deck has a switch, **Keep new cards out of Anki until drilled** (the setup panel, for the deck and its subdecks). Turn it on and the add-on asks, then suspends the deck's new cards that Anki would otherwise show you undrilled (tagging their notes `rd::held`), so a section is drilled whole and in order, tagged and untagged cards together. The handoff brings the drilled ones into Anki; **Send to Anki undrilled** (Tools → Recall Drill: waiting cards) releases the rest. A deck that holds cards back drills in **Deck order** by default. It is one undo step, and nothing is suspended without your click.
+- **See which sections are done.** Tools → **Recall Drill: sections** (or **Sections…** in the setup panel) lists a deck's subdecks in order: cards, drilled, sent undrilled, held, not yet in Anki, % drilled, and "done". Click a row to open that subdeck.
+- **Exam dates.** Each deck can have an **Exam date** next to the pacing target. A deck without one uses its parent's. The panel shows "Exam: Fri Oct 23 (10 days)".
+- **A warning before the rating window closes.** If drilled cards have been handed off but Anki hasn't had its first rating from you yet, the panel says how many, and the day (and hour) by which to rate them to keep them in the comparison.
+- **A small export for Claude.** `exports/outcomes.csv` in your profile folder is rewritten after every handoff and once when the profile opens (Tools → **Recall Drill: export outcomes now** does it on demand and shows the folder). Per drilled or holdout card: the next-day result, what the card cost you in Anki over its first 14 days, and, when the deck has an exam date and the card has a memory state, the predicted recall on exam day.
+- Nothing about how a card is drilled changed.
+
 ## Install
 
 **Needs Anki 26.08.1 or newer** (the package's `min_point_version` is 260801). Desktop only.
@@ -103,8 +112,9 @@ Cards that already have a schedule keep it either way.
 | `rd::holdout` | The note was a held-out control (only exists when Holdout % is on). |
 | `rd::long` | The note's answer was drilled in chunks. **Off by default** (`tag_long`). |
 | `rd::undrilled` | The note's drill cards were sent to Anki without the drill (Tools → Recall Drill: waiting cards). |
+| `rd::held` | The note has cards held back from Anki until drilled (**Keep new cards out of Anki until drilled**). Removed by the handoff and by sending the cards to Anki undrilled. |
 
-Tools → **Recall Drill: my rd::hard cards** opens the panel on `tag:rd::hard`; **Recall Drill: filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*` (it would also match `rd::drilled` and `rd::undrilled`).
+Tools → **Recall Drill: my rd::hard cards** opens the panel on `tag:rd::hard`; **Recall Drill: filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*` (it would also match `rd::drilled`, `rd::undrilled` and `rd::held`).
 
 ## Time figures
 
@@ -115,16 +125,17 @@ Every minute figure comes from **your own data**, and says where:
 
 ## Data and sync
 
-**In the collection** (syncs with Anki): the tags, what the handoff changes (suspension, queue position, due dates and review log rows for A, burying, flag clearing), and what sending waiting cards undrilled changes (suspension, the `rd::undrilled` tag). That is all that reaches your phone.
+**In the collection** (syncs with Anki): the tags, what the handoff changes (suspension, queue position, due dates and review log rows for A, burying, flag clearing), and what sending waiting cards undrilled changes (suspension, the `rd::undrilled` tag), and what holding cards back changes (suspension, the `rd::held` tag). That is all that reaches your phone.
 
 **In `user_files/profiles/<profile>/`** inside the add-on folder (local, **does not sync, not on your phone**):
 - `sessions/`: in-progress sessions;
 - `history/`: the append-only session, handoff, release and tuning logs (the tuning report reads them);
 - `waiting_notice.json`: the last day the waiting-cards tooltip showed;
+- `exports/outcomes.csv`: the light outcomes export (rewritten, never read back);
 - `deck_settings.json`: each deck's drill settings;
 - `hints.json`: manual hints;
 - `mappings.json`: your answer and Extra field choices;
-- `pacing.json`: target dates and drill weekdays;
+- `pacing.json`: target dates, drill weekdays and exam dates;
 - `holdout.json`: the holdout's random salt;
 - `estimates.json`: an old estimate cache nothing reads any more.
 

@@ -8,7 +8,9 @@ result, and starts or resumes through ``launch``. Saves only:
 - a mapping, from "Edit mapping…" (``mappings.json``).
 
 The pending banner's **Hand off finished session** runs the handoff
-(``handoff_dialog``); nothing else here writes to the collection.
+(``handoff_dialog``); the hold-back switch and its **Hold back N** button run the
+hold-back (``holdback_ui``, v0.3), and turning the switch off may run a release.
+Nothing else here writes to the collection.
 
 The ``tag:rd::hard`` search ("Recall Drill: my rd::hard cards") leaves out, by
 default, the cards whose last handoff found them not hard: the tag is on the
