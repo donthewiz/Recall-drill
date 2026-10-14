@@ -145,9 +145,17 @@ def _next_cards(n: int) -> str:
 
 
 class SetupDialog(QDialog):
-    def __init__(self, ctx: AddonContext, deck_id: int | None, search: str | None = None) -> None:
+    def __init__(
+        self,
+        ctx: AddonContext,
+        deck_id: int | None,
+        search: str | None = None,
+        order: str | None = None,
+    ) -> None:
         super().__init__(None, Qt.WindowType.Window)
         self.ctx = ctx
+        self._forced_order = order
+        """Order asked for by the caller (the progress table's Drill next); None: the default."""
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         disable_help_button(self)
         self.deck_id = deck_id
@@ -598,7 +606,9 @@ class SetupDialog(QDialog):
             # A deck that holds cards back drills in deck order (new-queue position) by default.
             self._updating = True
             try:
-                self.order.setCurrentIndex(max(0, self.order.findData(default_order(held))))
+                wanted = self._forced_order or default_order(held)
+                self._forced_order = None  # only for the first load
+                self.order.setCurrentIndex(max(0, self.order.findData(wanted)))
             finally:
                 self._updating = False
             self.sections_btn.setEnabled((scope.deck_id or self.deck_id) is not None)
@@ -1080,7 +1090,7 @@ class SetupDialog(QDialog):
         from .entry import open_setup_for
         from .sections_dialog import open_sections
 
-        open_sections(self.ctx, open_setup_for, self.scope.deck_id or self.deck_id)
+        open_sections(self.ctx, open_setup_for, self.scope.deck_id or self.deck_id, open_setup_for)
 
     def _use_proposal(self) -> None:
         if self.data is None or self.data.proposal is None:
@@ -1264,8 +1274,10 @@ class SetupDialog(QDialog):
             a0.accept()
 
 
-def open_setup(ctx: AddonContext, deck_id: int | None, search: str | None = None) -> SetupDialog:
-    dialog = SetupDialog(ctx, deck_id, search)
+def open_setup(
+    ctx: AddonContext, deck_id: int | None, search: str | None = None, order: str | None = None
+) -> SetupDialog:
+    dialog = SetupDialog(ctx, deck_id, search, order)
     dialog.show()
     dialog.activateWindow()
     return dialog

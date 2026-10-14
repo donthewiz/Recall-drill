@@ -123,7 +123,8 @@ def test_a_section_without_new_cards_and_the_chosen_decks_own_cards(
         col.update_card(c)
     _card(col, lab, "direct")
     rows = read_sections(col, st, lab)
-    assert [r.label for r in rows] == [SELF_LABEL, "Empty", "Old"]
+    # Subdecks come in the order their cards were made; one without cards goes last.
+    assert [r.label for r in rows] == [SELF_LABEL, "Old", "Empty"]
     by = {r.label: r for r in rows}
     assert by["Old"].status == "done (no new cards)" and by["Old"].new == 0
     assert by[SELF_LABEL].open == 1 and by[SELF_LABEL].status == "1 to go"

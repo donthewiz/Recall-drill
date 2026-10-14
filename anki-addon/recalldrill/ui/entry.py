@@ -44,8 +44,9 @@ OVERVIEW_CMD = "recalldrill:setup"
 _ctx: AddonContext | None = None
 
 
-def open_setup_for(deck_id: int | None) -> None:
-    """The setup panel for a deck, or its drill window if one is running."""
+def open_setup_for(deck_id: int | None, order: str | None = None) -> None:
+    """The setup panel for a deck, or its drill window if one is running. ``order``
+    ("deck_order") opens it with that Order instead of the default."""
     if _ctx is None or mw.col is None:
         return
     from ..sessions import deck_key
@@ -54,7 +55,7 @@ def open_setup_for(deck_id: int | None) -> None:
     if deck_id is not None and _ctx.raise_window(deck_key(deck_id)):
         return
 
-    open_setup(_ctx, deck_id)
+    open_setup(_ctx, deck_id, order=order)
 
 
 def open_hard_cards() -> None:
@@ -100,7 +101,7 @@ def open_sections() -> None:
         return
     from .sections_dialog import open_sections as show
 
-    show(_ctx, open_setup_for, _current_deck())
+    show(_ctx, open_setup_for, _current_deck(), open_setup_for)
 
 
 def export_outcomes_now() -> None:
