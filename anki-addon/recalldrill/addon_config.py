@@ -76,6 +76,9 @@ class AddonConfig:
     waiting_notice: bool = True
     """Once per Anki day, after the profile opens, a tooltip when stale drill
     cards are waiting."""
+    unrated_warning: bool = True
+    """A line in the setup panel when handed-off drilled or holdout cards haven't had
+    their first Anki rating and their primary window is still open (v0.3)."""
     extra_display: ExtraDisplay = "first_and_misses"
     """When a card's Extra shows and holds the screen: "first_and_misses" (the first
     time its full answer is on screen, and after a miss or a reveal) or "always"."""
@@ -155,4 +158,5 @@ def parse_config(raw: object) -> AddonConfig:
         extra_display=extra if extra in ("first_and_misses", "always") else dc.extra_display,
         stale_drill_days=_int(d.get("stale_drill_days"), dc.stale_drill_days, 0, 3650),
         waiting_notice=_bool(d.get("waiting_notice"), dc.waiting_notice),
+        unrated_warning=_bool(d.get("unrated_warning"), dc.unrated_warning),
     )

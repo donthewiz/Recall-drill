@@ -934,6 +934,62 @@ def test_setup_panel_difficulty_line_and_pacing(panel_env: Any, window_env: Path
     again.close()
 
 
+def test_setup_panel_exam_date_and_unrated_line(panel_env: Any, window_env: Path) -> None:
+    """The Exam date field saves into pacing.json beside the target, shows
+    "Exam: … (N days)", and can be cleared; handed-off cards with no rating yet
+    show the amber unrated line."""
+    import time
+    from datetime import timedelta
+
+    from aqt.qt import QDate
+
+    from recalldrill import history_store, pacing
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    col, did = panel_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    cids = [int(c) for c in col.find_cards(f"did:{did}")]
+    col.sched.unsuspend_cards(cids[:1])  # type: ignore[arg-type]
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+    history_store.append_handoff(
+        ctx.storage(),
+        str(did),
+        {
+            "type": "handoff",
+            "sessionId": "x",
+            "timestamp": stamp,
+            "groups": {"drilled_new": cids[:1]},
+            "cards": [{"cid": cids[0], "nid": 0, "ord": 0}],
+        },
+    )
+    d: Any = SetupDialog(ctx, did)
+    assert d.data is not None and d.data.today is not None
+    assert d.unrated_label.isVisibleTo(d)
+    assert d.unrated_label.text().startswith(
+        "⚠ 1 drilled card is waiting for its first Anki rating. Rate it by "
+    )
+    assert not d.exam_on.isChecked() and d.exam_label.text() == ""
+    assert not d.exam_date.isEnabled()
+
+    today = d.data.today
+    target = today + timedelta(days=10)
+    d.exam_on.setChecked(True)
+    d.exam_date.setDate(QDate(target.year, target.month, target.day))
+    assert d.exam_label.text() == f"Exam: {pacing.short_date(target)} (10 days)"
+    assert pacing.load(ctx.storage(), did).exam_date == target
+    assert pacing.load(ctx.storage(), did).target_date is None  # the pacing target is separate
+    d.close()
+
+    again: Any = SetupDialog(ctx, did)
+    assert again.exam_on.isChecked() and again.exam_date.date().day() == target.day
+    assert again.exam_label.text() == f"Exam: {pacing.short_date(target)} (10 days)"
+    again.exam_on.setChecked(False)
+    assert pacing.load(ctx.storage(), did).exam_date is None
+    assert again.exam_label.text() == ""
+    again.close()
+
+
 def test_setup_panel_counts_handed_off_cards(panel_env: Any, window_env: Path) -> None:
     """Cards a handoff sent to Anki, still new: left out and counted."""
     from recalldrill import history_store

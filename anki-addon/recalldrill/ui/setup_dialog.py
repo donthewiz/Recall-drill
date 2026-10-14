@@ -74,6 +74,7 @@ from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
 from ..anki_io.panel import (
     PanelData,
     SavedInfo,
+    exam_text,
     hard_exclusions,
     initial_settings,
     options_for,
@@ -298,6 +299,12 @@ class SetupDialog(QDialog):
         self.waiting_label.setStyleSheet("color: #b26b00;")
         self.waiting_label.setVisible(False)
         cl.addWidget(self.waiting_label)
+        # v0.3: handed-off cards that still need their first Anki rating.
+        self.unrated_label = QLabel()
+        self.unrated_label.setWordWrap(True)
+        self.unrated_label.setStyleSheet("color: #b26b00;")
+        self.unrated_label.setVisible(False)
+        cl.addWidget(self.unrated_label)
         self.difficulty_label = QLabel()
         self.difficulty_label.setWordWrap(True)
         cl.addWidget(self.difficulty_label)
@@ -449,6 +456,17 @@ class SetupDialog(QDialog):
             prow2.addWidget(box)
         prow2.addStretch(1)
         pl.addLayout(prow2)
+        prow3 = QHBoxLayout()
+        self.exam_on = QCheckBox("Exam date")
+        self.exam_date = DateEdit()
+        self.exam_date.setCalendarPopup(True)
+        self.exam_date.setDisplayFormat("ddd d MMM yyyy")
+        self.exam_label = QLabel()
+        self.exam_label.setWordWrap(True)
+        prow3.addWidget(self.exam_on)
+        prow3.addWidget(self.exam_date)
+        prow3.addWidget(self.exam_label, 1)
+        pl.addLayout(prow3)
         self.pace_line = QLabel()
         self.pace_line.setWordWrap(True)
         self.pace_sources = QLabel()
@@ -467,6 +485,8 @@ class SetupDialog(QDialog):
         qconnect(self.pace_on.toggled, self._on_pacing_edited)
         qconnect(self.pace_date.dateChanged, self._on_pacing_edited)
         qconnect(self.pace_early.valueChanged, self._on_pacing_edited)
+        qconnect(self.exam_on.toggled, self._on_pacing_edited)
+        qconnect(self.exam_date.dateChanged, self._on_pacing_edited)
         for box in self.pace_days:
             qconnect(box.toggled, self._on_pacing_edited)
         self.pacing_box.hide()
@@ -665,6 +685,8 @@ class SetupDialog(QDialog):
             self.sibling_label.setText("Siblings: 0 picked cards share a note.")
         self.waiting_label.setText(f"⚠ {data.waiting_line}" if data.waiting_line else "")
         self.waiting_label.setVisible(bool(data.waiting_line))
+        self.unrated_label.setText(f"⚠ {data.unrated_line}" if data.unrated_line else "")
+        self.unrated_label.setVisible(bool(data.unrated_line))
 
         b = data.build
         lines = [
@@ -778,6 +800,9 @@ class SetupDialog(QDialog):
         self.pace_early.setValue(s.finish_days_before)
         for i, box in enumerate(self.pace_days):
             box.setChecked(i in s.drill_weekdays)
+        e = s.exam_date
+        self.exam_on.setChecked(e is not None)
+        self.exam_date.setDate(QDate(e.year, e.month, e.day) if e else today.addDays(14))
         self._enable_pacing_inputs()
 
     def _enable_pacing_inputs(self) -> None:
@@ -786,18 +811,31 @@ class SetupDialog(QDialog):
         self.pace_early.setEnabled(on)
         for box in self.pace_days:
             box.setEnabled(on)
+        self.exam_date.setEnabled(self.exam_on.isChecked())
 
     def _pacing_from_inputs(self) -> pacing.PacingSettings:
         d = self.pace_date.date()
         target = date(d.year(), d.month(), d.day()) if self.pace_on.isChecked() else None
         days = frozenset(i for i, box in enumerate(self.pace_days) if box.isChecked())
-        return pacing.PacingSettings(target, days, self.pace_early.value())
+        e = self.exam_date.date()
+        exam = date(e.year(), e.month(), e.day()) if self.exam_on.isChecked() else None
+        return pacing.PacingSettings(target, days, self.pace_early.value(), exam)
+
+    def _show_exam_line(self) -> None:
+        """The exam line: the date field's own value, else the one a parent deck gives."""
+        data = self.data
+        if data is None or data.today is None:
+            self.exam_label.setText("")
+            return
+        own = self._pacing_from_inputs().exam_date
+        self.exam_label.setText(exam_text(own, data.exam_inherited, data.today) or "")
 
     def _on_pacing_edited(self, *_args: Any) -> None:
         if self._updating or self.scope.deck_id is None:
             return
         self._enable_pacing_inputs()
         pacing.save(self.ctx.storage(), self.scope.deck_id, self._pacing_from_inputs())
+        self._show_exam_line()
         self._refresh_pacing()
 
     def _refresh_pacing(self) -> None:
@@ -809,6 +847,7 @@ class SetupDialog(QDialog):
             self.pacing_box.hide()
             return
         self.pacing_box.show()
+        self._show_exam_line()
         if not self.pace_on.isChecked():
             self.pacing_view = None
             self.pace_line.setText("Set a target date (a chapter exam) to pace this deck.")
