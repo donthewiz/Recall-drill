@@ -45,6 +45,8 @@ strict = [
     "recalldrill/pacing.py",
     "recalldrill/list_kind.py",
     "recalldrill/waiting.py",
+    "recalldrill/exam.py",
+    "recalldrill/unrated.py",
 ]
 
 [tool.pytest.ini_options]

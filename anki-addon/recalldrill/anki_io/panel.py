@@ -18,16 +18,20 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import date
 from typing import Any, cast
 
 from anki.collection import Collection
+from anki.decks import DeckId
 
-from .. import deck_settings, sessions
+from .. import deck_settings, pacing, sessions
 from ..addon_config import AddonConfig
 from ..deck_settings import DeckSettings
 from ..difficulty import SKIP_MAX_DIFFICULTY, SKIP_MIN_STABILITY, DifficultySummary, summarize
+from ..exam import exam_line
 from ..history_store import handed_off_at, hard_cards
 from ..launch import resolved, session_config
+from ..measure import anki_day
 from ..pacing import DrillSpeed, minutes_text
 from ..prompts import parse_hint_overrides
 from ..sessions import SaveStatus
@@ -35,6 +39,7 @@ from ..storage import HINTS, Storage
 from ..waiting import panel_line
 from .build import BuildResult, DifficultyInputs, build_session
 from .cards import NoteCache
+from .exam import inherited_exam
 from .handoff import HARD_SEARCH
 from .notetypes import MappingTable, field_names, load_overrides
 from .resume import ResumeCheck, check_resume
@@ -47,6 +52,7 @@ from .select import (
     scope_to_json,
     select_cards,
 )
+from .unrated import read_unrated
 from .waiting import read_waiting, stale_in
 from .workload import drill_estimate, shapes, speed_for, top_level
 
@@ -109,6 +115,17 @@ class PanelData:
     """The difficulty adjustment's counts (Phase 6)."""
     waiting_line: str | None = None
     """Deck scopes: the amber line when stale drill cards wait in the deck (2026-10-12)."""
+    unrated_line: str | None = None
+    """Deck scopes: the amber line when handed-off cards still need their first Anki
+    rating inside the primary window (v0.3, config ``unrated_warning``)."""
+    exam_line: str | None = None
+    """Deck scopes: "Exam: Fri Oct 23 (10 days)" for the deck's exam date, own or inherited."""
+    exam_own: date | None = None
+    """The deck's own exam date (the panel's date field)."""
+    exam_inherited: tuple[date, str] | None = None
+    """The date and deck name inherited from a parent, if any."""
+    today: date | None = None
+    """Anki's today, for the exam line the panel redraws when the date is edited."""
 
     @property
     def stable_skipped(self) -> int:
@@ -252,8 +269,19 @@ def read_panel(
         if scope.deck_id is not None
         else 0
     )
+    exam_own, exam_inherited, today = exam_info(col, storage, scope.deck_id)
+    unrated = (
+        read_unrated(col, storage, scope.deck_id)
+        if cfg.unrated_warning and scope.deck_id is not None
+        else None
+    )
     return PanelData(
         waiting_line=panel_line(stale) if stale else None,
+        unrated_line=unrated.line() if unrated is not None else None,
+        exam_line=exam_text(exam_own, exam_inherited, today),
+        exam_own=exam_own,
+        exam_inherited=exam_inherited,
+        today=today,
         scope=scope,
         label=scope_label(col, scope),
         key=key,
@@ -274,6 +302,29 @@ def read_panel(
         holdout=holdout_refs(selection),
         difficulty=summarize(build.adjustments, difficulty.settings.adjust),
     )
+
+
+def exam_info(
+    col: Collection, storage: Storage, did: int | None
+) -> tuple[date | None, tuple[date, str] | None, date]:
+    """(the deck's own exam date, the one it inherits, Anki's today)."""
+    rollover = col.get_preferences().scheduling.rollover
+    today = anki_day(time.time() * 1000, rollover)
+    if did is None:
+        return None, None, today
+    own = pacing.load(storage, did).exam_date
+    parent = inherited_exam(col, storage, did)
+    inh = (parent.day, col.decks.name(DeckId(parent.did))) if parent is not None else None
+    return own, inh, today
+
+
+def exam_text(own: date | None, inh: tuple[date, str] | None, today: date) -> str | None:
+    """The panel's exam line: the deck's own date, else the nearest parent's."""
+    if own is not None:
+        return exam_line(own, today)
+    if inh is not None:
+        return exam_line(inh[0], today, inh[1])
+    return None
 
 
 def holdout_refs(selection: Selection) -> list[dict[str, Any]]:

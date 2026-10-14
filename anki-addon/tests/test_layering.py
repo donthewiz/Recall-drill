@@ -96,6 +96,8 @@ PURE_MODULES = (
     "card_state.py",
     "difficulty.py",
     "pacing.py",
+    "exam.py",
+    "unrated.py",
 )
 
 

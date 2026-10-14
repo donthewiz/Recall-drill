@@ -296,6 +296,37 @@ def handed_off_at(storage: Storage) -> dict[int, int]:
     return out
 
 
+def measured_handoffs(storage: Storage) -> dict[int, int]:
+    """Card id -> its latest handoff's time (epoch ms), for the cards the
+    measurement counts as handed off: every drilled card of a handoff line
+    (``cards``) and its holdout cards (``groups.holdout``), as the tuning
+    report reads them. Siblings and released cards are not in it. Declined
+    handoffs are left out."""
+    out: dict[int, int] = {}
+    for name in storage.list_names(HISTORY_DIR, ".jsonl"):
+        for raw in storage.read_jsonl(name):
+            if not isinstance(raw, dict):
+                continue
+            line = cast(dict[str, Any], raw)
+            if line.get("type") != "handoff" or line.get("declined"):
+                continue
+            stamp = line.get("timestamp")
+            at = iso_ms(stamp) if isinstance(stamp, str) else None
+            if at is None:
+                continue
+            cards = cast(list[Any], line.get("cards") or [])
+            cids: list[Any] = [
+                cast(dict[str, Any], c).get("cid") for c in cards if isinstance(c, dict)
+            ]
+            groups = line.get("groups")
+            if isinstance(groups, dict):
+                cids += cast(list[Any], cast(dict[str, Any], groups).get("holdout") or [])
+            for cid in cids:
+                if isinstance(cid, int) and not isinstance(cid, bool):
+                    out[cid] = max(at, out.get(cid, 0))
+    return out
+
+
 TUNING_KEY = "tuning"
 """``history/tuning.jsonl``: one ``type: "tuning"`` line per applied suggestion."""
 

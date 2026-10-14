@@ -29,5 +29,6 @@
   "auto_advance_correct": true,
   "extra_display": "first_and_misses",
   "stale_drill_days": 7,
-  "waiting_notice": true
+  "waiting_notice": true,
+  "unrated_warning": true
 }

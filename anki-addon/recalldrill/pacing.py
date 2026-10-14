@@ -3,7 +3,8 @@
 docs/DECISIONS.md, "Pacing (Phase 6)".
 
 - **Settings** (``pacing.json``, by deck id): ``target_date``,
-  ``drill_weekdays`` (default Mon-Fri) and ``finish_days_before`` (default 1).
+  ``drill_weekdays`` (default Mon-Fri) and ``finish_days_before`` (default 1);
+  v0.3 adds an optional ``exam_date`` (``exam.py``), independent of the target.
 - **Remaining**: the scope's eligible ``new`` and ``suspended_new`` cards that
   pass the template filter, minus notes tagged ``rd::drilled`` or
   ``rd::holdout`` (counted by ``anki_io/select.py``).
@@ -83,6 +84,8 @@ class PacingSettings:
     target_date: date | None = None
     drill_weekdays: frozenset[int] = DEFAULT_WEEKDAYS
     finish_days_before: int = DEFAULT_FINISH_DAYS_BEFORE
+    exam_date: date | None = None
+    """The deck's exam (v0.3). Not a pacing input: ``exam.py`` reads it."""
 
     @property
     def last_drill_day(self) -> date | None:
@@ -91,11 +94,23 @@ class PacingSettings:
         return self.target_date - timedelta(days=self.finish_days_before)
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "target_date": self.target_date.isoformat() if self.target_date else None,
             "drill_weekdays": sorted(self.drill_weekdays),
             "finish_days_before": self.finish_days_before,
         }
+        if self.exam_date is not None:  # absent when cleared: older files are unchanged
+            out["exam_date"] = self.exam_date.isoformat()
+        return out
+
+
+def _date(raw: object) -> date | None:
+    if not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 def settings_from_json(raw: object) -> PacingSettings:
@@ -103,13 +118,8 @@ def settings_from_json(raw: object) -> PacingSettings:
     if not isinstance(raw, dict):
         return PacingSettings()
     d = cast(dict[str, Any], raw)
-    target: date | None = None
-    t = d.get("target_date")
-    if isinstance(t, str):
-        try:
-            target = date.fromisoformat(t)
-        except ValueError:
-            target = None
+    target = _date(d.get("target_date"))
+    exam = _date(d.get("exam_date"))
     days = d.get("drill_weekdays")
     weekdays = DEFAULT_WEEKDAYS
     if isinstance(days, list):
@@ -124,7 +134,7 @@ def settings_from_json(raw: object) -> PacingSettings:
         if isinstance(before, int) and not isinstance(before, bool) and 0 <= before <= 365
         else DEFAULT_FINISH_DAYS_BEFORE
     )
-    return PacingSettings(target, weekdays, finish)
+    return PacingSettings(target, weekdays, finish, exam)
 
 
 def _load_all(storage: Storage) -> dict[str, Any]:
