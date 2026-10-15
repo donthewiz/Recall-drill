@@ -63,10 +63,13 @@ class Fake:
         return self.drill + self.new + self.reviews
 
 
-# The fake data, in one place, keyed by full deck name. Step 2 replaces this.
+# The fake data, in one place, keyed by full deck name. Step 2 replaces this, and the real
+# tracker must key by deck id, not name, so renaming a deck doesn't break it.
 FAKE: dict[str, Fake] = {
-    "AP Lab::Lab 2": Fake("red", "Practical · Fri Oct 23", 8, 61, 18, 55, 330, 110, 50),
-    "Human A&P::Lecture 3::Muscle Tissue Chapter 10": Fake(
+    "Human Anatomy & Physiology 1::Lab::Lab 2": Fake(
+        "red", "Practical · Fri Oct 23", 8, 61, 18, 55, 330, 110, 50
+    ),
+    "Human Anatomy & Physiology 1::Lecture::Lecture 3::Muscle Tissue Chapter 10": Fake(
         "amber", "Test · Mon Oct 26", 11, 13, 8, 10, 90, 40, 10
     ),
     "Medical Terminology": Fake("green", "Final · Tue Dec 8", 54, 70, 70, 60, 1500, 2100, 180),
@@ -196,11 +199,12 @@ def card_html(deck_name: str, f: Fake) -> str:
         f'<div class="rd-card-head"><strong class="rd-card-title">{_e(deck_name)}</strong>'
         f'<span class="rd-card-exam">{_e(f.exam)}</span></div>'
         '<div class="rd-card-nums">'
-        f"<div><b>{_n(f.cards_left)}</b><span>cards left</span></div>"
-        f"<div><b>{f.needed_a_day}</b><span>needed a day</span></div>"
-        f"<div><b>{f.done_today} of {f.needed_a_day}</b><span>done today</span></div>"
+        f"<div><b>{_n(f.cards_left)}</b><span>left</span></div>"
+        f"<div><b>{f.needed_a_day}</b><span>a day</span></div>"
+        f"<div><b>{f.done_today} of {f.needed_a_day}</b><span>today</span></div>"
         "</div>"
-        f'<div class="rd-card-split">{_e(split)} · Est. {f.minutes} min today</div>'
+        f'<div class="rd-card-split"><div>{_e(split)}</div>'
+        f"<div>Est. {f.minutes} min today</div></div>"
         '<div class="rd-card-test">TEST · fake numbers, not your collection</div>'
         "</div>"
     )
