@@ -46,6 +46,11 @@ class NumbersCache:
         """A run started, so changes from here on need another one."""
         self._dirty = False
 
+    @property
+    def dirty(self) -> bool:
+        """Something changed since the last run started."""
+        return self._dirty
+
     def needs_refresh(self, day: date) -> bool:
         return self._dirty or not self.has_day(day)
 

@@ -1,4 +1,4 @@
-/* Exam tracker hover test (v0.4 step 1). FAKE numbers.
+/* Exam tracker (v0.4).
  * Colours come from Anki's own variables, with fallbacks that read on light and dark. */
 
 .rd-et,
@@ -26,6 +26,8 @@
 .rd-green { --rd-accent: var(--rd-green); }
 .rd-amber { --rd-accent: var(--rd-amber); }
 .rd-red { --rd-accent: var(--rd-red); }
+/* The exam is today: neutral, no judgement (the pill still has an icon and the word). */
+.rd-exam { --rd-accent: var(--rd-fg-muted); }
 
 /* Under the deck name, inside the deck cell. Indented to sit under the name. */
 .rd-et {
@@ -174,10 +176,3 @@ table tr.deck.rd-has-et > td.opts { vertical-align: top !important; }
 .rd-card-nums span { color: var(--rd-fg-muted); font-size: 12px; }
 .rd-card-split { font-size: 12px; }
 .rd-card-split div { white-space: nowrap; }
-.rd-card-test {
-  margin-top: 6px;
-  color: var(--rd-fg-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}

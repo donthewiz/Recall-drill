@@ -65,6 +65,7 @@ from ..controller import (
     ViewModel,
 )
 from ..sessions import SessionStore
+from . import exam_tracker
 from .context import AddonContext
 from .handoff_dialog import confirm_finish_early, offer_handoff
 
@@ -719,6 +720,7 @@ class DrillWindow(QDialog):
             return
         self._cleaned = True
         self._closing = True
+        exam_tracker.request_refresh()  # a session ended: the deck screen's exam numbers
         self._dwell.stop()
         self._disconnect_browser()
         av_player.stop_and_clear_queue()

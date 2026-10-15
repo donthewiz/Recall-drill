@@ -52,6 +52,7 @@ from ..anki_io.handoff import (
     plan_handoff,
     top_deck_for,
 )
+from . import exam_tracker
 from .context import AddonContext
 from .export_ui import export_in_background
 
@@ -197,6 +198,7 @@ def _run(
         else:
             tooltip(DONE_MESSAGE, period=8000)
             export_in_background(ctx)  # v0.3: the light outcomes export, quietly
+            exam_tracker.request_refresh()  # v0.4: the deck screen's exam numbers
         if on_done is not None:
             on_done()
 

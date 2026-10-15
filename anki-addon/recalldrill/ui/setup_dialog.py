@@ -92,7 +92,7 @@ from ..anki_io.select import INELIGIBLE_REASONS, OrderMode, Scope, scope_to_json
 from ..anki_io.workload import read_pacing
 from ..deck_settings import DeckSettings
 from ..holdback import button_label, default_order
-from . import holdback_ui
+from . import exam_tracker, holdback_ui
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
 from .handoff_dialog import confirm_finish_early, offer_handoff
@@ -912,6 +912,7 @@ class SetupDialog(QDialog):
             return
         self._enable_pacing_inputs()
         pacing.save(self.ctx.storage(), self.scope.deck_id, self._pacing_from_inputs())
+        exam_tracker.request_refresh()  # an exam date may have changed
         self._show_exam_line()
         self._refresh_pacing()
 
