@@ -5,8 +5,9 @@ A read-only table. With ``Layer::N`` tags in the chosen deck the rows are layers
 subdeck); otherwise the rows are the subdecks, in the order their cards were
 made. Columns: cards, drilled, released undrilled, held, not yet in Anki, %
 drilled, status, can't drill. The first row not done is marked **Next** and
-**Drill next** opens the setup panel with Order = Deck order
-and, by layer, Only with tag = ``Layer::N`` (v0.3.2). Clicking a row
+**Drill next** opens the setup panel with Order = Deck order, only the new and
+suspended new card types ticked, and, by layer, Only with tag = ``Layer::N``
+(v0.3.2), so it picks the cards the table counts as to go. Clicking a row
 opens the setup panel on its deck. Read in a ``QueryOp``; nothing is written.
 The rules are in ``sections.py``, the reading in ``anki_io/sections.py``.
 """
@@ -33,6 +34,7 @@ from aqt.qt import (
 from aqt.utils import disable_help_button, restoreGeom, saveGeom
 
 from ..anki_io.sections import read_progress
+from ..anki_io.select import PACE_CLASSES
 from ..sections import Progress, SectionRow, progress_cells, progress_columns
 from .context import AddonContext
 from .widgets import ComboBox
@@ -95,8 +97,9 @@ class SectionsDialog(QDialog):
         self.next_btn = QPushButton("Drill next")
         self.next_btn.setAutoDefault(False)
         self.next_btn.setToolTip(
-            "Opens the setup panel with Order = Deck order, limited to the lowest "
-            "unfinished layer (Only with tag = Layer::N); for subdecks, on the next subdeck."
+            "Opens the setup panel with Order = Deck order and only new cards ticked, "
+            "limited to the lowest unfinished layer (Only with tag = Layer::N); for "
+            "subdecks, on the next subdeck."
         )
         self.next_btn.setEnabled(False)
         qconnect(self.next_btn.clicked, self._go_next)
@@ -177,15 +180,16 @@ class SectionsDialog(QDialog):
             self._open_setup(rows[row].did)
 
     def _go_next(self) -> None:
-        """Drill next: the setup panel on the chosen deck with Order = Deck order and
+        """Drill next: the setup panel on the chosen deck with Order = Deck order,
         "Only with tag" = Layer::N (or on the next subdeck, no tag, when the rows are
-        subdecks)."""
+        subdecks) and only the new card types ticked (``PACE_CLASSES``): the table's
+        "to go" counts new cards only, so reviews (young, lapsed, flagged) stay out."""
         progress = self.progress
         target = progress.next_target if progress is not None else None
         if progress is None or target is None:
             return
         if self._drill_next is not None:
-            self._drill_next(target, "deck_order", progress.next_tag)
+            self._drill_next(target, "deck_order", progress.next_tag, PACE_CLASSES)
         else:
             self._open_setup(target)
 

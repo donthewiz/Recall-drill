@@ -1552,9 +1552,12 @@ def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
         monkeypatch.setattr(sections_dialog, "QueryOp", _SyncQueryOp)
         monkeypatch.setattr(_SyncQueryOp, "col", col)
         opened: list[int] = []
-        driven: list[tuple[int, str, str | None]] = []
+        driven: list[tuple[int, str, str | None, frozenset[str]]] = []
         w: Any = sections_dialog.SectionsDialog(
-            ctx, opened.append, scene.lab, lambda did, order, tag: driven.append((did, order, tag))
+            ctx,
+            opened.append,
+            scene.lab,
+            lambda did, order, tag, classes: driven.append((did, order, tag, classes)),
         )
         assert w.windowTitle() == "Recall Drill: progress"
         assert [r.label for r in w.rows] == ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
@@ -1571,7 +1574,8 @@ def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
         # Drill next: the chosen deck, Order = Deck order.
         assert w.next_btn.text() == "Drill next" and w.next_btn.isEnabled()
         w.next_btn.click()
-        assert driven == [(scene.lab, "deck_order", "Layer::1")] and opened == []
+        assert driven == [(scene.lab, "deck_order", "Layer::1", {"new", "suspended_new"})]
+        assert opened == []
         # A row opens the setup panel on the chosen deck.
         w._clicked(2, 0)
         assert opened == [scene.lab]
@@ -1580,27 +1584,27 @@ def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
         col.close()
 
 
-def test_drill_next_fills_the_layer_tag_and_the_panel_picks_only_that_layer(
-    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
-) -> None:
-    import sys
+class _DrillNext:
+    """The progress table and the setup panel its Drill next opened, on a
+    ``layer_scene`` deck (``prepare`` changes the deck first)."""
 
-    import aqt
-    from anki.collection import Collection
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, window_env: Path, col: Any) -> None:
+        import sys
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "anki_io"))
-    from layer_scene import build
+        import aqt
 
-    from recalldrill.storage import Storage
-    from recalldrill.ui import context, entry, sections_dialog, setup_dialog
-    from recalldrill.ui.context import AddonContext
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "anki_io"))
+        from layer_scene import build
 
-    col = Collection(str(tmp_path / "drillnext.anki2"))
-    try:
-        ctx = AddonContext("recall_drill", str(window_env))
-        storage = Storage(window_env, "p")
-        ctx.storage = lambda: storage  # type: ignore[method-assign]
-        scene = build(col, storage)
+        from recalldrill.storage import Storage
+        from recalldrill.ui import context, entry, sections_dialog, setup_dialog
+        from recalldrill.ui.context import AddonContext
+
+        self.col = col
+        self.ctx = AddonContext("recall_drill", str(window_env))
+        self.storage = Storage(window_env, "p")
+        self.ctx.storage = lambda: self.storage  # type: ignore[method-assign]
+        self.scene = build(col, self.storage)
         stub = aqt.mw
         stub.col = col  # type: ignore[attr-defined]
         stub.addonManager = type("AM", (), {"getConfig": lambda self, m: None})()  # type: ignore[attr-defined]
@@ -1609,40 +1613,207 @@ def test_drill_next_fills_the_layer_tag_and_the_panel_picks_only_that_layer(
         for module in (sections_dialog, setup_dialog):
             monkeypatch.setattr(module, "QueryOp", _SyncQueryOp)
         monkeypatch.setattr(_SyncQueryOp, "col", col)
-        monkeypatch.setattr(entry, "_ctx", ctx)
-        panels: list[Any] = []
+        monkeypatch.setattr(entry, "_ctx", self.ctx)
+        self.panels: list[Any] = []
         monkeypatch.setattr(
             setup_dialog,
             "open_setup",
-            lambda c, did, search=None, order=None, tag=None: (
-                panels.append(setup_dialog.SetupDialog(c, did, search, order, tag)) and panels[-1]
+            lambda c, did, search=None, order=None, tag=None, classes=None: (
+                self.panels.append(setup_dialog.SetupDialog(c, did, search, order, tag, classes))
+                and self.panels[-1]
             ),
         )
-        w: Any = sections_dialog.open_sections(
-            ctx, entry.open_setup_for, scene.lab, entry.open_setup_for
+        self.entry, self.sections_dialog, self.setup_dialog = entry, sections_dialog, setup_dialog
+
+    def click(self) -> tuple[Any, Any]:
+        """Open the progress table and click Drill next: (table, panel)."""
+        w: Any = self.sections_dialog.open_sections(
+            self.ctx, self.entry.open_setup_for, self.scene.lab, self.entry.open_setup_for
         )
         w.next_btn.click()
-        (panel,) = panels
+        return w, self.panels[-1]
+
+    def front(self, c: Any) -> str:
+        return str(self.col.get_note(c.snap.nid).fields[0])
+
+    def review(self, front: str, *, lapses: int = 0, flag: int = 0, rated: bool = False) -> None:
+        """Anki introduced the card: a review due in 2 days (``rated``: a review logged
+        now, as when Anki rates a card the add-on handed off)."""
+        import time
+
+        from anki.consts import CARD_TYPE_REV, QUEUE_TYPE_REV
+
+        card = self.scene.cards[front]
+        card.load()
+        card.type, card.queue = CARD_TYPE_REV, QUEUE_TYPE_REV
+        card.ivl, card.due = 4, self.col.sched.today + 2
+        card.lapses = lapses
+        self.col.update_card(card)
+        if flag:
+            self.col.set_user_flag_for_cards(flag, [card.id])
+        if rated:
+            self.col.db.execute(
+                "insert into revlog values (?,?,?,?,?,?,?,?,?)",
+                int(time.time() * 1000) + 5000,
+                card.id,
+                -1,
+                3,
+                4,
+                0,
+                2500,
+                3000,
+                1,
+            )
+
+    def hold(self, fronts: list[str]) -> None:
+        """Held back: suspended and tagged rd::held, as hold back leaves them."""
+        cards = [self.scene.cards[f] for f in fronts]
+        for c in cards:
+            note = c.note()
+            note.add_tag("rd::held")
+            self.col.update_note(note)
+        self.col.sched.suspend_cards([c.id for c in cards])
+
+
+def test_drill_next_picks_exactly_the_layer_cards_the_table_counts_to_go(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    """Lab 2 on 2026-10-14: Layer 1 has 4 held cards to go, and Anki has already
+    introduced others (one drilled and rated since, one lapsed, one red-flagged).
+    Drill next picks the 4 held cards and no review."""
+    from anki.collection import Collection
+
+    col = Collection(str(tmp_path / "drillnext.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        env.review("L1-Muscles-0", rated=True)  # drilled, handed off, then rated by Anki
+        env.review("L1-Joints-0", lapses=1)
+        env.review("L1-Nerves-0", flag=1)
+        held = ["L1-Muscles-1", "L1-Bones-1", "L1-Joints-1", "L1-Nerves-1"]
+        env.hold(held)
+        w, panel = env.click()
+        row = w.progress.next_row
+        assert row.label == "Layer 1" and row.to_go == 4 and row.held == 4
         assert panel.order.currentData() == "deck_order"
         assert panel.tag_edit.text() == "Layer::1"
-        layer1 = col.find_cards('deck:"AP Lab::Lab 2" tag:Layer::1')
-        assert 0 < len(layer1) < len(col.find_cards('deck:"AP Lab::Lab 2"'))
+        ticked = {c for c, box in panel.class_boxes.items() if box.isChecked()}
+        assert ticked == {"new", "suspended_new"}
         data = panel.data
-        assert data is not None and data.selection.total == len(layer1)
-        # Picked = the layer's drillable cards still to go (not the whole deck's).
-        left = w.progress.next_row.to_go
-        assert 0 < left < data.selection.total
-        assert len(data.selection.picked) == len(data.build.deck_items) == left
-        assert f"{len(layer1)} cards in scope; {left} picked" in panel.summary_label.text()
-        # The tag was applied once: editing it sticks and a refresh doesn't put it back.
+        layer1 = col.find_cards('deck:"AP Lab::Lab 2" tag:Layer::1')
+        assert data.selection.total == len(layer1) == 10
+        assert sorted(env.front(c) for c in data.selection.picked) == sorted(held)
+        assert {c.card_class for c in data.selection.picked} == {"suspended_new"}
+        assert len(data.build.deck_items) == row.to_go
+        assert "10 cards in scope; 4 picked" in panel.summary_label.text()
+        # The reviews are still there for whoever ticks them (the boxes aren't saved).
+        panel.class_boxes["young"].setChecked(True)
+        panel.class_boxes["lapsed"].setChecked(True)
+        panel.class_boxes["flagged"].setChecked(True)
+        panel._refresh()
+        assert len(panel.data.selection.picked) == 7
+        # The tag and the boxes were applied once: a reload keeps the panel's choices.
         panel.tag_edit.setText("")
         panel._load_scope()
-        assert panel.tag_edit.text() == ""
-        # A saved session built with another tag keeps its banner, and says so.
-        saved = {"addon": {"selectOptions": {"extra_tag": "Layer::2"}}}
-        assert setup_dialog._saved_tag(saved) == "Layer::2"
-        assert setup_dialog._saved_tag({"addon": {}}) == ""
+        assert panel.tag_edit.text() == "" and panel.class_boxes["young"].isChecked()
         panel.close()
+        # Opening the panel by hand still ticks the default types.
+        plain: Any = env.setup_dialog.SetupDialog(env.ctx, env.scene.lab)
+        assert plain.class_boxes["young"].isChecked() and plain.tag_edit.text() == ""
+        plain.close()
+        w.close()
+    finally:
+        col.close()
+
+
+def test_drill_next_on_the_no_layer_row_picks_only_the_untagged_new_cards(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    """Every numbered layer drilled, two notes without a layer left: no tag to fill,
+    the whole deck, but only new cards, so the reviews of every layer stay out."""
+    import time
+
+    from anki.collection import Collection
+    from anki_fixtures import add_note
+
+    from recalldrill import history_store
+
+    col = Collection(str(tmp_path / "nolayer.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        sc = env.scene
+        rest = [c for f, c in sc.cards.items() if c not in sc.drilled]
+        history_store.append_handoff(
+            env.storage,
+            str(sc.lab),
+            {
+                "type": "handoff",
+                "sessionId": "s2",
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+                "groups": {"drilled_new": [c.id for c in rest]},
+                "cards": [{"cid": c.id, "nid": c.nid, "ord": 0} for c in rest],
+            },
+        )
+        env.review("L2-Bones-0", rated=True)
+        env.review("L1-Muscles-0", rated=True)
+        for i in range(2):
+            fields = {"Front": f"NOLAYER-{i}", "Back": "x"}
+            add_note(col, "Basic", sc.chapters["Joints"], fields, ())  # type: ignore[arg-type]
+        w, panel = env.click()
+        row = w.progress.next_row
+        assert row.label == "No layer" and row.to_go == 2
+        assert all(r.done for r in w.progress.rows[:-1])
+        assert panel.tag_edit.text() == ""
+        picked = sorted(env.front(c) for c in panel.data.selection.picked)
+        assert picked == ["NOLAYER-0", "NOLAYER-1"]
+        panel.close()
+        w.close()
+    finally:
+        col.close()
+
+
+def test_a_saved_session_built_with_another_tag_says_so_and_start_fresh_replaces_it(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    from anki.collection import Collection
+
+    col = Collection(str(tmp_path / "saved.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        env.hold(["L1-Muscles-1", "L1-Bones-1", "L1-Joints-1", "L1-Nerves-1"])
+        w, panel = env.click()
+        n = w.progress.next_row.to_go  # 4 held + 2 open Layer 1 cards
+        assert n == 6
+        panel._start()  # the Layer 1 session, saved for the deck
+        (drill,) = env.ctx.windows
+        assert len(drill.ctrl.state["items"]) == n
+        drill.save_and_close()
+        env.ctx.windows.clear()
+
+        # Same tag (Drill next again): the usual banner, no note.
+        _w2, again = env.click()
+        assert again.resume_btn.isVisibleTo(again)
+        assert "built with" not in again.banner_text.text()
+        again.close()
+        # By hand, no tag: the banner says what the save was built with.
+        plain: Any = env.setup_dialog.SetupDialog(env.ctx, env.scene.lab)
+        text = plain.banner_text.text()
+        assert "It was built with tag Layer::1, the panel now has no tag." in text
+        assert "Resume continues it as saved; Start fresh builds from the panel." in text
+        # Resume keeps the saved cards, whatever the panel picks now.
+        assert len(plain.data.selection.picked) > n
+        plain._resume()
+        (resumed,) = env.ctx.windows
+        assert len(resumed.ctrl.state["items"]) == n
+        resumed.save_and_close()
+        env.ctx.windows.clear()
+        # Start fresh drops the save and builds from the panel (the whole deck's new cards).
+        plain2: Any = env.setup_dialog.SetupDialog(env.ctx, env.scene.lab)
+        picked = len(plain2.data.build.deck_items)
+        plain2._start_fresh()
+        (fresh,) = env.ctx.windows
+        assert len(fresh.ctrl.state["items"]) == picked > n
+        fresh.save_and_close()
+        assert env.setup_dialog._saved_tag({"addon": {}}) == ""
         w.close()
     finally:
         col.close()

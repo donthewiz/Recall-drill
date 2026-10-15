@@ -28,7 +28,7 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 
 ## What's new in 0.3.2
 
-- **Drill next now drills only the next layer.** In a deck with layers, **Drill next** opens the setup panel in Deck order with **Only with tag** already set to `Layer::N` for the layer marked Next, so the panel counts just that layer's cards instead of the whole deck. A deck without layers still opens the next subdeck.
+- **Drill next now drills only the next layer.** In a deck with layers, **Drill next** opens the setup panel in Deck order with **Only with tag** already set to `Layer::N` for the layer marked Next, so the panel counts just that layer's cards instead of the whole deck. It also ticks only the **new** and **suspended new** card types, so the session is the cards the table counts as "to go" and no reviews (young, lapsed, flagged); tick them in the panel to add them. A deck without layers still opens the next subdeck.
 
 ## What's new in 0.3.1
 
