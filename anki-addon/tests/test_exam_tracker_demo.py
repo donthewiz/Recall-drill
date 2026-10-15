@@ -509,25 +509,25 @@ def slide(samples: list[tuple[int, int]], side: str) -> Any:
 @pytest.mark.parametrize(
     ("samples", "side", "expect"),
     [
-        ([(100, 100), (100, 130)], "right", {"dx": 0, "dy": -8}),  # moving down: starts higher
-        ([(100, 130), (100, 100)], "right", {"dx": 0, "dy": 8}),  # moving up: starts lower
-        ([(100, 100), (130, 100)], "below", {"dx": -8, "dy": 0}),  # moving right: starts left
-        ([(130, 100), (100, 100)], "below", {"dx": 8, "dy": 0}),  # moving left: starts right
-        ([(100, 100), (120, 110)], "right", {"dx": -8, "dy": 0}),  # diagonal: x dominates
-        ([(100, 100), (110, 125)], "right", {"dx": 0, "dy": -8}),  # diagonal: y dominates
-        ([(100, 100), (110, 90)], "right", {"dx": 0, "dy": 8}),  # tie: vertical (up)
-        ([(100, 100), (110, 110)], "right", {"dx": 0, "dy": -8}),  # tie: vertical (down)
-        ([(100, 100), (102, 102)], "right", {"dx": -8, "dy": 0}),  # under 4 px: default
-        ([(100, 100), (103, 100)], "above", {"dx": 0, "dy": 8}),  # under 4 px: default
-        ([(100, 100), (104, 100)], "right", {"dx": -8, "dy": 0}),  # exactly 4 px counts
-        ([(100, 100)], "below", {"dx": 0, "dy": -8}),  # one sample: default
-        ([], "right", {"dx": -8, "dy": 0}),  # none: right
-        ([], "below", {"dx": 0, "dy": -8}),  # none: below
-        ([], "above", {"dx": 0, "dy": 8}),  # none: above
+        ([(100, 100), (100, 130)], "right", {"dx": 0, "dy": -6}),  # moving down: starts higher
+        ([(100, 130), (100, 100)], "right", {"dx": 0, "dy": 6}),  # moving up: starts lower
+        ([(100, 100), (130, 100)], "below", {"dx": -6, "dy": 0}),  # moving right: starts left
+        ([(130, 100), (100, 100)], "below", {"dx": 6, "dy": 0}),  # moving left: starts right
+        ([(100, 100), (120, 110)], "right", {"dx": -6, "dy": 0}),  # diagonal: x dominates
+        ([(100, 100), (110, 125)], "right", {"dx": 0, "dy": -6}),  # diagonal: y dominates
+        ([(100, 100), (110, 90)], "right", {"dx": 0, "dy": 6}),  # tie: vertical (up)
+        ([(100, 100), (110, 110)], "right", {"dx": 0, "dy": -6}),  # tie: vertical (down)
+        ([(100, 100), (102, 102)], "right", {"dx": -6, "dy": 0}),  # under 4 px: default
+        ([(100, 100), (103, 100)], "above", {"dx": 0, "dy": 6}),  # under 4 px: default
+        ([(100, 100), (104, 100)], "right", {"dx": -6, "dy": 0}),  # exactly 4 px counts
+        ([(100, 100)], "below", {"dx": 0, "dy": -6}),  # one sample: default
+        ([], "right", {"dx": -6, "dy": 0}),  # none: right
+        ([], "below", {"dx": 0, "dy": -6}),  # none: below
+        ([], "above", {"dx": 0, "dy": 6}),  # none: above
         # reverses: first -> last wins (net down 10 px, though it went down 40 then up 30)
-        ([(100, 100), (100, 140), (100, 110)], "right", {"dx": 0, "dy": -8}),
+        ([(100, 100), (100, 140), (100, 110)], "right", {"dx": 0, "dy": -6}),
         # reverses to a net tiny movement: default
-        ([(100, 100), (100, 140), (100, 101)], "above", {"dx": 0, "dy": 8}),
+        ([(100, 100), (100, 140), (100, 101)], "above", {"dx": 0, "dy": 6}),
     ],
 )
 def test_slide_from_follows_the_cursor(
@@ -546,17 +546,18 @@ def test_timing_constants_are_named_in_the_js() -> None:
     for name, value in (
         ("SHOW_MS", 300),
         ("HIDE_MS", 200),
-        ("OPEN_MS", 200),
-        ("CLOSE_MS", 100),
-        ("SLIDE_PX", 8),
-        ("START_SCALE", 0.97),
+        ("FADE_MS", 400),
+        ("SLIDE_MS", 600),
+        ("CLOSE_MS", 150),
+        ("SLIDE_PX", 6),
         ("SAMPLE_MS", 200),
         ("MAX_SAMPLES", 6),
         ("MIN_MOVE", 4),
         ("SIDE_GAP", 10),
     ):
         assert re.search(rf"var {name} = {re.escape(str(value))};", text), name
-    assert "var EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';" in text
+    assert "var EASE = 'ease';" in text
+    assert "OPEN_MS" not in text and "START_SCALE" not in text and "scale" not in text.lower()
     assert "stale" not in text and "tests/test_exam_tracker_demo.py" in text
     assert "test_exam_tracker_js" not in text
 
@@ -575,14 +576,18 @@ def test_css_size_motion_and_row_alignment() -> None:
     ):
         assert rule in card, rule
     assert ".rd-card.rd-in" in css and "pointer-events: auto" in css
-    # the card starts displaced by the cursor-direction variables and scaled down
-    assert "translate(var(--rd-from-x, 0), var(--rd-from-y, 0)) scale(var(--rd-scale, 1))" in card
+    # the card starts displaced by the cursor-direction variables (no scale)
+    assert "transform: translate(var(--rd-from-x, 0), var(--rd-from-y, 0));" in card
+    assert "scale" not in css
     opening = css[css.index(".rd-card.rd-in {") :]
-    assert "var(--rd-open-ms) var(--rd-ease)" in opening[: opening.index("}")]
+    opening = opening[: opening.index("}")]
+    assert "opacity var(--rd-fade-ms) var(--rd-ease)" in opening
+    assert "transform var(--rd-slide-ms) var(--rd-ease)" in opening
     # closing: opacity only (no transform transition), and still click-through
     closing = css[css.index(".rd-card.rd-out {") :]
     closing = closing[: closing.index("}")]
-    assert "transition: opacity var(--rd-close-ms)" in closing and "pointer-events: none" in closing
+    assert "transition: opacity var(--rd-close-ms) var(--rd-ease)" in closing
+    assert "pointer-events: none" in closing
     assert "transform: none" in closing and "transform var" not in closing
     reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
     reduced = reduced[: reduced.index("\n}")]
@@ -602,10 +607,10 @@ def test_css_size_motion_and_row_alignment() -> None:
 def test_js_hands_the_motion_constants_to_the_css() -> None:
     text = JS.read_text(encoding="utf-8")
     for var, const in (
-        ("--rd-open-ms", "OPEN_MS"),
+        ("--rd-fade-ms", "FADE_MS"),
+        ("--rd-slide-ms", "SLIDE_MS"),
         ("--rd-close-ms", "CLOSE_MS"),
         ("--rd-ease", "EASE"),
-        ("--rd-scale", "START_SCALE"),
     ):
         assert re.search(rf"setProperty\('{var}', [^;]*{const}", text), var
     assert "'--rd-from-x'" in text and "'--rd-from-y'" in text
