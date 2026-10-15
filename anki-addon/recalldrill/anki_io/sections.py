@@ -10,7 +10,7 @@ counted apart (``content_check``).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 from anki.collection import Collection, SearchNode
 from anki.decks import DeckId, DeckTreeNode
@@ -121,6 +121,26 @@ def _undrillable(col: Collection, storage: Storage, new_cids: list[int]) -> set[
         if reason is not None:
             bad.add(snap.cid)
     return bad
+
+
+def undrillable_new(
+    col: Collection,
+    storage: Storage,
+    cards: Iterable[tuple[int, bool, tuple[str, ...]]],
+    drilled: frozenset[int] | set[int],
+) -> set[int]:
+    """The cards the sections table counts as "can't drill", for ``(card id, is new, note
+    tags)`` rows: new, not handed off, not released, and refused by ``content_check``.
+    The exam tracker reuses this, so it and the table can't disagree."""
+    return _undrillable(
+        col,
+        storage,
+        [
+            cid
+            for cid, is_new, tags in cards
+            if is_new and cid not in drilled and not _released(tags)
+        ],
+    )
 
 
 def read_sections(col: Collection, storage: Storage, did: int) -> list[SectionRow]:
