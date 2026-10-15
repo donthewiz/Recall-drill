@@ -884,8 +884,8 @@ Decided by Don, 2026-10-15: **a visual exam tracker on Anki's main deck screen.*
 - **Layout:** a hover card on the deck list. Top-level decks are shown collapsed, so a collapsed parent row shows its **worst descendant's** status (red beats amber beats green); an expanded parent shows nothing and its child rows show their own.
 - **The main glance:** a green / amber / red answer to "am I on pace?": a status pill (icon plus word, never colour alone: "On pace", "Slightly behind", "Behind"), a thin progress bar (done, drill-to-go, new, reviews due), "N days left", and the line "61 a day needed · 18 done today".
 - **"Cards left" counts everything before the exam:** drill-to-go + new + reviews due, **even cards Anki isn't offering today** (held, suspended, not yet introduced).
-- **Card contents** (about 340 px, floating over the rows below, nothing under it moves): title (deck name) and exam on the first line; three numbers (cards left, needed a day, done today); one line with the split and "Est. N min today".
-- **Hover, then pin:** the card appears after about 250 ms of hover and closes shortly after the pointer leaves the row and the card; **clicking the status pill pins it open** (click again to close; one pinned at a time). Clicking the deck name still opens the deck.
+- **Card contents** (280 px after the 2026-10-15 polish, floating beside the list, nothing under it moves): title (deck name) and exam on the first line; three numbers (cards left, needed a day, done today); one line with the split and "Est. N min today".
+- **Hover, then pin:** the card appears after about 500 ms of hover (250 ms before the polish) and closes shortly after the pointer leaves the row and the card; **clicking the status pill pins it open** (click again to close; one pinned at a time). Clicking the deck name still opens the deck.
 - **No study button for now.** A "Study now" button, shown only on Behind decks, is saved for a later build.
 - **A missed day spreads over the days left** instead of piling up as "overdue".
 - **Phone support** is a later Drive copy.
@@ -899,6 +899,18 @@ Step 1 is a throwaway proof that the display looks and behaves right on Don's de
 - **Pin in memory only:** the page sends `pycmd("rdet:pin:<id>")` / `rdet:unpin` (`webview_did_receive_js_message`, deck browser only); Python keeps the id and puts it in the next render, so a pinned card survives a redraw. A pin on a row that no longer exists is dropped silently. Turning the test off forgets it.
 - **Keep on screen** (`placeCard`, pure, tested under node): below the row when it fits above the window's bottom edge, else above, else the side with more room, pulled inside the window; shifted left when too wide, never cut off.
 - Keyboard: the pill is a focusable `<button>` (`aria-pressed`); focus shows the card; Esc closes it and unpins.
+
+### Hover polish (2026-10-15)
+
+Don's decisions after trying step 1 in his real Anki (looks approved in mockup boards H, I and J):
+
+- **The card opens beside the list**, in the empty space right of the deck table: top level with the hovered row (nudged to stay on screen), a pointer arrow on its left edge aiming at the row, about 10 px from the table's right edge, covering no decks. **Fallbacks:** no room on the right (card width + margin beyond the table's right edge) → just below the row, left edge on the status pill, arrow on top; no room below (or before the bottom bar) → above the row; neither fits horizontally → shifted left to stay fully visible. The arrow follows whichever side the card opens on.
+- **Smaller card: 280 px** (was 340): padding 8 / 12 / 9, radius 10, 3 px left accent, title 13 px bold, numbers 15 px bold labelled "left", "a day", "today", the split on two lines ("330 drill · 110 new · 50 reviews" / "Est. 55 min today"), softer shadow. Text stays at least 12 px; the TEST footer stays.
+- **500 ms show delay, then a 150 ms fade in** (opacity plus a 4 px rise); hide delay about 200 ms with a 100 ms fade out. Clicking the pill pins at once (no delay). Moving between rows: the old card fades, the new one waits its normal delay. `prefers-reduced-motion`: no fade or slide, delay unchanged. A hidden or fading card takes no clicks. The numbers are named constants in `exam_tracker.js`.
+- **The two-line row stays exactly as it is** (status pill, bar, "N days left", "61 a day needed · 18 done today"). Don tried quieter one-line rows and prefers the current rows.
+- **New / Learn / Due numbers line up with the deck name** on decorated rows (top-aligned cells, so it doesn't depend on the Redesign add-on's row padding).
+- **Fake data keys follow Don's renamed decks** (`Human Anatomy & Physiology 1::Lab::Lab 2`, `...::Lecture::Lecture 3::Muscle Tissue Chapter 10`, `Medical Terminology`). The real tracker (step 2) must key by **deck id**, not name, so renames don't break it.
+- **"Study now" stays saved for later**, as decided above.
 
 ## Changing the engine now
 
