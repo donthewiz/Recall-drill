@@ -49,9 +49,9 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `unrated_warning` (default true; v0.3): in the setup panel of a deck, an amber line when handed-off drilled or holdout cards have no counted Anki rating yet and their primary window is still open: "N drilled cards are waiting for their first Anki rating. Rate them by <weekday, date> (before <rollover hour>) to keep them in the comparison." The deadline is the end of Anki day (handoff day + 2); with several handoffs pending it is the earliest. Cards in a filtered deck are noted. false: no line.
 - `export_on_open` (default true; v0.3): once when the profile opens, write `exports/outcomes.csv` in the profile's `user_files` folder (one row per drilled and holdout card: next-day outcome, the 14-day Anki cost, the drill counters, the exam date and the predicted recall on exam day). It is also written after every handoff, and by Tools → Recall Drill: export outcomes now. false: not at profile open.
 
-**Exam tracker hover test** (v0.4 step 1, unreleased):
+**Exam tracker** (v0.4):
 
-- `exam_tracker_test` (default false): draws a status tag, a thin progress bar and a hover card on three decks of the deck screen, with **fake numbers** labelled TEST. It reads and writes nothing in your collection. Tools → Recall Drill: exam tracker test flips it and redraws the deck screen without a restart. false: the deck screen is exactly Anki's own.
+- `exam_tracker` (default true): on Anki's deck screen, every deck with an exam date (set in the setup panel's "Exam date" box) that is today or later gets a status tag (On pace, Slightly behind, Behind), a thin progress bar, the days left and "N a day needed", and a hover card with the cards left, the split (drill, new, reviews) and an estimate of today's time. The numbers are read from your collection, `pacing.json` and the history files; nothing is written to your collection. Tools → Recall Drill: exam tracker flips it and redraws the deck screen without a restart. false: the deck screen is exactly Anki's own. An old `exam_tracker_test` entry in your config is ignored. A card you pin open is remembered in your profile (`exam_tracker.json` in the add-on's `user_files` folder).
 
 **Per-deck settings that are not in this config** (saved with the deck in `deck_settings.json`):
 

@@ -32,5 +32,5 @@
   "waiting_notice": true,
   "unrated_warning": true,
   "export_on_open": true,
-  "exam_tracker_test": false
+  "exam_tracker": true
 }

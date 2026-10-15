@@ -1,10 +1,10 @@
-/* Exam tracker hover test (v0.4 step 1). FAKE numbers; see recalldrill/ui/exam_tracker_demo.py.
+/* Exam tracker (v0.4). Real numbers; see recalldrill/ui/exam_tracker.py.
  *
  * Runs on Anki's deck screen only (Python adds this file to the deck browser's web view while
  * the flag is on). It reads the JSON block Python wrote, adds the status display inside each
  * listed row, and shows the hover card. It never touches the deck link, the gear or dragging.
  * Written as a plain script (no modules) and kept pure where it can be: placeCard() is
- * tested under node (tests/test_exam_tracker_demo.py), and so is slideFrom().
+ * tested under node (tests/test_exam_tracker_ui.py), and so is slideFrom().
  */
 (function (root) {
   'use strict';

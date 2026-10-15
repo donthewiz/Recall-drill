@@ -73,8 +73,8 @@ def test_config_defaults_match_web_app() -> None:
         "unrated_warning": True,
         # Add-on only (v0.3): the light outcomes export once at profile open.
         "export_on_open": True,
-        # Add-on only (v0.4 step 1): the deck-screen exam tracker hover test, fake numbers.
-        "exam_tracker_test": False,
+        # Add-on only (v0.4 step 2): the deck-screen exam tracker, real numbers.
+        "exam_tracker": True,
     }
 
 

@@ -1,4 +1,5 @@
-"""Exam tracker hover test (v0.4 step 1): the HTML/data builder, the toggle, the hooks.
+"""Exam tracker on the deck screen (v0.4 step 2): the HTML/data builder, the pin, the toggle,
+the hooks, and the cache-only render.
 
 The builder and the toggle need no Anki. The hook tests need aqt (and offscreen Qt for the
 menu action). How the card looks and feels is checked by hand in Anki ("Needs eyes").
@@ -12,18 +13,23 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from recalldrill.ui import exam_tracker_demo as et
+from recalldrill import exam_tracker as rules
+from recalldrill.exam_tracker import Rates, TrackerNumbers
+from recalldrill.storage import Storage
+from recalldrill.ui import exam_tracker as et
 
 ADDON_ROOT = Path(__file__).resolve().parent.parent
 needs_aqt = pytest.mark.skipif(
     importlib.util.find_spec("aqt") is None, reason="aqt (Anki's GUI package) isn't installed"
 )
+TODAY = date(2026, 10, 15)
 
 
 def node(
@@ -62,8 +68,45 @@ def tree(
     )
 
 
-def payload(**kw: Any) -> dict[str, Any]:
-    return et.build_payload(et.rows_from_tree(tree(**kw)), None)
+def make(
+    drill: int,
+    new: int,
+    reviews: int,
+    done: int,
+    pace_total: int,
+    exam: date,
+    today: date = TODAY,
+    rates: Rates = Rates(30, 20, 10),  # noqa: B008
+) -> TrackerNumbers:
+    n = rules.compute(
+        exam=exam,
+        today=today,
+        drill=drill,
+        new=new,
+        reviews=reviews,
+        done_today=done,
+        pace_total=pace_total,
+        pace_days=7,
+        rates=rates,
+    )
+    assert n is not None
+    return n
+
+
+# The user's three examples, as real numbers: Lab 2 red (Fri Oct 23), the Lecture 3 chapter
+# amber (Mon Oct 26), Medical Terminology green (Tue Dec 8).
+LAB2 = make(330, 110, 50, 18, 350, date(2026, 10, 23))
+MUSCLE = make(90, 40, 10, 8, 90, date(2026, 10, 26))
+MEDTERM = make(1500, 2100, 180, 70, 4000, date(2026, 12, 8), rates=Rates())
+NUMBERS = {13: LAB2, 22: MUSCLE, 40: MEDTERM}
+
+
+def payload_of(numbers: dict[int, TrackerNumbers], **kw: bool) -> dict[str, Any]:
+    return et.build_payload(et.rows_from_tree(tree(**kw)), None, numbers)
+
+
+def payload(**kw: bool) -> dict[str, Any]:
+    return payload_of(NUMBERS, **kw)
 
 
 OPEN = {
@@ -74,38 +117,54 @@ OPEN = {
 }
 
 
-def test_the_three_fake_states() -> None:
+def test_the_three_states_from_real_numbers() -> None:
+    assert (LAB2.status, MUSCLE.status, MEDTERM.status) == ("red", "amber", "green")
     p = payload(**OPEN)["decks"]
     assert set(p) == {"13", "22", "40"}
     assert [p[k]["status"] for k in ("13", "22", "40")] == ["red", "amber", "green"]
     red = p["13"]
     assert "Behind" in red["row"] and "8 days left" in red["row"]
-    assert "61 a day needed · 18 done today" in red["row"]
-    assert "<button" in red["row"] and "Practical · Fri Oct 23" in red["card"]
+    assert f"{LAB2.needed} a day needed · 18 done today" in red["row"]
+    assert "<button" in red["row"] and "Exam · Fri Oct 23" in red["card"]
     assert "<b>490</b><span>left</span>" in red["card"]
-    assert "<b>18 of 61</b><span>today</span>" in red["card"]
-    assert "<b>61</b><span>a day</span>" in red["card"]
-    assert "<div>330 drill · 110 new · 50 reviews</div><div>Est. 55 min today</div>" in red["card"]
-    assert "TEST" in red["card"]
+    assert f"<b>18 of {LAB2.needed}</b><span>today</span>" in red["card"]
+    assert f"<b>{LAB2.needed}</b><span>a day</span>" in red["card"]
+    # drill 30 s, new 20 s, review 10 s over the share of today's steps left
+    assert "<div>330 drill · 110 new · 50 reviews</div><div>Est. 20 min today</div>" in red["card"]
     assert "Slightly behind" in p["22"]["row"] and "11 days left" in p["22"]["row"]
-    assert (
-        "<div>90 drill · 40 new · 10 reviews</div><div>Est. 10 min today</div>" in p["22"]["card"]
-    )
+    assert "Exam · Mon Oct 26" in p["22"]["card"]
     assert "On pace" in p["40"]["row"] and "54 days left" in p["40"]["row"]
     assert "<b>3,780</b>" in p["40"]["card"]
-    assert (
-        "<div>1,500 drill · 2,100 new · 180 reviews</div><div>Est. 60 min today</div>"
-        in p["40"]["card"]
-    )
-    assert "70 of 70" in p["40"]["card"]
+    assert "<div>1,500 drill · 2,100 new · 180 reviews</div>" in p["40"]["card"]
+    assert "70 of" in p["40"]["card"]
 
 
-def test_fake_numbers_add_up() -> None:
-    for name, f in et.FAKE.items():
-        assert f.cards_left == {f"{HAP}::Lab::Lab 2": 490, "Medical Terminology": 3780}.get(
-            name, f.cards_left
-        )
-    assert et.FAKE[f"{HAP}::Lecture::Lecture 3::Muscle Tissue Chapter 10"].cards_left == 140
+def test_est_line_without_history_and_the_bar_lengths() -> None:
+    card = payload(**OPEN)["decks"]["40"]["card"]
+    assert "<div>Est. time: not enough history yet</div>" in card
+    row = payload(**OPEN)["decks"]["13"]["row"]
+    # done today / drill / new / reviews, in this order, as flex-grow lengths
+    grows = [int(x) for x in re.findall(r"flex-grow:(\d+)", row)]
+    assert grows == [18, 330, 110, 50]
+    assert re.findall(r'class="rd-seg (rd-seg-\w+)"', row) == [
+        "rd-seg-done",
+        "rd-seg-drill",
+        "rd-seg-new",
+        "rd-seg-rev",
+    ]
+
+
+def test_exam_day_shows_the_exam_today_pill_and_two_numbers() -> None:
+    today = make(5, 6, 7, 3, 70, TODAY)
+    assert today.status == "exam"
+    p = payload_of({13: today}, **OPEN)["decks"]["13"]
+    assert p["status"] == "exam" and 'class="rd-et rd-exam"' in p["row"]
+    assert "Exam today" in p["row"] and "days left" not in p["row"]
+    assert "a day needed" not in p["row"] and "3 done today" in p["row"]
+    assert "<b>18</b><span>left</span>" in p["card"]
+    assert "<b>3</b><span>done today</span>" in p["card"]
+    assert "a day" not in p["card"] and "Est." not in p["card"]
+    assert "5 drill · 6 new · 7 reviews" in p["card"]
 
 
 def status_of(p: dict[str, Any], did: int) -> str | None:
@@ -117,7 +176,8 @@ def test_rollup_through_the_exact_tree() -> None:
     # Everything collapsed: only the top parent has a row; it shows the worst (red, Lab 2).
     p = payload()["decks"]
     assert status_of(p, 10) == "red" and "via Lab 2" in p["10"]["row"]
-    assert "Human Anatomy &amp; Physiology 1::Lab::Lab 2" in p["10"]["card"]
+    assert "Human Anatomy &amp; Physiology 1::Lab::Lab 2" in p["10"]["card"]  # the aria-label
+    assert "Human Anatomy &amp; Physiology 1 › Lab" in p["10"]["card"]
     assert set(p) == {"10", "40"}  # Lab, Lecture, Lecture 3 and the leaves have no row
 
     # Top expanded: Lab shows red (Lab 2), Lecture shows amber (via Lecture 3 -> Muscle Tissue).
@@ -135,30 +195,56 @@ def test_rollup_through_the_exact_tree() -> None:
     p = payload(hap_collapsed=False, lab_collapsed=False)["decks"]
     assert "11" not in p and "12" not in p and status_of(p, 13) == "red"
 
-    # Everything expanded: only the three decks with their own entry.
+    # Everything expanded: only the three decks with their own numbers.
     p = payload(**OPEN)["decks"]
     assert set(p) == {"13", "22", "40"}
     assert "via" not in p["13"]["row"] and "via" not in p["22"]["row"]
 
 
+def test_a_child_that_only_inherits_a_date_has_no_row_of_its_own() -> None:
+    # Lecture 3 (21) has no numbers of its own though it sits under an exam deck: expanded, it
+    # shows nothing; its child Muscle Tissue (22) has its own.
+    p = payload_of({22: MUSCLE}, **OPEN)["decks"]
+    assert set(p) == {"22"}
+
+
 def test_worst_status_wins_and_ties_go_to_the_first() -> None:
-    fake = {
-        "P::a": et.Fake("green", "x", 1, 1, 1, 1, 1, 1, 1),
-        "P::b": et.Fake("amber", "x", 1, 1, 1, 1, 1, 1, 1),
-        "P::c": et.Fake("red", "x", 1, 1, 1, 1, 1, 1, 1),
-        "P::d": et.Fake("red", "x", 1, 1, 1, 1, 1, 1, 1),
-    }
+    green = make(0, 0, 0, 0, 7, date(2026, 10, 23))
+    amber = make(0, 488, 0, 0, 350, date(2026, 10, 23))
+    red = make(0, 504, 0, 0, 350, date(2026, 10, 23))
+    assert (green.status, amber.status, red.status) == ("green", "amber", "red")
     kids = [node(i, n, 2) for i, n in ((2, "a"), (3, "b"), (4, "c"), (5, "d"))]
     top = node(0, "", 0, [node(1, "P", 1, kids, collapsed=True)])
-    shown = et.display_for(et.rows_from_tree(top)[0], fake)
+    row = et.rows_from_tree(top)[0]
+    both = {2: green, 3: amber, 4: red, 5: red}
+    shown = et.display_for(row, both)
     assert shown is not None and shown[0] == "P::c"
-    mild = et.display_for(et.rows_from_tree(top)[0], {"P::a": fake["P::a"], "P::b": fake["P::b"]})
+    mild = et.display_for(row, {2: green, 3: amber})
     assert mild is not None and mild[0] == "P::b"
+    # an exam today is neutral: it ranks under green
+    today = make(1, 1, 1, 0, 7, TODAY)
+    only = et.display_for(row, {2: today, 3: green})
+    assert only is not None and only[0] == "P::b"
 
 
-def test_a_deck_with_its_own_entry_shows_it_even_with_children() -> None:
+def test_a_deck_with_its_own_numbers_shows_them_even_with_children() -> None:
     top = node(0, "", 0, [node(1, "Medical Terminology", 1, [node(2, "Ch 1", 2)], collapsed=False)])
-    assert set(et.build_payload(et.rows_from_tree(top), None)["decks"]) == {"1"}
+    assert set(et.build_payload(et.rows_from_tree(top), None, {1: MEDTERM})["decks"]) == {"1"}
+
+
+def test_numbers_are_keyed_by_deck_id_so_a_rename_changes_nothing() -> None:
+    def build(name: str) -> dict[str, Any]:
+        top = node(0, "", 0, [node(7, name, 1)])
+        return et.build_payload(et.rows_from_tree(top), 7, {7: LAB2})
+
+    before, after = build("Lab 2"), build("Practical 2 (renamed)")
+    assert before["pinned"] == after["pinned"] == 7  # the pin follows the id
+    assert before["decks"]["7"]["status"] == after["decks"]["7"]["status"]
+    assert "Practical 2 (renamed)" in after["decks"]["7"]["card"]
+    # the row text carries no deck name except in the pill's aria-label
+    assert before["decks"]["7"]["row"].replace("Lab 2", "") == after["decks"]["7"]["row"].replace(
+        "Practical 2 (renamed)", ""
+    )
 
 
 @pytest.mark.parametrize(
@@ -189,48 +275,66 @@ def test_card_title_is_the_leaf_with_the_parent_path_under_it(
 
 
 def test_card_title_escapes_every_part() -> None:
-    f = et.FAKE["Medical Terminology"]
-    amp = et.card_html("A & B::C & D", f)
+    amp = et.card_html("A & B::C & D", MEDTERM)
     assert '<div class="rd-card-path">A &amp; B</div>' in amp
     assert '<strong class="rd-card-title">C &amp; D</strong>' in amp
-    nasty = et.card_html("<script>x</script>::<script>y</script>", f)
+    nasty = et.card_html("<script>x</script>::<script>y</script>", MEDTERM)
     assert "<script>" not in nasty
     assert '<div class="rd-card-path">&lt;script&gt;x&lt;/script&gt;</div>' in nasty
     assert '<strong class="rd-card-title">&lt;script&gt;y&lt;/script&gt;</strong>' in nasty
 
 
 def test_deck_names_are_escaped() -> None:
-    f = et.FAKE["Medical Terminology"]
     nasty = '<script>alert(1)</script> & "q"'
-    row = et.row_html(nasty, f, via=nasty, level=1)
-    card = et.card_html(nasty, f)
+    row = et.row_html(nasty, MEDTERM, via=nasty, level=1)
+    card = et.card_html(nasty, MEDTERM)
     for out in (row, card):
         assert "<script>" not in out
         assert "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;q&quot;" in out
     # ...and in the JSON block nothing can close the tag early.
     top = node(0, "", 0, [node(1, nasty, 1)])
-    fake = {nasty: f}
-    block = et.script_tag(et.build_payload(et.rows_from_tree(top), None, fake))
+    block = et.script_tag(et.build_payload(et.rows_from_tree(top), None, {1: MEDTERM}))
     assert block.count("<") == 2 and block.count("</script>") == 1  # open tag + the closing tag
     inner = block[block.index(">") + 1 : block.rindex("</script>")]
     assert "<" not in inner and "&" not in inner
     assert "alert(1)" in json.loads(inner)["decks"]["1"]["card"]
 
 
-def test_pin_survives_a_redraw_and_a_missing_row_drops_it() -> None:
+def test_pin_in_the_payload_needs_a_row_now() -> None:
     rows = et.rows_from_tree(tree())
-    assert et.build_payload(rows, 10)["pinned"] == 10
-    assert et.build_payload(rows, 999)["pinned"] is None
-    assert et.build_payload(rows, 13)["pinned"] is None  # row hidden by the collapse
+    assert et.build_payload(rows, 10, NUMBERS)["pinned"] == 10
+    assert et.build_payload(rows, 999, NUMBERS)["pinned"] is None
+    assert et.build_payload(rows, 13, NUMBERS)["pinned"] is None  # row hidden by the collapse
 
 
-def test_pin_messages(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(et, "_pinned", None)
-    assert et.handle_message("rdet:pin:12") and et.pinned() == 12
-    assert et.handle_message("rdet:pin:abc") and et.pinned() is None
-    assert et.handle_message("rdet:pin:7") and et.handle_message("rdet:unpin")
-    assert et.pinned() is None
-    assert not et.handle_message("open:5") and not et.handle_message("collapse:5")
+def test_a_pin_is_dropped_only_for_a_deck_that_is_no_longer_an_exam_deck() -> None:
+    assert et.pin_to_drop(13, NUMBERS, fresh=True) is False
+    assert et.pin_to_drop(99, NUMBERS, fresh=True) is True
+    assert et.pin_to_drop(99, NUMBERS, fresh=False) is False  # not judged before numbers exist
+    assert et.pin_to_drop(None, NUMBERS, fresh=True) is False
+
+
+def test_pin_messages_are_saved_in_the_profile(tmp_path: Path) -> None:
+    st = Storage(tmp_path, "User 1")
+    assert et.read_pin(st) is None
+    assert et.handle_message("rdet:pin:12", st) and et.read_pin(st) == 12
+    # saved as the profile's exam_tracker.json: {"pinned": 12}, schemaVersion 1
+    raw = json.loads((st.dir / "exam_tracker.json").read_text(encoding="utf-8"))
+    assert raw == {"schemaVersion": 1, "data": {"pinned": 12}}
+    # "after an Anki restart": a new Storage over the same folder reads it back
+    assert et.read_pin(Storage(tmp_path, "User 1")) == 12
+    assert et.read_pin(Storage(tmp_path, "Other profile")) is None
+    assert et.handle_message("rdet:pin:abc", st) and et.read_pin(st) is None
+    assert et.handle_message("rdet:pin:7", st) and et.handle_message("rdet:unpin", st)
+    assert et.read_pin(st) is None
+    assert not et.handle_message("open:5", st) and not et.handle_message("collapse:5", st)
+
+
+def test_a_corrupt_or_odd_pin_file_reads_as_no_pin(tmp_path: Path) -> None:
+    st = Storage(tmp_path, "User 1")
+    for data in ({"pinned": "x"}, {"pinned": True}, {"pinned": None}, [], {}):
+        st.write_json("exam_tracker.json", data)
+        assert et.read_pin(st) is None
 
 
 class FakeManager:
@@ -246,30 +350,38 @@ class FakeManager:
         self.writes.append(conf)
 
 
-def test_toggle_flips_the_flag_and_requests_a_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(et, "_pinned", 10)
-    mgr = FakeManager({"batch_size": 5})
+def test_toggle_flips_the_flag_and_requests_a_refresh(tmp_path: Path) -> None:
+    st = Storage(tmp_path, "User 1")
+    et.write_pin(st, 10)
+    mgr = FakeManager({"batch_size": 5, "exam_tracker": True})
     calls: list[int] = []
+    assert et.is_on(mgr, "m")
+    assert et.toggle(mgr, "m", lambda: calls.append(1), st) is False
+    assert mgr.conf == {"batch_size": 5, "exam_tracker": False} and calls == [1]
+    assert et.read_pin(st) is None  # turning it off forgets the pin
     assert not et.is_on(mgr, "m")
-    assert et.toggle(mgr, "m", lambda: calls.append(1)) is True
-    assert mgr.conf == {"batch_size": 5, "exam_tracker_test": True} and calls == [1]
-    assert et.pinned() == 10
-    assert et.toggle(mgr, "m", lambda: calls.append(2)) is False
-    assert mgr.conf == {"batch_size": 5, "exam_tracker_test": False} and calls == [1, 2]
-    assert et.pinned() is None  # turning it off forgets the pin
-    assert et.toggle(FakeManager(None), "m", lambda: None) is True
+    assert et.toggle(mgr, "m", lambda: calls.append(2), st) is True
+    assert mgr.conf == {"batch_size": 5, "exam_tracker": True} and calls == [1, 2]
+    # no config yet: the default is on, so the first flip turns it off
+    assert et.toggle(FakeManager(None), "m", lambda: None) is False
 
 
-def test_config_default_is_off() -> None:
+def test_config_default_is_on_and_the_old_test_key_is_ignored() -> None:
     from recalldrill.addon_config import DEFAULT_CONFIG, parse_config
 
-    assert DEFAULT_CONFIG.exam_tracker_test is False
-    assert parse_config({"exam_tracker_test": True}).exam_tracker_test is True
-    assert parse_config({"exam_tracker_test": "yes"}).exam_tracker_test is False
+    assert DEFAULT_CONFIG.exam_tracker is True
+    assert parse_config(None).exam_tracker is True
+    assert parse_config({"exam_tracker": False}).exam_tracker is False
+    assert parse_config({"exam_tracker": "no"}).exam_tracker is True  # mistyped: the default
+    # a user's old config still has exam_tracker_test: not an error, and it changes nothing
+    assert parse_config({"exam_tracker_test": True}).exam_tracker is True
+    assert parse_config({"exam_tracker_test": False}).exam_tracker is True
+    assert parse_config({"exam_tracker_test": False, "exam_tracker": False}).exam_tracker is False
+    assert et.is_on(FakeManager({"exam_tracker_test": False}), "m") is True
 
 
 def test_inject_appends_one_block_and_keeps_the_stats() -> None:
-    out = et.inject(tree(), '<div id="studiedToday"></div>', None)
+    out = et.inject(tree(), '<div id="studiedToday"></div>', None, NUMBERS)
     assert out.startswith('<div id="studiedToday"></div><script type="application/json"')
     assert out.count(f'id="{et.DATA_ID}"') == 1
 
@@ -285,13 +397,20 @@ def qt_app() -> object:
 
 
 @pytest.fixture
-def hooked(qt_app: object, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """``register`` against a fake main window; the real hooks, restored afterwards."""
+def hooked(qt_app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
+    """``register`` against a fake main window; the real hooks, restored afterwards. The
+    reader is replaced by a recorder: a test finishes a run by hand."""
     import aqt
     from aqt import gui_hooks
 
     state = SimpleNamespace(
-        conf={"exam_tracker_test": False}, exports=[], refreshed=0, actions=[], state="deckBrowser"
+        conf={"exam_tracker": True},
+        exports=[],
+        refreshed=0,
+        actions=[],
+        runs=[],
+        storage=Storage(tmp_path, "User 1"),
+        today=TODAY,
     )
 
     class Manager:
@@ -314,83 +433,213 @@ def hooked(qt_app: object, monkeypatch: pytest.MonkeyPatch) -> Any:
         form=SimpleNamespace(menuTools=menu),
         state="deckBrowser",
         deckBrowser=deck_browser,
+        col=object(),
     )
     # QAction needs a QObject parent; a bare QObject stands in for the main window.
     from aqt.qt import QObject
 
     parent = QObject()
     monkeypatch.setattr(aqt, "mw", fake_mw)
+    import recalldrill.anki_io.workload as workload
+
+    monkeypatch.setattr(workload, "today_for", lambda col: (state.today, 4))
+    monkeypatch.setattr(et, "start_reader", lambda storage, finish: state.runs.append(finish))
+    monkeypatch.setattr(et, "_cache", et.NumbersCache())
     hook_names = (
         "deck_browser_will_render_content",
         "webview_will_set_content",
         "webview_did_receive_js_message",
+        "operation_did_execute",
+        "sync_did_finish",
+        "profile_will_close",
     )
     before = {n: list(getattr(gui_hooks, n)._hooks) for n in hook_names}  # pyright: ignore
     import aqt.qt as aqt_qt
 
     real_action = aqt_qt.QAction
     monkeypatch.setattr(aqt_qt, "QAction", lambda label, _mw: real_action(label, parent))
-    et.register("recall_drill_dev")
+    ctx = SimpleNamespace(module="recall_drill_dev", storage=lambda: state.storage)
+    et.register(ctx)
     state.parent = parent
+    state.mw = fake_mw
     yield state
+    et._refresher = None  # pyright: ignore[reportPrivateUsage]
     for n in hook_names:
         getattr(gui_hooks, n)._hooks[:] = before[n]  # pyright: ignore
 
 
-@needs_aqt
-def test_flag_off_leaves_the_deck_screen_alone(hooked: Any) -> None:
+def render(tree_: Any, stats: str = "<div>stats</div>") -> Any:
     from aqt import gui_hooks
     from aqt.deckbrowser import DeckBrowser, DeckBrowserContent
-    from aqt.webview import WebContent
 
     browser = DeckBrowser.__new__(DeckBrowser)
-    browser._render_data = SimpleNamespace(tree=tree())  # pyright: ignore
-    content = DeckBrowserContent(tree="<tr>rows</tr>", stats="<div>stats</div>")
+    browser._render_data = SimpleNamespace(tree=tree_)  # pyright: ignore
+    content = DeckBrowserContent(tree="<tr>rows</tr>", stats=stats)
     gui_hooks.deck_browser_will_render_content(browser, content)
+    return content
+
+
+def result(numbers: dict[int, TrackerNumbers], day: date = TODAY) -> Any:
+    return SimpleNamespace(day=day, numbers=numbers)
+
+
+@needs_aqt
+def test_flag_off_leaves_the_deck_screen_alone_byte_for_byte(hooked: Any) -> None:
+    from aqt import gui_hooks
+    from aqt.deckbrowser import DeckBrowser
+    from aqt.webview import WebContent
+
+    hooked.conf["exam_tracker"] = False
+    content = render(tree())
     assert (content.tree, content.stats) == ("<tr>rows</tr>", "<div>stats</div>")
+    assert hooked.runs == []  # and no reader is started
+    browser = DeckBrowser.__new__(DeckBrowser)
     web = WebContent(body="<p>x</p>")
     gui_hooks.webview_will_set_content(web, browser)
     assert web.css == [] and web.js == [] and web.body == "<p>x</p>"
     assert hooked.exports == [et.WEB_PATTERN]  # serving the files is harmless while off
 
-    hooked.conf["exam_tracker_test"] = True  # on: block and files appear, only for the deck screen
-    gui_hooks.deck_browser_will_render_content(browser, content)
-    assert content.stats.startswith("<div>stats</div><script") and content.tree == "<tr>rows</tr>"
+
+@needs_aqt
+def test_on_adds_the_block_and_the_files_to_the_deck_screen_only(hooked: Any) -> None:
+    from aqt import gui_hooks
+    from aqt.deckbrowser import DeckBrowser
+    from aqt.webview import WebContent
+
+    browser = DeckBrowser.__new__(DeckBrowser)
+    web = WebContent(body="<p>x</p>")
     gui_hooks.webview_will_set_content(web, browser)
     assert web.css == ["/_addons/recall_drill_dev/web/exam_tracker.css"]
     assert web.js == ["/_addons/recall_drill_dev/web/exam_tracker.js"]
     other = WebContent(body="x")
     gui_hooks.webview_will_set_content(other, object())  # any other screen
     assert other.css == [] and other.js == []
+    content = render(tree())
+    assert content.stats.startswith("<div>stats</div><script") and content.tree == "<tr>rows</tr>"
 
 
 @needs_aqt
-def test_menu_item_toggles_and_redraws(hooked: Any) -> None:
-    (action,) = hooked.actions
-    assert action.text() == et.LABEL and action.isCheckable() and not action.isChecked()
-    action.trigger()
-    assert hooked.conf["exam_tracker_test"] is True and hooked.refreshed == 1
-    assert action.isChecked()
-    action.trigger()
-    assert hooked.conf["exam_tracker_test"] is False and hooked.refreshed == 2
+def test_render_draws_only_the_cache_and_a_miss_schedules_one_run(hooked: Any) -> None:
+    content = render(tree(**OPEN))
+    block = _block(content.stats)
+    assert block["decks"] == {}  # nothing computed in the hook: no rows, no placeholder
+    assert len(hooked.runs) == 1  # one background run scheduled
+    render(tree(**OPEN))  # drawn again before the run ends: still one run
+    assert len(hooked.runs) == 1
+    assert hooked.refreshed == 0
+    # the run ends: its result is cached and the deck screen is redrawn once
+    hooked.runs.pop(0)(result(NUMBERS))
+    assert hooked.refreshed == 1
+    block = _block(render(tree(**OPEN)).stats)
+    assert set(block["decks"]) == {"13", "22", "40"}
+    assert len(hooked.runs) == 0  # fresh cache: nothing more to run
+
+
+def _block(stats: str) -> dict[str, Any]:
+    m = re.search(r'id="rd-exam-tracker-data">(.*?)</script>', stats, re.S)
+    assert m is not None
+    return json.loads(m.group(1))
 
 
 @needs_aqt
-def test_page_messages_reach_the_pin_state(hooked: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_result_for_another_day_is_not_drawn(hooked: Any) -> None:
+    from datetime import timedelta
+
+    render(tree(**OPEN))
+    hooked.runs.pop(0)(result(NUMBERS, TODAY - timedelta(days=1)))
+    block = _block(render(tree(**OPEN)).stats)
+    assert block["decks"] == {}  # yesterday's numbers are never drawn today
+    assert len(hooked.runs) == 1  # and a new run is asked for
+
+
+@needs_aqt
+def test_two_requests_during_a_run_make_exactly_one_more_run(hooked: Any) -> None:
+    from aqt import gui_hooks
+
+    render(tree(**OPEN))
+    assert len(hooked.runs) == 1
+    changes = SimpleNamespace(card=True, note=False, deck=False, study_queues=False)
+    gui_hooks.operation_did_execute(changes, None)
+    gui_hooks.sync_did_finish()
+    et.request_refresh()
+    assert len(hooked.runs) == 1  # still the first run
+    hooked.runs.pop(0)(result(NUMBERS))
+    assert len(hooked.runs) == 1  # exactly one extra, after it
+    hooked.runs.pop(0)(result(NUMBERS))
+    assert hooked.runs == []
+
+
+@needs_aqt
+def test_only_collection_changes_that_matter_refresh(hooked: Any) -> None:
+    from aqt import gui_hooks
+
+    hooked.state = "deckBrowser"
+    render(tree(**OPEN))
+    hooked.runs.pop(0)(result(NUMBERS))
+    hooked.refreshed = 0
+    nothing = SimpleNamespace(card=False, note=False, deck=False, study_queues=False)
+    gui_hooks.operation_did_execute(nothing, None)
+    assert hooked.runs == []
+    for field in ("card", "note", "deck", "study_queues"):
+        changes = SimpleNamespace(card=False, note=False, deck=False, study_queues=False)
+        setattr(changes, field, True)
+        gui_hooks.operation_did_execute(changes, None)
+        assert len(hooked.runs) == 1, field
+        hooked.runs.pop(0)(result(NUMBERS))
+    # while another screen shows, the change only marks the cache stale
+    hooked.mw.state = "review"
+    changes = SimpleNamespace(card=True, note=False, deck=False, study_queues=False)
+    gui_hooks.operation_did_execute(changes, None)
+    assert hooked.runs == []
+    hooked.mw.state = "deckBrowser"
+    render(tree(**OPEN))  # shown again: now it recomputes (the old numbers are still drawn)
+    assert len(hooked.runs) == 1
+
+
+@needs_aqt
+def test_a_failed_run_draws_nothing_new(hooked: Any) -> None:
+    render(tree(**OPEN))
+    hooked.runs.pop(0)(None)
+    assert hooked.refreshed == 0
+
+
+@needs_aqt
+def test_pin_is_restored_on_render_and_dropped_when_no_longer_an_exam_deck(hooked: Any) -> None:
     from aqt import gui_hooks
     from aqt.deckbrowser import DeckBrowser
 
-    monkeypatch.setattr(et, "_pinned", None)
     browser = DeckBrowser.__new__(DeckBrowser)
-    assert gui_hooks.webview_did_receive_js_message((False, None), "rdet:pin:12", browser) == (
+    assert gui_hooks.webview_did_receive_js_message((False, None), "rdet:pin:13", browser) == (
         True,
         None,
     )
-    assert et.pinned() == 12
+    assert et.read_pin(hooked.storage) == 13
     assert gui_hooks.webview_did_receive_js_message((False, None), "open:12", browser) == (
         False,
         None,
     )
+    render(tree(**OPEN))
+    assert et.read_pin(hooked.storage) == 13  # before any result, the pin is kept
+    hooked.runs.pop(0)(result(NUMBERS))
+    block = _block(render(tree(**OPEN)).stats)
+    assert block["pinned"] == 13  # restored after a redraw (and, being a file, a restart)
+    et.request_refresh()  # a change; the run finds that Lab 2's exam is over
+    hooked.runs.pop(0)(result({40: MEDTERM}))  # Lab 2's exam is over: no longer an exam deck
+    block = _block(render(tree(**OPEN)).stats)
+    assert block["pinned"] is None and et.read_pin(hooked.storage) is None
+
+
+@needs_aqt
+def test_menu_item_toggles_and_redraws_without_a_restart(hooked: Any) -> None:
+    (action,) = hooked.actions
+    assert action.text() == et.LABEL == "Recall Drill: exam tracker"
+    assert action.isCheckable() and action.isChecked()
+    action.trigger()
+    assert hooked.conf["exam_tracker"] is False and hooked.refreshed == 1
+    assert not action.isChecked()
+    assert render(tree()).stats == "<div>stats</div>"  # off: Anki's own, byte for byte
+    action.trigger()
+    assert hooked.conf["exam_tracker"] is True and hooked.refreshed == 2 and action.isChecked()
 
 
 # --- the pure JS placement function, run under node ------------------------------------
@@ -558,7 +807,7 @@ def test_timing_constants_are_named_in_the_js() -> None:
         assert re.search(rf"var {name} = {re.escape(str(value))};", text), name
     assert "var EASE = 'ease';" in text
     assert "OPEN_MS" not in text and "START_SCALE" not in text and "scale" not in text.lower()
-    assert "stale" not in text and "tests/test_exam_tracker_demo.py" in text
+    assert "stale" not in text and "tests/test_exam_tracker_ui.py" in text
     assert "test_exam_tracker_js" not in text
 
 
@@ -600,7 +849,7 @@ def test_css_size_motion_and_row_alignment() -> None:
     assert "table tr.deck.rd-has-et > td.opts { vertical-align: top !important; }" in css
     sizes = [int(x) for x in re.findall(r"font-size: (\d+)px", css)]
     assert min(sizes) >= 11  # the 11px is only the pill's tiny icon glyph
-    for sel in (".rd-card-exam", ".rd-card-nums span", ".rd-card-split", ".rd-card-test"):
+    for sel in (".rd-card-exam", ".rd-card-nums span", ".rd-card-split"):
         assert re.search(re.escape(sel) + r"[^}]*font-size: 12px", css), sel
 
 
@@ -621,3 +870,11 @@ def test_payload_shape_is_unchanged() -> None:
     p = payload(**OPEN)
     assert set(p) == {"decks", "pinned"}
     assert all(set(v) == {"status", "row", "card"} for v in p["decks"].values())
+
+
+def test_the_test_label_and_the_fake_table_are_gone() -> None:
+    assert not hasattr(et, "FAKE") and not hasattr(et, "Fake")
+    assert ".rd-card-test" not in CSS.read_text(encoding="utf-8")
+    card = payload(**OPEN)["decks"]["13"]["card"]
+    assert "TEST" not in card and "fake" not in card.lower()
+    assert "rd-exam" in CSS.read_text(encoding="utf-8")  # the neutral exam-day pill

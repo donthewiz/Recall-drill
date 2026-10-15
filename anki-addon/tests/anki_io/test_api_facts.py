@@ -577,6 +577,8 @@ def test_current_deck_is_a_dict_with_an_id(col: Collection) -> None:
         "profile_will_close",
         "webview_did_receive_js_message",
         "operation_did_execute",
+        "sync_did_finish",
+        "deck_browser_will_render_content",
     ],
 )
 @needs_aqt
