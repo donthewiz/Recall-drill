@@ -82,6 +82,8 @@ class AddonConfig:
     export_on_open: bool = True
     """Write ``exports/outcomes.csv`` once when the profile opens (it is also written after
     every handoff, and by Tools → Recall Drill: export outcomes now) (v0.3)."""
+    exam_tracker_test: bool = False
+    """The deck-screen exam tracker hover test with fake numbers (v0.4 step 1)."""
     extra_display: ExtraDisplay = "first_and_misses"
     """When a card's Extra shows and holds the screen: "first_and_misses" (the first
     time its full answer is on screen, and after a miss or a reveal) or "always"."""
@@ -163,4 +165,5 @@ def parse_config(raw: object) -> AddonConfig:
         waiting_notice=_bool(d.get("waiting_notice"), dc.waiting_notice),
         unrated_warning=_bool(d.get("unrated_warning"), dc.unrated_warning),
         export_on_open=_bool(d.get("export_on_open"), dc.export_on_open),
+        exam_tracker_test=_bool(d.get("exam_tracker_test"), dc.exam_tracker_test),
     )

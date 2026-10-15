@@ -1,0 +1,113 @@
+/* Exam tracker hover test (v0.4 step 1). FAKE numbers.
+ * Colours come from Anki's own variables, with fallbacks that read on light and dark. */
+
+.rd-et,
+.rd-card {
+  --rd-fg: var(--fg, #1f2328);
+  --rd-fg-muted: var(--fg-subtle, #6b7280);
+  --rd-bg: var(--canvas-elevated, var(--canvas, #ffffff));
+  --rd-border: var(--border, #b8bec6);
+  --rd-track: var(--border-subtle, rgba(128, 128, 128, 0.25));
+  --rd-green: #1a7f37;
+  --rd-amber: #9a6700;
+  --rd-red: #cf222e;
+}
+.night_mode .rd-et,
+.night_mode .rd-card,
+.night-mode .rd-et,
+.night-mode .rd-card {
+  --rd-fg: var(--fg, #abb2bf);
+  --rd-bg: var(--canvas-elevated, #2c313a);
+  --rd-border: var(--border, #5c6370);
+  --rd-green: #56d364;
+  --rd-amber: #e3b341;
+  --rd-red: #ff7b72;
+}
+.rd-green { --rd-accent: var(--rd-green); }
+.rd-amber { --rd-accent: var(--rd-amber); }
+.rd-red { --rd-accent: var(--rd-red); }
+
+/* Under the deck name, inside the deck cell. Indented to sit under the name. */
+.rd-et {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  box-sizing: border-box;
+  margin: 4px 0 2px calc(var(--rd-lvl, 0) * 1.5em + 1.3em);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--rd-fg);
+  text-align: start;
+  white-space: normal;
+}
+.rd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rd-accent);
+  background: transparent;
+  border: 1.5px solid var(--rd-accent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rd-pill:hover,
+.rd-pill[aria-pressed="true"] { background: color-mix(in srgb, var(--rd-accent) 18%, transparent); }
+.rd-pill:focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 2px; }
+.rd-icon { font-size: 11px; line-height: 1; }
+.rd-bar {
+  display: flex;
+  flex: 0 1 140px;
+  min-width: 70px;
+  height: 6px;
+  overflow: hidden;
+  background: var(--rd-track);
+  border-radius: 3px;
+}
+.rd-seg { display: block; flex-basis: 0; min-width: 2px; }
+.rd-seg-done { background: var(--rd-accent); }
+.rd-seg-drill { background: #8b5cf6; }
+.rd-seg-new { background: #3b82f6; }
+.rd-seg-rev { background: #8a929c; }
+.rd-days { font-weight: 600; }
+.rd-via,
+.rd-line { color: var(--rd-fg-muted); }
+
+/* The card floats on <body>; nothing under it moves. */
+.rd-card {
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--rd-fg);
+  text-align: start;
+  background: var(--rd-bg);
+  border: 1px solid var(--rd-border);
+  border-left: 4px solid var(--rd-accent);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(128, 128, 128, 0.15);
+}
+.rd-card-head { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
+.rd-card-title { overflow-wrap: anywhere; font-size: 14px; }
+.rd-card-exam { color: var(--rd-fg-muted); font-size: 12px; }
+.rd-card-nums { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.rd-card-nums div { display: flex; flex-direction: column; }
+.rd-card-nums b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.rd-card-nums span { color: var(--rd-fg-muted); font-size: 12px; }
+.rd-card-split { font-size: 12px; }
+.rd-card-test {
+  margin-top: 8px;
+  color: var(--rd-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}

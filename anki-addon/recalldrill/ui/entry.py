@@ -187,6 +187,9 @@ def register(module: str, user_files: str) -> None:
         action = QAction(label, mw)
         qconnect(action.triggered, fn)
         mw.form.menuTools.addAction(action)
+    from . import exam_tracker_demo
+
+    exam_tracker_demo.register(module)
     gui_hooks.deck_browser_will_show_options_menu.append(on_gear_menu)
     gui_hooks.overview_will_render_bottom.append(on_overview_bottom)
     gui_hooks.profile_will_close.append(on_profile_will_close)
