@@ -920,6 +920,13 @@ Don's decisions after trying step 1 in his real Anki (looks approved in mockup b
 - **Card title is the deck's own name** ("Lab 2", 13 px bold) with the exam on the same line at the right (it drops under a name too long to share the line). Under it, when the deck has a parent, the parent path in small gray 12 px text joined with " › ", wrapping but never cut off; top-level decks have no path line.
 - **Number alignment by baseline:** on decorated rows the New / Learn / Due cells use `vertical-align: baseline`, so their text sits on the deck name's baseline. Top alignment (polish 1) only matched when the name link had no padding of its own; the link's padding and line height pushed the name down about 7 px. Baseline needs no pixel offset, doesn't depend on the Redesign add-on's row height, and works in stock Anki. The gear cell stays top-aligned.
 
+### Hover polish 3 (2026-10-15)
+
+- **The card opens like a deck-name hover in the Redesign add-on** (its `DeckBrowser.css`: default `ease`, a 5 px drift, the movement slower than the fade). Polish 2's fast-start curve and scale are gone. Opacity 0 → 1 in 400 ms `ease`; the slide to rest takes 600 ms `ease`, so the card is still settling after it is fully visible. Slide distance 6 px (was 8), no scale. The direction still follows the cursor (`slideFrom`, unchanged apart from 6 px).
+- **One fade for the whole card (400 ms).** A separate, faster text fade over a slower box fade would show words on a still-transparent box (and the arrow and shadow would need their own fades), so the card fades as one piece.
+- **Close:** 150 ms, opacity only, `ease`, no slide, no clicks while fading. `prefers-reduced-motion`: no fade, no slide, the card just appears.
+- Durations, curve and distance are named constants in `exam_tracker.js` (`FADE_MS`, `SLIDE_MS`, `CLOSE_MS`, `EASE`, `SLIDE_PX`), handed to the CSS as variables.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
