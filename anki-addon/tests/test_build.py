@@ -37,7 +37,7 @@ def test_file_name_and_exact_file_list(built: Path) -> None:
         p.relative_to(ADDON_ROOT).as_posix()
         for p in (ADDON_ROOT / "recalldrill").rglob("*.py")
         if "__pycache__" not in p.parts
-    }
+    } | {p.relative_to(ADDON_ROOT).as_posix() for p in (ADDON_ROOT / "web").glob("*")}
     with zipfile.ZipFile(built) as z:
         names = z.namelist()
     assert sorted(names) == sorted(set(names))  # no duplicates
