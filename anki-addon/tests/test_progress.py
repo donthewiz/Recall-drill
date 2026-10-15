@@ -97,7 +97,10 @@ def test_drill_next_targets_the_next_layer_with_its_tag_or_the_next_subdeck() ->
     assert by_layer.by_layer and by_layer.next_row is not None and by_layer.next_row.layer == 2
     assert (by_layer.next_target, by_layer.next_tag) == (7, "Layer::2")
     # The tag is written as the skill writes it, whatever the note's own case.
-    cased = build_progress(7, "L", CHAPTERS, [card(1, 3, tags=()), card(2, None)], set())
+    cased = build_progress(
+        7, "L", CHAPTERS, [card(1, None, tags=("LAYER::3",)), card(2, None)], set()
+    )
+    assert cased.next_row is not None and cased.next_row.layer == 3
     assert cased.next_tag == "Layer::3"
     # A "No layer" row next: no tag (it has no layer to name).
     bare = build_progress(7, "L", CHAPTERS, [card(1, 1), card(2, None)], {1})

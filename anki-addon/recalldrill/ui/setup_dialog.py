@@ -152,6 +152,7 @@ class SetupDialog(QDialog):
         search: str | None = None,
         order: str | None = None,
         tag: str | None = None,
+        classes: frozenset[CardClass] | None = None,
     ) -> None:
         super().__init__(None, Qt.WindowType.Window)
         self.ctx = ctx
@@ -165,7 +166,9 @@ class SetupDialog(QDialog):
         self.scope = Scope(search=search) if search else Scope(deck_id=deck_id)
         self.draft: DeckSettings = {}
         self.settings_did: int | None = None
-        self.enabled: set[CardClass] = set(DEFAULT_ENABLED)
+        self.enabled: set[CardClass] = set(DEFAULT_ENABLED if classes is None else classes)
+        """Ticked card types: the default, or the caller's (Drill next: new cards only).
+        Not saved per deck, so this only sets the boxes once."""
         self.data: PanelData | None = None
         self.pacing_view: pacing.PacingView | None = None
         self._pacing_generation = 0
@@ -1303,8 +1306,9 @@ def open_setup(
     search: str | None = None,
     order: str | None = None,
     tag: str | None = None,
+    classes: frozenset[CardClass] | None = None,
 ) -> SetupDialog:
-    dialog = SetupDialog(ctx, deck_id, search, order, tag)
+    dialog = SetupDialog(ctx, deck_id, search, order, tag, classes)
     dialog.show()
     dialog.activateWindow()
     return dialog

@@ -784,7 +784,7 @@ tests run with `auto_advance_correct` off and `extra_display` "always".
 
 Session saves keep each note type's CSS once (`addon.css`, by note type id);
 `SourceRef.css` resolves on load, and old saves with CSS in every source still
-load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release; 0.3.0 on 2026-10-13: see "v0.3"; 0.3.1 on 2026-10-14: see "v0.3.1"; 0.3.2 on 2026-10-14: see "v0.3.1").
+load. `VERSION` 0.2.0 (0.2.1 on 2026-10-13: list chunk wording, 3-item lists, stale-only release; 0.3.0 on 2026-10-13: see "v0.3"; 0.3.1 on 2026-10-14: see "v0.3.1"; 0.3.2 on 2026-10-14: see "Drill next filters to the layer" under "v0.3.1").
 
 ## v0.3: whole-section drilling, exam dates, export (2026-10-13)
 
@@ -864,7 +864,10 @@ v0.3.0 failed that deck four ways: cards the skill added later (Layer 3 list-ite
 
 ### Drill next filters to the layer (v0.3.2, 2026-10-14)
 
-By layer, **Drill next** opens the chosen deck with Order = Deck order **and Only with tag = `Layer::N`** (`Progress.next_tag`, N from the Next row; written as the skill writes it, matched by Anki's case-insensitive exact `tag:` search); by subdeck it opens the next subdeck with no tag. The tag goes `SectionsDialog._go_next` → `entry.open_setup_for(deck, order, tag)` → `open_setup(..., tag)` → `SetupDialog`, applied once on the first load like the forced order. A session saved for the deck is keyed by deck only, so its banner stays and now says when it was built with another tag; Start fresh builds from the tagged selection.
+By layer, **Drill next** opens the chosen deck with Order = Deck order **and Only with tag = `Layer::N`** (`Progress.next_tag`, N from the Next row; written as the skill writes it, matched by Anki's case-insensitive exact `tag:` search); by subdeck it opens the next subdeck with no tag. The tag goes `SectionsDialog._go_next` → `entry.open_setup_for(deck, order, tag)` → `open_setup(..., tag)` → `SetupDialog`, applied once on the first load like the forced order. A session saved for the deck is keyed by deck only, so its banner stays and now says when it was built with another tag; Resume runs the saved cards; Start fresh builds from the tagged selection.
+
+- **Only the new card types.** Drill next also ticks only `new` and `suspended_new` (`select.PACE_CLASSES`), by layer and by subdeck. The table's "to go" counts new cards only, but the panel's default types include `young`, `lapsed`, `flagged` and `leech`, so a layer the add-on had partly drilled (handed off, then rated by Anki) came back with its reviews: the Layer 1 "4 to go" session would have picked its young, lapsed and flagged cards too. The ticked types are not saved per deck, so this sets the boxes for that panel only; ticking a review type adds the reviews back. A **"No layer"** Next row has no tag to fill, so the panel opens on the whole deck, and the new-only types are what keep it to the untagged notes (every numbered layer is done, so their new cards are drilled or released).
+- **Known gaps:** a note tagged `rd::undrilled` (released) that Anki hasn't introduced yet is still a `new` card, so the panel picks it although the table counts it done. Anki's `tag:Layer::1` also matches a child tag such as `Layer::1::x`, which `layer_of` reads as no layer. The skill writes neither.
 
 ### Hold back, two fixes
 
