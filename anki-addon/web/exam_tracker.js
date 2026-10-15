@@ -4,16 +4,22 @@
  * the flag is on). It reads the JSON block Python wrote, adds the status display inside each
  * listed row, and shows the hover card. It never touches the deck link, the gear or dragging.
  * Written as a plain script (no modules) and kept pure where it can be: placeCard() is
- * tested under node (tests/test_exam_tracker_demo.py).
+ * tested under node (tests/test_exam_tracker_demo.py), and so is slideFrom().
  */
 (function (root) {
   'use strict';
 
-  var SHOW_MS = 500; // pause before a hover card appears
-  var FADE_IN_MS = 150;
+  var SHOW_MS = 300; // pause before a hover card appears
   var HIDE_MS = 200; // pause before a card is dismissed after the mouse leaves
-  var FADE_OUT_MS = 100;
-  var SLIDE_PX = 4; // the card rises this far while fading in
+  // Motion, all in one place (handed to the CSS as variables on each card):
+  var OPEN_MS = 200; // opening: opacity, slide and scale together
+  var CLOSE_MS = 100; // closing: opacity only
+  var EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'; // velocity curve: fast start, soft landing
+  var SLIDE_PX = 8; // the card starts this far from its place (direction: slideFrom)
+  var START_SCALE = 0.97;
+  var SAMPLE_MS = 200; // keep mousemove samples this recent...
+  var MAX_SAMPLES = 6; // ...and at most this many
+  var MIN_MOVE = 4; // a cursor movement shorter than this counts as none
   var GAP = 6; // card to row when it opens below or above
   var SIDE_GAP = 10; // card to the table's right edge when it opens beside the list
   var MARGIN = 8; // keep this far inside the window
@@ -72,8 +78,29 @@
     return { left: left, top: top, side: side, arrow: arrow };
   }
 
+  /* The card's start offset {dx, dy} in px (it glides from there into place), from the cursor's
+   * recent `samples` [{x, y, t}] and the card's `openSide` ('right', 'below' or 'above').
+   * First-to-last vector, snapped to its dominant axis (ties go vertical); the card starts
+   * SLIDE_PX opposite to the movement. Under MIN_MOVE px, or with fewer than 2 samples, the
+   * default for the open side. No DOM. */
+  function slideFrom(samples, openSide) {
+    if (samples && samples.length >= 2) {
+      var a = samples[0];
+      var b = samples[samples.length - 1];
+      var vx = b.x - a.x;
+      var vy = b.y - a.y;
+      if (Math.sqrt(vx * vx + vy * vy) >= MIN_MOVE) {
+        if (Math.abs(vx) > Math.abs(vy)) return { dx: vx > 0 ? -SLIDE_PX : SLIDE_PX, dy: 0 };
+        return { dx: 0, dy: vy > 0 ? -SLIDE_PX : SLIDE_PX };
+      }
+    }
+    if (openSide === 'right') return { dx: -SLIDE_PX, dy: 0 };
+    if (openSide === 'above') return { dx: 0, dy: SLIDE_PX };
+    return { dx: 0, dy: -SLIDE_PX };
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { placeCard: placeCard };
+    module.exports = { placeCard: placeCard, slideFrom: slideFrom };
   }
   if (typeof document === 'undefined') return;
 
@@ -82,6 +109,7 @@
   var pinCard = null; // {did, el}
   var pointerKey = null;
   var focusKey = null;
+  var samples = []; // recent mousemove samples over the current row (cleared on leaving it)
   var showTimer = null;
   var hideTimer = null;
 
@@ -102,9 +130,10 @@
     wrap.innerHTML = data.decks[did].card; // built and escaped by Python
     var el = wrap.firstChild;
     el.setAttribute('data-did', did);
-    el.style.setProperty('--rd-fade-in', FADE_IN_MS + 'ms');
-    el.style.setProperty('--rd-fade-out', FADE_OUT_MS + 'ms');
-    el.style.setProperty('--rd-slide', SLIDE_PX + 'px');
+    el.style.setProperty('--rd-open-ms', OPEN_MS + 'ms');
+    el.style.setProperty('--rd-close-ms', CLOSE_MS + 'ms');
+    el.style.setProperty('--rd-ease', EASE);
+    el.style.setProperty('--rd-scale', String(START_SCALE));
     document.body.appendChild(el); // invisible and click-through until .rd-in is added
     return el;
   }
@@ -134,20 +163,26 @@
     el.style.top = p.top + 'px';
     el.style.setProperty('--rd-arrow', p.arrow + 'px');
     el.setAttribute('data-side', p.side);
+    return p.side;
   }
 
-  /* Fades the card in (opacity and a small rise); instant under reduced motion. */
-  function reveal(el) {
+  /* Opens the card: opacity, a slide from the cursor's direction (`moved` = use the samples;
+   * pinning and keyboard focus use the open side's default) and a scale. The CSS makes it
+   * instant under reduced motion. */
+  function reveal(el, side, moved) {
+    var from = slideFrom(moved ? samples : [], side);
+    el.style.setProperty('--rd-from-x', from.dx + 'px');
+    el.style.setProperty('--rd-from-y', from.dy + 'px');
     void el.offsetWidth; // commit the hidden state so the transition runs
     el.classList.add('rd-in');
   }
 
-  /* Fades the card out and removes it. It takes no clicks while it fades. */
+  /* Fades the card out (opacity only) and removes it. It takes no clicks while it fades. */
   function dismiss(el) {
     el.classList.remove('rd-in');
     el.classList.add('rd-out');
     if (reducedMotion()) el.remove();
-    else setTimeout(function () { el.remove(); }, FADE_OUT_MS);
+    else setTimeout(function () { el.remove(); }, CLOSE_MS);
   }
 
   function closeHover() {
@@ -171,14 +206,13 @@
     return row ? row.querySelector('.rd-pill') : null;
   }
 
-  function showHover(did) {
+  function showHover(did, moved) {
     if (!data.decks[did] || !rowFor(did)) return;
     if (pinCard && pinCard.did === did) return;
     if (hoverCard && hoverCard.did === did) return;
     closeHover();
     hoverCard = { did: did, el: makeCard(did) };
-    place(did, hoverCard.el);
-    reveal(hoverCard.el);
+    reveal(hoverCard.el, place(did, hoverCard.el), moved);
   }
 
   /* Shows the card at once (no show delay); a hover card already open becomes the pinned one. */
@@ -193,8 +227,7 @@
       closeHover();
       pinCard = { did: did, el: makeCard(did) };
       pinCard.el.classList.add('rd-pinned');
-      place(did, pinCard.el);
-      reveal(pinCard.el);
+      reveal(pinCard.el, place(did, pinCard.el), false);
     }
     var pill = pillFor(did);
     if (pill) pill.setAttribute('aria-pressed', 'true');
@@ -237,7 +270,7 @@
     showTimer = null;
     if (key !== null && !(pinCard && pinCard.did === key)) {
       showTimer = setTimeout(function () {
-        if (activeKey() === key) showHover(key);
+        if (activeKey() === key) showHover(key, focusKey === null);
       }, SHOW_MS);
     }
   }
@@ -251,7 +284,9 @@
   }
 
   function onOver(e) {
-    pointerKey = keyOf(e.target);
+    var key = keyOf(e.target);
+    if (key !== pointerKey) samples = []; // only what happened over the current row counts
+    pointerKey = key;
     focusKey = null; // the pointer took over from the keyboard
     sync();
   }
@@ -259,7 +294,17 @@
   function onOut(e) {
     if (!e.relatedTarget) {
       pointerKey = null;
+      samples = [];
       sync();
+    }
+  }
+
+  function onMove(e) {
+    if (pointerKey === null) return;
+    var t = e.timeStamp || Date.now();
+    samples.push({ x: e.clientX, y: e.clientY, t: t });
+    while (samples.length > MAX_SAMPLES || (samples.length > 1 && t - samples[0].t > SAMPLE_MS)) {
+      samples.shift();
     }
   }
 
@@ -268,7 +313,7 @@
     if (!pill) return;
     focusKey = keyOf(pill);
     clearTimers();
-    if (focusKey !== null) showHover(focusKey);
+    if (focusKey !== null) showHover(focusKey, false);
   }
 
   function onFocusOut(e) {
@@ -287,7 +332,7 @@
     clearTimers(); // pinning is immediate: no pending show or hide
     if (pinCard && pinCard.did === did) {
       unpin(true);
-      showHover(did);
+      showHover(did, false);
     } else {
       pin(did);
       send('rdet:pin:' + did);
@@ -324,6 +369,7 @@
     });
     document.addEventListener('mouseover', onOver);
     document.addEventListener('mouseout', onOut);
+    document.addEventListener('mousemove', onMove);
     document.addEventListener('focusin', onFocusIn);
     document.addEventListener('focusout', onFocusOut);
     document.addEventListener('click', onClick);

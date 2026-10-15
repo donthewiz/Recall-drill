@@ -190,14 +190,28 @@ def row_html(deck_name: str, f: Fake, *, via: str | None, level: int) -> str:
     )
 
 
+PATH_SEP = " › "
+
+
+def title_html(deck_name: str, exam: str) -> str:
+    """The card's head: the deck's own name (bold) with the exam at the right, and under it, when
+    the deck has a parent, the parent path in small gray text. Every part is escaped."""
+    *parents, leaf = deck_name.split("::")
+    path = f'<div class="rd-card-path">{_e(PATH_SEP.join(parents))}</div>' if parents else ""
+    return (
+        '<div class="rd-card-head"><div class="rd-card-line">'
+        f'<strong class="rd-card-title">{_e(leaf)}</strong>'
+        f'<span class="rd-card-exam">{_e(exam)}</span></div>{path}</div>'
+    )
+
+
 def card_html(deck_name: str, f: Fake) -> str:
     """The hover card. The footer says TEST so the numbers can't pass as real."""
     split = f"{_n(f.drill)} drill · {_n(f.new)} new · {_n(f.reviews)} reviews"
     return (
         f'<div class="rd-card rd-{f.status}" role="dialog"'
         f' aria-label="Exam details: {_e(deck_name)}">'
-        f'<div class="rd-card-head"><strong class="rd-card-title">{_e(deck_name)}</strong>'
-        f'<span class="rd-card-exam">{_e(f.exam)}</span></div>'
+        f"{title_html(deck_name, f.exam)}"
         '<div class="rd-card-nums">'
         f"<div><b>{_n(f.cards_left)}</b><span>left</span></div>"
         f"<div><b>{f.needed_a_day}</b><span>a day</span></div>"

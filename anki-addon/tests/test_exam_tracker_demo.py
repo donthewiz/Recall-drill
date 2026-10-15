@@ -161,6 +161,44 @@ def test_a_deck_with_its_own_entry_shows_it_even_with_children() -> None:
     assert set(et.build_payload(et.rows_from_tree(top), None)["decks"]) == {"1"}
 
 
+@pytest.mark.parametrize(
+    ("did", "leaf", "path"),
+    [
+        ("13", "Lab 2", "Human Anatomy &amp; Physiology 1 › Lab"),
+        (
+            "22",
+            "Muscle Tissue Chapter 10",
+            "Human Anatomy &amp; Physiology 1 › Lecture › Lecture 3",
+        ),
+        ("40", "Medical Terminology", None),
+    ],
+)
+def test_card_title_is_the_leaf_with_the_parent_path_under_it(
+    did: str, leaf: str, path: str | None
+) -> None:
+    card = payload(**OPEN)["decks"][did]["card"]
+    assert f'<strong class="rd-card-title">{leaf}</strong>' in card
+    assert '<span class="rd-card-exam">' in card  # the exam stays on the title line
+    if path is None:
+        assert "rd-card-path" not in card  # a top-level deck has no path line
+    else:
+        assert f'<div class="rd-card-path">{path}</div>' in card
+        head = card[card.index("rd-card-head") : card.index("rd-card-nums")]
+        assert "::" not in head  # the raw path never shows in the title
+        assert card.index("rd-card-title") < card.index("rd-card-path")
+
+
+def test_card_title_escapes_every_part() -> None:
+    f = et.FAKE["Medical Terminology"]
+    amp = et.card_html("A & B::C & D", f)
+    assert '<div class="rd-card-path">A &amp; B</div>' in amp
+    assert '<strong class="rd-card-title">C &amp; D</strong>' in amp
+    nasty = et.card_html("<script>x</script>::<script>y</script>", f)
+    assert "<script>" not in nasty
+    assert '<div class="rd-card-path">&lt;script&gt;x&lt;/script&gt;</div>' in nasty
+    assert '<strong class="rd-card-title">&lt;script&gt;y&lt;/script&gt;</strong>' in nasty
+
+
 def test_deck_names_are_escaped() -> None:
     f = et.FAKE["Medical Terminology"]
     nasty = '<script>alert(1)</script> & "q"'
@@ -449,6 +487,55 @@ def test_place_card_beside_then_below_then_above(
         )
 
 
+def slide(samples: list[tuple[int, int]], side: str) -> Any:
+    pts = [{"x": x, "y": y, "t": i * 20} for i, (x, y) in enumerate(samples)]
+    script = (
+        "const m={exports:{}};"
+        "require('vm').runInNewContext(require('fs').readFileSync(process.argv[1],'utf8'),"
+        "{module:m});const {slideFrom}=m.exports;"
+        "const a=JSON.parse(process.argv[2]);"
+        "console.log(JSON.stringify(slideFrom(a.samples,a.side)));"
+    )
+    out = subprocess.run(
+        ["node", "-e", script, str(JS), json.dumps({"samples": pts, "side": side})],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(out.stdout)
+
+
+@NO_NODE
+@pytest.mark.parametrize(
+    ("samples", "side", "expect"),
+    [
+        ([(100, 100), (100, 130)], "right", {"dx": 0, "dy": -8}),  # moving down: starts higher
+        ([(100, 130), (100, 100)], "right", {"dx": 0, "dy": 8}),  # moving up: starts lower
+        ([(100, 100), (130, 100)], "below", {"dx": -8, "dy": 0}),  # moving right: starts left
+        ([(130, 100), (100, 100)], "below", {"dx": 8, "dy": 0}),  # moving left: starts right
+        ([(100, 100), (120, 110)], "right", {"dx": -8, "dy": 0}),  # diagonal: x dominates
+        ([(100, 100), (110, 125)], "right", {"dx": 0, "dy": -8}),  # diagonal: y dominates
+        ([(100, 100), (110, 90)], "right", {"dx": 0, "dy": 8}),  # tie: vertical (up)
+        ([(100, 100), (110, 110)], "right", {"dx": 0, "dy": -8}),  # tie: vertical (down)
+        ([(100, 100), (102, 102)], "right", {"dx": -8, "dy": 0}),  # under 4 px: default
+        ([(100, 100), (103, 100)], "above", {"dx": 0, "dy": 8}),  # under 4 px: default
+        ([(100, 100), (104, 100)], "right", {"dx": -8, "dy": 0}),  # exactly 4 px counts
+        ([(100, 100)], "below", {"dx": 0, "dy": -8}),  # one sample: default
+        ([], "right", {"dx": -8, "dy": 0}),  # none: right
+        ([], "below", {"dx": 0, "dy": -8}),  # none: below
+        ([], "above", {"dx": 0, "dy": 8}),  # none: above
+        # reverses: first -> last wins (net down 10 px, though it went down 40 then up 30)
+        ([(100, 100), (100, 140), (100, 110)], "right", {"dx": 0, "dy": -8}),
+        # reverses to a net tiny movement: default
+        ([(100, 100), (100, 140), (100, 101)], "above", {"dx": 0, "dy": 8}),
+    ],
+)
+def test_slide_from_follows_the_cursor(
+    samples: list[tuple[int, int]], side: str, expect: dict[str, int]
+) -> None:
+    assert slide(samples, side) == expect
+
+
 def test_js_has_no_eval_and_only_the_one_screen_hooks() -> None:
     text = JS.read_text(encoding="utf-8")
     assert not re.search(r"\beval\s*\(|new Function|document\.write", text)
@@ -457,14 +544,19 @@ def test_js_has_no_eval_and_only_the_one_screen_hooks() -> None:
 def test_timing_constants_are_named_in_the_js() -> None:
     text = JS.read_text(encoding="utf-8")
     for name, value in (
-        ("SHOW_MS", 500),
-        ("FADE_IN_MS", 150),
+        ("SHOW_MS", 300),
         ("HIDE_MS", 200),
-        ("FADE_OUT_MS", 100),
-        ("SLIDE_PX", 4),
+        ("OPEN_MS", 200),
+        ("CLOSE_MS", 100),
+        ("SLIDE_PX", 8),
+        ("START_SCALE", 0.97),
+        ("SAMPLE_MS", 200),
+        ("MAX_SAMPLES", 6),
+        ("MIN_MOVE", 4),
         ("SIDE_GAP", 10),
     ):
-        assert re.search(rf"var {name} = {value};", text), name
+        assert re.search(rf"var {name} = {re.escape(str(value))};", text), name
+    assert "var EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';" in text
     assert "stale" not in text and "tests/test_exam_tracker_demo.py" in text
     assert "test_exam_tracker_js" not in text
 
@@ -483,13 +575,41 @@ def test_css_size_motion_and_row_alignment() -> None:
     ):
         assert rule in card, rule
     assert ".rd-card.rd-in" in css and "pointer-events: auto" in css
+    # the card starts displaced by the cursor-direction variables and scaled down
+    assert "translate(var(--rd-from-x, 0), var(--rd-from-y, 0)) scale(var(--rd-scale, 1))" in card
+    opening = css[css.index(".rd-card.rd-in {") :]
+    assert "var(--rd-open-ms) var(--rd-ease)" in opening[: opening.index("}")]
+    # closing: opacity only (no transform transition), and still click-through
+    closing = css[css.index(".rd-card.rd-out {") :]
+    closing = closing[: closing.index("}")]
+    assert "transition: opacity var(--rd-close-ms)" in closing and "pointer-events: none" in closing
+    assert "transform: none" in closing and "transform var" not in closing
     reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
+    reduced = reduced[: reduced.index("\n}")]
     assert "transition: none" in reduced and "transform: none" in reduced
-    assert re.search(r"tr\.deck\.rd-has-et > td \{ vertical-align: top !important; \}", css)
+    assert ".rd-card.rd-out" in reduced  # no fade, slide or scale: it just appears
+    # the numbers sit on the deck name's baseline: no pixel offset, no Redesign-specific height
+    align = re.search(r"table tr\.deck\.rd-has-et > td \{([^}]*)\}", css)
+    assert align is not None and "vertical-align: baseline !important" in align.group(1)
+    assert not re.search(r"(padding|margin|top|height)[^;{}]*\d+px[^;{}]*;", align.group(1))
+    assert "table tr.deck.rd-has-et > td.opts { vertical-align: top !important; }" in css
     sizes = [int(x) for x in re.findall(r"font-size: (\d+)px", css)]
     assert min(sizes) >= 11  # the 11px is only the pill's tiny icon glyph
     for sel in (".rd-card-exam", ".rd-card-nums span", ".rd-card-split", ".rd-card-test"):
         assert re.search(re.escape(sel) + r"[^}]*font-size: 12px", css), sel
+
+
+def test_js_hands_the_motion_constants_to_the_css() -> None:
+    text = JS.read_text(encoding="utf-8")
+    for var, const in (
+        ("--rd-open-ms", "OPEN_MS"),
+        ("--rd-close-ms", "CLOSE_MS"),
+        ("--rd-ease", "EASE"),
+        ("--rd-scale", "START_SCALE"),
+    ):
+        assert re.search(rf"setProperty\('{var}', [^;]*{const}", text), var
+    assert "'--rd-from-x'" in text and "'--rd-from-y'" in text
+    assert "mousemove" in text
 
 
 def test_payload_shape_is_unchanged() -> None:
