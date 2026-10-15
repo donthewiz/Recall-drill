@@ -26,6 +26,10 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.3.2 + exam tracker test (unreleased)
+
+- **Exam tracker hover test (off by default, fake numbers).** Tools → **Recall Drill: exam tracker test** turns on a preview of the exam tracker that is coming in 0.4. On Anki's main deck screen, three decks (AP Lab → Lab 2, Human A&P → Lecture 3 → Muscle Tissue Chapter 10, and Medical Terminology) get a status tag ("Behind", "Slightly behind", "On pace"), a thin progress bar, "N days left" and a line like "61 a day needed · 18 done today". Hover a row for a small card with the numbers; click the status tag to keep the card open (click again to close; Esc closes too). A collapsed parent deck shows its worst child's status. **All numbers are made up and say TEST. Nothing is read from or written to your collection**, and nothing about how a card is drilled changed. Switch it off the same way; nothing needs a restart. Real numbers come in the next step.
+
 ## What's new in 0.3.2
 
 - **Drill next now drills only the next layer.** In a deck with layers, **Drill next** opens the setup panel in Deck order with **Only with tag** already set to `Layer::N` for the layer marked Next, so the panel counts just that layer's cards instead of the whole deck. It also ticks only the **new** and **suspended new** card types, so the session is the cards the table counts as "to go" and no reviews (young, lapsed, flagged); tick them in the panel to add them. A deck without layers still opens the next subdeck.

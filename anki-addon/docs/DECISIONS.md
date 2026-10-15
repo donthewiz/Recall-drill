@@ -875,6 +875,31 @@ By layer, **Drill next** opens the chosen deck with Order = Deck order **and Onl
 - **Repair already-held undrillable cards.** The same plan finds cards currently held (new, suspended, note tagged `rd::held`, in the deck) that the drill can't take. Applying it **unsuspends** them and removes `rd::held` from notes with no held card left (a note keeps the tag while another of its cards stays held), in the same undo step, "Recall Drill: hold back". The button shows whenever the plan has any change, labelled "Hold back N / release K undrillable" ("Release K undrillable" when N is 0). Every hold-back writes a `type: "holdback"` line to the deck's history with `groups` `held`, `released_undrillable` and `left_alone_undrillable` and the `rd::held` tags added and removed (nothing else reads these lines).
 - **Stale rule** (`waiting.is_stale`; refines "Waiting cards and release"). A waiting card whose note is tagged `rd::held`, or that sits in a deck where hold back is on (its own setting or a parent's), is **never stale by age**: it is stale only when its exam date (`exam.py` inheritance) has passed or the pacing rule (`pacing_stale`) says so. Skill-tagged `rd::drill` cards in decks without hold back keep the age rule (`stale_drill_days`), so the daily notice no longer nags about a deck held back today and "Send to Anki undrilled → Stale only" no longer releases it.
 
+## v0.4 exam tracker (2026-10-15)
+
+Decided by Don, 2026-10-15: **a visual exam tracker on Anki's main deck screen.** `VERSION` stays 0.3.2 until step 2 sets 0.4.0. Add-on only: no change under `recalldrill/engine/`, `src/` or `tests/golden/`, and nothing about how a card is drilled. No scheduler inside the drill, typed recall only, handoff B.
+
+### Decisions
+
+- **Layout:** a hover card on the deck list. Top-level decks are shown collapsed, so a collapsed parent row shows its **worst descendant's** status (red beats amber beats green); an expanded parent shows nothing and its child rows show their own.
+- **The main glance:** a green / amber / red answer to "am I on pace?": a status pill (icon plus word, never colour alone: "On pace", "Slightly behind", "Behind"), a thin progress bar (done, drill-to-go, new, reviews due), "N days left", and the line "61 a day needed · 18 done today".
+- **"Cards left" counts everything before the exam:** drill-to-go + new + reviews due, **even cards Anki isn't offering today** (held, suspended, not yet introduced).
+- **Card contents** (about 340 px, floating over the rows below, nothing under it moves): title (deck name) and exam on the first line; three numbers (cards left, needed a day, done today); one line with the split and "Est. N min today".
+- **Hover, then pin:** the card appears after about 250 ms of hover and closes shortly after the pointer leaves the row and the card; **clicking the status pill pins it open** (click again to close; one pinned at a time). Clicking the deck name still opens the deck.
+- **No study button for now.** A "Study now" button, shown only on Behind decks, is saved for a later build.
+- **A missed day spreads over the days left** instead of piling up as "overdue".
+- **Phone support** is a later Drive copy.
+
+### Step 1: the hover test (fake numbers, off by default)
+
+Step 1 is a throwaway proof that the display looks and behaves right on Don's deck screen (Anki 26.08.1 with the "Anki Redesign - Fixed by Shige" add-on and Review Heatmap). **It draws three fixed fake rows (`AP Lab::Lab 2` red, `Human A&P::Lecture 3::Muscle Tissue Chapter 10` amber, `Medical Terminology` green), labelled TEST in the card, keyed by deck name. It reads and writes nothing in the collection and makes no network call.** Config `exam_tracker_test` (default false) and Tools → "Recall Drill: exam tracker test" (toggles it and redraws, no restart). Off: the deck screen is Anki's own, byte for byte.
+
+- **One Python module, one JS, one CSS:** `recalldrill/ui/exam_tracker_demo.py` (the `FAKE` table, the HTML builder, the hooks), `web/exam_tracker.js`, `web/exam_tracker.css` (web exports; `build.py` packages `web/`). Step 2 replaces `FAKE` with real numbers and keeps the rest.
+- **Injection** (checked on 26.08.1): `deck_browser_will_render_content` runs on every render of the deck screen (after studying, sync, collapse, expand), so the display comes back each time. It appends one `<script type="application/json">` block to the stats section holding, per deck id, the row display and card HTML built in Python (every deck name `html.escape`d, the JSON's `<`, `>`, `&` escaped), and the pinned deck. The tree it walks is the one Anki already holds in memory for that render. `webview_will_set_content` adds the two web-export files to the deck browser's web view only. The script finds each row by its `<tr id="deck id">` (the id stock Anki writes) and appends the display inside the deck cell; the card is a `position: fixed` element on `<body>`, so the Redesign add-on's table CSS (narrowed table, rounded rows, hover padding) and the heatmap cannot clip or move it. The deck link's own `onclick`, the gear and dragging are untouched.
+- **Pin in memory only:** the page sends `pycmd("rdet:pin:<id>")` / `rdet:unpin` (`webview_did_receive_js_message`, deck browser only); Python keeps the id and puts it in the next render, so a pinned card survives a redraw. A pin on a row that no longer exists is dropped silently. Turning the test off forgets it.
+- **Keep on screen** (`placeCard`, pure, tested under node): below the row when it fits above the window's bottom edge, else above, else the side with more room, pulled inside the window; shifted left when too wide, never cut off.
+- Keyboard: the pill is a focusable `<button>` (`aria-pressed`); focus shows the card; Esc closes it and unpins.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
@@ -890,7 +915,7 @@ A TS change alone fails the drift guard. Regenerated goldens without the Python 
 
 A local `.ankiaddon`, no AnkiWeb publishing (Don, 2026-10-02). `python anki-addon/build.py` writes `anki-addon/dist/recall_drill-<human_version>.ankiaddon` (`dist/` is gitignored), a zip of the add-on folder's **contents**, no top-level folder.
 
-- **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
+- **In the package:** `__init__.py`, `manifest.json`, `config.json`, `config.md`, `recalldrill/**/*.py`, `web/exam_tracker.js` and `.css` (v0.4 step 1), `user_files/README.txt`. Nothing else: no tests, tools, docs, `.venv`, `meta.json`, `pyproject.toml`, `requirements-dev.txt`, `build.py`, and nothing else from `user_files/` (that is the user's data).
 - **Manifest** (generated, not copied): `package` `recall_drill`, `name` `Recall Drill`, `min_point_version` from the source `manifest.json` (260801, see Versions), `human_version` from `VERSION` in `recalldrill/__init__.py` (0.3.2), `mod` the build time. `tests/test_package.py` keeps the source manifest and `VERSION` equal.
 - **The build refuses** to run on a dirty git tree (`--allow-dirty`, used by `tests/test_build.py`) and when `pytest tests/engine -q` fails (`--skip-tests`, same). Entries get a fixed timestamp, so the same sources give the same bytes apart from the manifest's `mod`.
 - **Installing:** Tools → Add-ons → Install from file. Anki installs it as `recall_drill`, next to the dev junction `recall_drill_dev`; **don't install while the junction exists** (see Dev install). Anki keeps `user_files/` and `meta.json` (the add-on's config) on upgrade.
