@@ -885,7 +885,7 @@ Decided by Don, 2026-10-15: **a visual exam tracker on Anki's main deck screen.*
 - **The main glance:** a green / amber / red answer to "am I on pace?": a status pill (icon plus word, never colour alone: "On pace", "Slightly behind", "Behind"), a thin progress bar (done, drill-to-go, new, reviews due), "N days left", and the line "61 a day needed · 18 done today".
 - **"Cards left" counts everything before the exam:** drill-to-go + new + reviews due, **even cards Anki isn't offering today** (held, suspended, not yet introduced).
 - **Card contents** (280 px after the 2026-10-15 polish, floating beside the list, nothing under it moves): title (deck name) and exam on the first line; three numbers (cards left, needed a day, done today); one line with the split and "Est. N min today".
-- **Hover, then pin:** the card appears after about 500 ms of hover (250 ms before the polish) and closes shortly after the pointer leaves the row and the card; **clicking the status pill pins it open** (click again to close; one pinned at a time). Clicking the deck name still opens the deck.
+- **Hover, then pin:** the card appears after about 300 ms of hover (500 ms in polish 1, 250 ms before) and closes shortly after the pointer leaves the row and the card; **clicking the status pill pins it open** (click again to close; one pinned at a time). Clicking the deck name still opens the deck.
 - **No study button for now.** A "Study now" button, shown only on Behind decks, is saved for a later build.
 - **A missed day spreads over the days left** instead of piling up as "overdue".
 - **Phone support** is a later Drive copy.
@@ -911,6 +911,14 @@ Don's decisions after trying step 1 in his real Anki (looks approved in mockup b
 - **New / Learn / Due numbers line up with the deck name** on decorated rows (top-aligned cells, so it doesn't depend on the Redesign add-on's row padding).
 - **Fake data keys follow Don's renamed decks** (`Human Anatomy & Physiology 1::Lab::Lab 2`, `...::Lecture::Lecture 3::Muscle Tissue Chapter 10`, `Medical Terminology`). The real tracker (step 2) must key by **deck id**, not name, so renames don't break it.
 - **"Study now" stays saved for later**, as decided above.
+
+### Hover polish 2 (2026-10-15, after trying polish 1 in the real Anki)
+
+- **300 ms show delay** (was 500; it felt laggy). Hide delay stays about 200 ms; pinning still shows at once.
+- **Velocity curve:** opens in 200 ms with `cubic-bezier(0.16, 1, 0.3, 1)` (fast start, soft landing): opacity 0 → 1, a slide of 8 px and a scale from 0.97 to 1. Closes in 100 ms, opacity only (no slide or scale), taking no clicks. `prefers-reduced-motion`: the card just appears; delay unchanged. The curve, durations, slide and scale are named constants in `exam_tracker.js`, handed to the CSS as variables.
+- **The slide follows the cursor.** The last 6 `mousemove` samples within about 200 ms over the hovered row are kept; `slideFrom(samples, openSide)` (pure, tested under node) takes the first → last vector, snaps to the dominant axis (ties vertical) and starts the card 8 px opposite the movement (moving down: starts higher; moving right: starts to the left). Under 4 px of movement or fewer than 2 samples: the open side's default (right: 8 px left; below: 8 px higher; above: 8 px lower). Samples clear when the cursor changes row. Pinning and keyboard focus use the defaults.
+- **Card title is the deck's own name** ("Lab 2", 13 px bold) with the exam on the same line at the right (it drops under a name too long to share the line). Under it, when the deck has a parent, the parent path in small gray 12 px text joined with " › ", wrapping but never cut off; top-level decks have no path line.
+- **Number alignment by baseline:** on decorated rows the New / Learn / Due cells use `vertical-align: baseline`, so their text sits on the deck name's baseline. Top alignment (polish 1) only matched when the name link had no padding of its own; the link's padding and line height pushed the name down about 7 px. Baseline needs no pixel offset, doesn't depend on the Redesign add-on's row height, and works in stock Anki. The gear cell stays top-aligned.
 
 ## Changing the engine now
 
