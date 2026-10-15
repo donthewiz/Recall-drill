@@ -88,8 +88,8 @@ table tr.deck.rd-has-et > td { vertical-align: baseline !important; }
 table tr.deck.rd-has-et > td.opts { vertical-align: top !important; }
 
 /* The card floats on <body>; nothing under it moves. Hidden (not yet shown, or fading out) it
- * takes no clicks. The curve, durations, start scale (--rd-ease, --rd-open-ms, --rd-close-ms,
- * --rd-scale) and start offset (--rd-from-x / -y, from the cursor's direction) are set on each
+ * takes no clicks. The curve, durations (--rd-ease, --rd-fade-ms, --rd-slide-ms,
+ * --rd-close-ms) and start offset (--rd-from-x / -y, from the cursor's direction) are set on each
  * card by exam_tracker.js, where the numbers live. */
 .rd-card {
   position: fixed;
@@ -108,7 +108,7 @@ table tr.deck.rd-has-et > td.opts { vertical-align: top !important; }
   border-radius: 10px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   opacity: 0;
-  transform: translate(var(--rd-from-x, 0), var(--rd-from-y, 0)) scale(var(--rd-scale, 1));
+  transform: translate(var(--rd-from-x, 0), var(--rd-from-y, 0));
   pointer-events: none;
 }
 .rd-card.rd-in {
@@ -116,15 +116,15 @@ table tr.deck.rd-has-et > td.opts { vertical-align: top !important; }
   transform: none;
   pointer-events: auto;
   transition:
-    opacity var(--rd-open-ms) var(--rd-ease),
-    transform var(--rd-open-ms) var(--rd-ease);
+    opacity var(--rd-fade-ms) var(--rd-ease),
+    transform var(--rd-slide-ms) var(--rd-ease);
 }
-/* Closing: opacity only, no slide or scale, and no clicks while it fades. */
+/* Closing: opacity only, no slide, and no clicks while it fades. */
 .rd-card.rd-out {
   opacity: 0;
   transform: none;
   pointer-events: none;
-  transition: opacity var(--rd-close-ms) linear;
+  transition: opacity var(--rd-close-ms) var(--rd-ease);
 }
 @media (prefers-reduced-motion: reduce) {
   .rd-card,

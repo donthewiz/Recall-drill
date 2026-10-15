@@ -12,11 +12,13 @@
   var SHOW_MS = 300; // pause before a hover card appears
   var HIDE_MS = 200; // pause before a card is dismissed after the mouse leaves
   // Motion, all in one place (handed to the CSS as variables on each card):
-  var OPEN_MS = 200; // opening: opacity, slide and scale together
-  var CLOSE_MS = 100; // closing: opacity only
-  var EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'; // velocity curve: fast start, soft landing
-  var SLIDE_PX = 8; // the card starts this far from its place (direction: slideFrom)
-  var START_SCALE = 0.97;
+  // The opening copies the Redesign add-on's deck-name hover: the default `ease`, a small
+  // drift, and a drift slower than the fade, so the card is still settling once it is visible.
+  var FADE_MS = 400; // opening: opacity
+  var SLIDE_MS = 600; // opening: the drift into place (longer than the fade)
+  var CLOSE_MS = 150; // closing: opacity only
+  var EASE = 'ease';
+  var SLIDE_PX = 6; // the card starts this far from its place (direction: slideFrom)
   var SAMPLE_MS = 200; // keep mousemove samples this recent...
   var MAX_SAMPLES = 6; // ...and at most this many
   var MIN_MOVE = 4; // a cursor movement shorter than this counts as none
@@ -130,10 +132,10 @@
     wrap.innerHTML = data.decks[did].card; // built and escaped by Python
     var el = wrap.firstChild;
     el.setAttribute('data-did', did);
-    el.style.setProperty('--rd-open-ms', OPEN_MS + 'ms');
+    el.style.setProperty('--rd-fade-ms', FADE_MS + 'ms');
+    el.style.setProperty('--rd-slide-ms', SLIDE_MS + 'ms');
     el.style.setProperty('--rd-close-ms', CLOSE_MS + 'ms');
     el.style.setProperty('--rd-ease', EASE);
-    el.style.setProperty('--rd-scale', String(START_SCALE));
     document.body.appendChild(el); // invisible and click-through until .rd-in is added
     return el;
   }
@@ -167,7 +169,7 @@
   }
 
   /* Opens the card: opacity, a slide from the cursor's direction (`moved` = use the samples;
-   * pinning and keyboard focus use the open side's default) and a scale. The CSS makes it
+   * pinning and keyboard focus use the open side's default). The CSS makes it
    * instant under reduced motion. */
   function reveal(el, side, moved) {
     var from = slideFrom(moved ? samples : [], side);
