@@ -104,6 +104,8 @@ PURE_MODULES = (
     "math_vendor.py",
     "math_parse.py",
     "math_answer.py",
+    "math_input.py",
+    "web_exports.py",
 )
 
 

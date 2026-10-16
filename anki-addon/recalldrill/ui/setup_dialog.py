@@ -352,6 +352,10 @@ class SetupDialog(QDialog):
         self.unrated_label = style.note(kind="warn")
         self.unrated_label.setVisible(False)
         self.warnings.addWidget(self.unrated_label)
+        # v0.6: cards tagged rd::math without a usable MathAnswer.
+        self.math_label = style.note(kind="warn")
+        self.math_label.setVisible(False)
+        self.warnings.addWidget(self.math_label)
         self.difficulty_label = style.text_label(kind="muted")
         cl.addWidget(self.difficulty_label)
         srow = QHBoxLayout()
@@ -677,7 +681,11 @@ class SetupDialog(QDialog):
         cards, settings, pace, scope = (self.folds[k] for k in FOLD_KEYS)
         cards.set_summary(
             setup_summary.cards_summary(
-                tag, ticked, self.order.currentText(), self.max_cards.value()
+                tag,
+                ticked,
+                self.order.currentText(),
+                self.max_cards.value(),
+                self.data.selection.math_cards if self.data is not None else 0,
             )
         )
         settings.set_summary(
@@ -700,7 +708,12 @@ class SetupDialog(QDialog):
         cards.set_warning(
             any(
                 not w.isHidden()
-                for w in (self.sibling_label, self.waiting_label, self.unrated_label)
+                for w in (
+                    self.sibling_label,
+                    self.waiting_label,
+                    self.unrated_label,
+                    self.math_label,
+                )
             )
             or (data is not None and not data.drillable)
         )
@@ -990,6 +1003,9 @@ class SetupDialog(QDialog):
         self.waiting_label.setVisible(bool(data.waiting_line))
         self.unrated_label.setText(f"⚠ {data.unrated_line}" if data.unrated_line else "")
         self.unrated_label.setVisible(bool(data.unrated_line))
+        gap = setup_summary.math_gap_line(sel.math_gaps)
+        self.math_label.setText(f"⚠ {gap}" if gap else "")
+        self.math_label.setVisible(bool(gap))
 
         b = data.build
         lines = [

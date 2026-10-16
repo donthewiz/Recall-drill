@@ -39,6 +39,7 @@ from datetime import date
 from typing import Any, Protocol, cast
 
 from .. import exam_tracker as rules
+from .. import web_exports
 from ..addon_config import parse_config
 from ..exam_tracker import STATUS_ICON, STATUS_WORD, Status, TrackerNumbers
 from ..pacing import short_date
@@ -52,8 +53,9 @@ LABEL = "Exam tracker on deck screen"
 DATA_ID = "rd-exam-tracker-data"
 PIN_PREFIX = "rdet:pin:"
 UNPIN_CMD = "rdet:unpin"
-WEB_PATTERN = r"web/exam_tracker\.(js|css)"
-"""Regex for ``setWebExports``: only the two tracker files are served."""
+WEB_PATTERN = web_exports.PATTERN
+"""Regex for ``setWebExports``: the tracker's two files, and the math field's files (Anki keeps one
+pattern per add-on, so the one in ``web_exports`` covers both)."""
 
 _RANK: dict[Status, int] = {"exam": 0, "green": 1, "amber": 2, "red": 3}
 """Which status a collapsed parent shows: the worst one below it. An exam today is neutral,

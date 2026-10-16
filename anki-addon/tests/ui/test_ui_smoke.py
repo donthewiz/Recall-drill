@@ -2923,3 +2923,296 @@ def test_tools_sections_entry_hands_drill_next_the_direct_start(
     entry.open_sections()
     ((_ctx, open_setup, did, drill_next),) = got
     assert did == 5 and open_setup is entry.open_setup_for and drill_next is entry.drill_next
+
+
+# --- v0.6: math answer mode ----------------------------------------------------------------
+#
+# The math field is a second web view (the page itself is exercised in a real browser by
+# tests/ui/test_math_palette.py). Here the view is a recording stand-in and the "page" speaks
+# to the window the way the page's script does: ``rd:math:<latex>`` and the drill's key commands.
+
+
+@pytest.fixture
+def math_env(window_env: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    from aqt.qt import QWidget
+
+    from recalldrill.ui import drill_window
+
+    made: list[Any] = []
+
+    class RecWeb(QWidget):
+        def __init__(self, parent: QWidget | None = None, title: str = "") -> None:
+            super().__init__(parent)
+            self.title = title
+            self.evals: list[str] = []
+            self.shell = ""
+            self.kw: dict[str, Any] = {}
+            self.focused = 0
+            made.append(self)
+
+        def set_bridge_command(self, fn: Any, context: object) -> None:
+            self.bridge = fn
+
+        def stdHtml(self, body: str, **kw: Any) -> None:  # noqa: N802
+            self.shell, self.kw = body, kw
+
+        def eval(self, js: str) -> None:
+            self.evals.append(js)
+
+        def setFocus(self, *a: Any, **kw: Any) -> None:  # noqa: N802
+            self.focused += 1
+            super().setFocus(*a, **kw)
+
+        def cleanup(self) -> None:
+            pass
+
+    monkeypatch.setattr(drill_window, "AnkiWebView", RecWeb)
+    return type("MathEnv", (), {"tmp": window_env, "webs": made})()
+
+
+def _math_window(env: Any, cards: list[Any], settings: Any = None, **cfg: object) -> Any:
+    """A drill window over ``cards``: a plain card is ``(front, back)``, a math card
+    ``(front, MathAnswer, extra)``."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "controller"))
+    from controller_support import Clock, config, source
+
+    from recalldrill import sessions
+    from recalldrill.addon_config import DEFAULT_CONFIG
+    from recalldrill.controller import ControllerSettings
+    from recalldrill.math_answer import engine_target
+    from recalldrill.storage import Storage
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.drill_window import DrillWindow
+
+    deck: list[Any] = []
+    sources: list[Any] = []
+    for i, card in enumerate(cards):
+        if len(card) == 2:
+            deck.append({"front": card[0], "back": card[1]})
+            sources.append(source(i))
+        else:
+            item: dict[str, Any] = {"front": card[0], "back": engine_target(card[1])}
+            if card[2]:
+                item["extra"] = card[2]
+            deck.append(item)
+            sources.append(source(i, math_target=card[1]))
+    st = Storage(env.tmp, "p")
+    ctrl, store = sessions.start_session(
+        st,
+        key="deck-m",
+        deck_items=deck,
+        sources=sources,
+        config=config(**cfg),  # type: ignore[arg-type]
+        scope=sessions.scope_json(deck_id=1),
+        select_options={},
+        deck_settings={},
+        hints=False,
+        settings=settings or ControllerSettings(deck_name="Algebra"),
+        now_ms=Clock(),
+    )
+    ctx = AddonContext("recall_drill", str(env.tmp))
+    ctx.storage = lambda: st  # type: ignore[method-assign]
+    ctx.config = lambda: DEFAULT_CONFIG  # type: ignore[method-assign]
+    w = DrillWindow(ctx, ctrl, store)
+    w.start()
+    return w
+
+
+def _page_value(w: Any, latex: str) -> None:
+    """The math page reports its value, as its script does on every change."""
+    w.math_web.bridge(f"rd:math:{latex}")
+
+
+def _last_render(w: Any) -> dict[str, Any]:
+    import json
+
+    call = next(e for e in reversed(w.web.evals) if e.startswith("rdRender("))
+    return json.loads(call[len("rdRender(") : -2])
+
+
+QUADRATIC = "x=(-b+-sqrt(b^2-4ac))/(2a)"
+
+
+def test_the_math_field_and_palette_appear_only_on_math_cards(math_env: Any) -> None:
+    from aqt.qt import Qt
+
+    from recalldrill import math_input
+
+    cards = [("heart", "cardi"), ("quadratic", QUADRATIC, ""), ("liver", "hepat")]
+    w: Any = _math_window(math_env, cards, encodeReps=1)
+    # A plain card: the old text box, no math view at all.
+    assert w.input.isVisible() and w.math_web is None and not math_env.webs[1:]
+    w.input.setText("cardi")
+    _key(w, Qt.Key.Key_Return)
+    w._flush_dwell()
+    # The math card: the field and its palette, and no text box.
+    v = w.ctrl.view()
+    assert v.math is not None
+    assert w.math_web is not None and w.math_web.isVisible() and not w.input.isVisible()
+    assert w.check_btn.isVisible()
+    shell = w.math_web.shell
+    assert "<math-field" in shell and "Graded by form; any order" in shell
+    for b in math_input.PALETTE:
+        assert f'id="rd-pad-{b.key}"' in shell
+    assert w.math_web.kw["js"] == [
+        "/_addons/recall_drill/web/mathlive/mathlive.min.js",
+        "/_addons/recall_drill/web/rd_math_input.js",
+    ]
+    # Right after a plain card again: the text box is back, the math view hidden.
+    _page_value(w, QUADRATIC)
+    _key(w, Qt.Key.Key_Return)
+    w._flush_dwell()
+    assert w.ctrl.view().math is None
+    assert w.input.isVisible() and not w.math_web.isVisible()
+
+
+def test_focus_goes_to_the_math_field_when_a_math_card_appears(math_env: Any) -> None:
+    from recalldrill import math_input
+
+    w: Any = _math_window(math_env, [("quadratic", QUADRATIC, "")], encodeReps=1)
+    assert w.math_web.focused >= 1
+    assert math_input.FOCUS_CALL in w.math_web.evals
+    assert not w.input.isVisible()
+    # Locked while a verdict shows, unlocked on a new trial.
+    assert math_input.configure_call(False, "Type the whole formula", False) in w.math_web.evals
+
+
+def test_the_math_fields_value_is_what_gets_checked(math_env: Any) -> None:
+    from aqt.qt import Qt
+
+    w: Any = _math_window(math_env, [("quadratic", QUADRATIC, "")], encodeReps=1)
+    _page_value(w, "x=\\frac{-b\\pm\\sqrt{b^{2}-4ac}}{2a}")
+    _key(w, Qt.Key.Key_Return)
+    assert w.ctrl.view().feedback.verdict == "exact"  # type: ignore[union-attr]
+    w._flush_dwell()
+
+    w2: Any = _math_window(math_env, [("quadratic", QUADRATIC, "")], encodeReps=1)
+    _page_value(w2, "x=\\frac{-b-\\sqrt{b^{2}-4ac}}{2a}")  # one branch only
+    w2.web.evals.clear()
+    _key(w2, Qt.Key.Key_Enter)
+    assert w2.ctrl.view().feedback.verdict == "wrong"  # type: ignore[union-attr]
+    # The page shows both sides rendered, the message, and no word diff.
+    html = _last_render(w2)["html"]
+    assert "Your answer" in html and "Target" in html and "rd-diff" not in html
+    assert html.count("\\(x = \\frac{-b") == 2 and "Not the same expression" in html
+    assert w2.override_btn.isVisible()
+    w.save_and_close()
+    w2.save_and_close()
+
+
+def test_an_unreadable_palette_value_is_wrong_not_a_crash(math_env: Any) -> None:
+    w: Any = _math_window(math_env, [("f", "x+1", "")], encodeReps=1)
+    _page_value(w, "\\frac{1}{\\placeholder{}}")
+    w.web.evals.clear()
+    w.math_web.bridge("rd:enter")
+    assert w.ctrl.view().feedback.verdict == "wrong"  # type: ignore[union-attr]
+    assert "Couldn&#x27;t read that as math" in _last_render(w)["html"] or (
+        "Couldn't read that as math" in _last_render(w)["html"]
+    )
+
+
+def test_the_drill_shortcuts_work_from_the_math_field(
+    math_env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cards = [("quadratic", QUADRATIC, ""), ("slope", "m=(y2-y1)/(x2-x1)", "")]
+    w: Any = _math_window(math_env, cards, encodeReps=2)
+    bridge = w.math_web.bridge
+
+    # Esc: reveal. The target shows rendered, in place of the cue.
+    bridge("rd:reveal")
+    assert w.ctrl.view().revealed
+    html = _last_render(w)["html"]
+    assert "\\frac" in html and "Type the whole formula" not in html
+    # Enter: Check (a revealed answer counts as a reveal, never a miss); Enter: Continue.
+    _page_value(w, QUADRATIC)
+    bridge("rd:enter")
+    if w.ctrl.view().buttons.continue_:
+        bridge("rd:enter")
+    w._flush_dwell()
+    assert w.ctrl.state["items"][0].get("reveals") == 1
+    assert w.ctrl.state["items"][0].get("misses", 0) == 0
+    # A wrong answer, then Ctrl+Enter: Count as correct.
+    _page_value(w, "x")
+    bridge("rd:enter")
+    assert w.ctrl.view().feedback.verdict == "wrong"  # type: ignore[union-attr]
+    bridge("rd:ctrl-enter")
+    w._flush_dwell()
+    assert w.ctrl.state["stats"]["overrides"] == 1
+    # Ctrl+E and Ctrl+R reach the same handlers as in the text box.
+    called: list[str] = []
+    monkeypatch.setattr(w, "_edit", lambda: called.append("edit"))
+    monkeypatch.setattr(w, "_replay", lambda: called.append("replay"))
+    bridge("rd:edit")
+    bridge("rd:replay")
+    assert called == ["edit", "replay"]
+    w.save_and_close()
+
+
+def test_ctrl_i_shows_the_extra_of_a_math_card(math_env: Any) -> None:
+    w: Any = _math_window(
+        math_env, [("quadratic", QUADRATIC, "as in the textbook")], encodeReps=2
+    )
+    bridge = w.math_web.bridge
+    _page_value(w, QUADRATIC)
+    bridge("rd:enter")  # first time its full answer shows: the Extra holds the screen
+    assert not w._dwell.isActive() and w.ctrl.view().extra is not None
+    bridge("rd:enter")  # Continue
+    _page_value(w, QUADRATIC)
+    bridge("rd:enter")
+    assert w._dwell.isActive() and w.extra_btn.isVisible()
+    bridge("rd:extra")
+    assert not w._dwell.isActive() and w.continue_btn.isVisible()
+    assert w.ctrl.view().extra == "as in the textbook"
+
+
+def test_the_field_clears_and_locks_between_trials(math_env: Any) -> None:
+    from recalldrill import math_input
+
+    w: Any = _math_window(math_env, [("f", "x+1", ""), ("g", "x+2", "")], encodeReps=1)
+    _page_value(w, "x+3")
+    w.math_web.evals.clear()
+    w.math_web.bridge("rd:enter")  # wrong: the verdict waits for Continue, the field locks
+    assert math_input.configure_call(True, w.ctrl.view().placeholder, False) in w.math_web.evals
+    assert w._math_latex == "x+3"  # what was typed stays on screen
+    w.math_web.bridge("rd:enter")  # Continue
+    assert math_input.CLEAR_CALL in w.math_web.evals and w._math_latex == ""
+    assert math_input.configure_call(False, w.ctrl.view().placeholder, False) in w.math_web.evals
+
+
+def test_closing_a_math_window_cleans_its_web_view(math_env: Any) -> None:
+    w: Any = _math_window(math_env, [("f", "x+1", "")], encodeReps=1)
+    cleaned: list[bool] = []
+    w.math_web.cleanup = lambda: cleaned.append(True)
+    w.save_and_close()
+    assert cleaned == [True]
+
+
+def test_setup_panel_counts_math_cards_and_flags_the_ones_without_an_answer(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    from anki.collection import Collection
+    from aqt.qt import QDate  # noqa: F401
+
+    col = Collection(str(tmp_path / "math.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        from anki_fixtures import add_math_model, add_math_note
+
+        add_math_model(col)
+        bones = env.scene.chapters["Bones"]
+        for i, answer in enumerate(("x+1", "[-2,5)", "", "x+(")):
+            add_math_note(col, bones, f"Q{i}", "x", answer, ("rd::math", "Layer::1"))  # type: ignore[arg-type]
+        d = _lab_panel(env)
+        assert d.folds["cards"].summary == (
+            "Layer 1 · new + suspended new · Deck order · 2 math"
+        )
+        assert d.math_label.isVisibleTo(d) and d.folds["cards"].warning
+        assert d.math_label.text() == (
+            "⚠ 2 cards tagged rd::math have no usable MathAnswer field, so they are drilled "
+            "as normal cards."
+        )
+        d.close()
+    finally:
+        col.close()
