@@ -272,7 +272,7 @@ def describe(plan: HoldBackPlan) -> str:
             "",
             f"They are suspended and their notes get the tag {TAG_HELD}. Drill them in the "
             "setup panel; the handoff unsuspends them, or send them to Anki undrilled "
-            "(Tools → Recall Drill: waiting cards).",
+            "(Tools → Recall Drill → More → Waiting cards).",
             "Cards Anki has already introduced, cards in a filtered deck, buried cards and "
             "cards handed off and waiting for Anki are not touched.",
         ]

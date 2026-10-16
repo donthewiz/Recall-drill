@@ -91,7 +91,7 @@ def test_about_menu_registration_is_a_no_op_without_main_window() -> None:
 def test_entry_registration_is_a_no_op_without_main_window(tmp_path: Path) -> None:
     from recalldrill.ui import entry
 
-    assert entry.TOOLS_LABEL == "Recall Drill…"
+    assert entry.DRILL_DECK_LABEL == "Drill this deck…"
     entry.register("recall_drill", str(tmp_path))  # aqt.mw is None outside Anki
     assert entry._ctx is None  # pyright: ignore[reportPrivateUsage]
 

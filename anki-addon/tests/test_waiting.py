@@ -53,7 +53,7 @@ def test_last_shown_round_trip(tmp_path: Path) -> None:
 def test_notice_text() -> None:
     assert notice_text(409, date(2026, 9, 28)) == (
         "Recall Drill: 409 drill cards are still suspended and waiting "
-        "(oldest added Mon Sep 28). Tools → Recall Drill: waiting cards."
+        "(oldest added Mon Sep 28). Tools → Recall Drill → More → Waiting cards."
     )
     assert "1 drill card is still" in notice_text(1, MON)
 
