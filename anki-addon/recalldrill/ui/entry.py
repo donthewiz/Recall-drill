@@ -231,10 +231,12 @@ def register(module: str, user_files: str) -> None:
     if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
         return
     _ctx = AddonContext(module, user_files)
-    from . import exam_tracker
+    from . import about, exam_tracker
 
     more = build_menu(mw.form.menuTools, mw)
     exam_tracker.register(_ctx, more)
+    more.addSeparator()
+    about.add_about(more, mw)  # last: Tools has one Recall Drill entry (v0.5.1)
     gui_hooks.deck_browser_will_show_options_menu.append(on_gear_menu)
     gui_hooks.overview_will_render_bottom.append(on_overview_bottom)
     gui_hooks.profile_will_close.append(on_profile_will_close)

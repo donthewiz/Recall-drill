@@ -755,6 +755,28 @@ def test_tools_menu_is_one_recall_drill_submenu(monkeypatch: pytest.MonkeyPatch)
     ]
 
 
+def test_about_is_the_last_item_of_more_not_a_tools_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v0.5.1 review: the About box used to add its own "Recall Drill (dev)" entry to Tools,
+    next to the new submenu. It is now the last item of More, so Tools has one Recall Drill
+    entry, and ``register_menu`` adds nothing."""
+    from aqt.qt import QMenu, QWidget
+
+    from recalldrill.ui import about, entry
+
+    parent = QWidget()
+    tools = QMenu("Tools", parent)
+    more = entry.build_menu(tools, parent)
+    more.addSeparator()
+    shown: list[bool] = []
+    monkeypatch.setattr(about, "show_about", lambda: shown.append(True))
+    action = about.add_about(more, parent)
+    assert more.actions()[-1] is action and action.text() == about.ABOUT_LABEL
+    action.trigger()
+    assert shown == [True]
+    assert [a.text() for a in tools.actions()] == ["Recall Drill"]
+    about.register_menu()  # adds nothing (and needs no Anki window)
+
+
 def test_hard_cards_menu_actions(
     panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
