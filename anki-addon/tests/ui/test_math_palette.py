@@ -301,3 +301,17 @@ def test_the_night_theme_switches_the_colours(pad: Pad) -> None:
     pad.page.evaluate("rdMath.configure({readOnly: false, placeholder: '', night: true})")
     dark = pad.page.evaluate("getComputedStyle(document.body).backgroundColor")
     assert light != dark
+
+
+def test_the_part_being_typed_stays_readable_in_the_night_theme(pad: Pad) -> None:
+    # MathLive tints the fraction or root the caret is in; its default tint is a pale
+    # blue, which left light text unreadable on the dark field. It follows the theme now.
+    pad.page.evaluate("rdMath.configure({readOnly: false, placeholder: '', night: true})")
+    tint = pad.page.evaluate(
+        "getComputedStyle(document.getElementById('rd-mf'))"
+        ".getPropertyValue('--contains-highlight-background-color').trim()"
+    )
+    accent_bg = pad.page.evaluate(
+        "getComputedStyle(document.documentElement).getPropertyValue('--rd-accent-bg').trim()"
+    )
+    assert tint and tint == accent_bg
