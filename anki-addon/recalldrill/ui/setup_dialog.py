@@ -54,12 +54,10 @@ from aqt.qt import (
     QFormLayout,
     QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QScrollArea,
     Qt,
     QTableWidget,
@@ -92,7 +90,7 @@ from ..anki_io.select import INELIGIBLE_REASONS, OrderMode, Scope, scope_to_json
 from ..anki_io.workload import read_pacing
 from ..deck_settings import DeckSettings
 from ..holdback import button_label, default_order
-from . import exam_tracker, holdback_ui
+from . import exam_tracker, holdback_ui, style
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
 from .handoff_dialog import confirm_finish_early, offer_handoff
@@ -170,6 +168,8 @@ class SetupDialog(QDialog):
         """Ticked card types: the default, or the caller's (Drill next: new cards only).
         Not saved per deck, so this only sets the boxes once."""
         self.data: PanelData | None = None
+        self._scope_text = ""
+        """The scope's label (the deck's full name, or the search), for the header."""
         self.pacing_view: pacing.PacingView | None = None
         self._pacing_generation = 0
         self.saved_info: SavedInfo | None = None
@@ -193,18 +193,28 @@ class SetupDialog(QDialog):
     # -- layout -------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
+        root = style.install(self)
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_header())
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)  # type: ignore[union-attr]
         body = QWidget()
+        body.setObjectName("rdScrollBody")
         self.body = QVBoxLayout(body)
+        self.body.setContentsMargins(20, 16, 20, 16)
+        self.body.setSpacing(14)
         scroll.setWidget(body)
+        body.setAutoFillBackground(
+            False
+        )  # QScrollArea.setWidget turns it on: keep the window's colour
         outer.addWidget(scroll, 1)
 
         # Scope
-        scope_box = QGroupBox("Scope")
-        sl = QVBoxLayout(scope_box)
+        scope_box, sl = style.section("Scope")
         self.scope_label = QLabel()
         self.scope_label.setWordWrap(True)
         sl.addWidget(self.scope_label)
@@ -213,8 +223,8 @@ class SetupDialog(QDialog):
         self.search_edit.setPlaceholderText(
             "Search… e.g. tag:MedTerm_Ch03::Day05 (whole collection)"
         )
-        self.search_btn = QPushButton("Use search")
-        self.deck_btn = QPushButton("Use this deck")
+        self.search_btn = style.button("Use search")
+        self.deck_btn = style.button("Use this deck")
         for b in (self.search_btn, self.deck_btn):
             b.setAutoDefault(False)
         row.addWidget(self.search_edit, 1)
@@ -226,25 +236,25 @@ class SetupDialog(QDialog):
         qconnect(self.deck_btn.clicked, self._use_deck)
         self.body.addWidget(scope_box)
 
-        # Saved-session banner
-        self.banner = QFrame()
-        self.banner.setFrameShape(QFrame.Shape.StyledPanel)
-        bl = QVBoxLayout(self.banner)
+        # Saved-session banner: the text on the left, the buttons on the right
+        self.banner = style.frame("rdBanner")
+        bl = QHBoxLayout(self.banner)
+        bl.setContentsMargins(14, 10, 14, 10)
+        bl.setSpacing(10)
         self.banner_text = QLabel()
         self.banner_text.setWordWrap(True)
-        bl.addWidget(self.banner_text)
-        brow = QHBoxLayout()
-        self.resume_btn = QPushButton("Resume")
-        self.resume_saved_btn = QPushButton("Resume with saved text")
-        self.fresh_btn = QPushButton("Start fresh")
-        self.finish_btn = QPushButton("Finish with mastered cards")
+        bl.addWidget(self.banner_text, 1)
+        self.resume_btn = style.button("Resume", "primary")
+        self.resume_saved_btn = style.button("Resume with saved text")
+        self.fresh_btn = style.button("Start fresh", "ghost")
+        self.finish_btn = style.button("Finish with mastered cards")
         self.finish_btn.setToolTip(
             "Give the cards that aren't mastered back to the pool and finish with the "
             "mastered ones: they get the Final check, then you can hand them off"
         )
-        self.handoff_btn = QPushButton("Hand off finished session")
+        self.handoff_btn = style.button("Hand off finished session", "primary")
         self.handoff_btn.setToolTip(HANDOFF_TOOLTIP)
-        self.discard_btn = QPushButton("Don't hand off")
+        self.discard_btn = style.button("Don't hand off", "ghost")
         for b, fn in (
             (self.resume_btn, self._resume),
             (self.resume_saved_btn, self._resume),
@@ -256,32 +266,34 @@ class SetupDialog(QDialog):
             b.setAutoDefault(False)
             qconnect(b.clicked, fn)
         for b in (
-            self.resume_btn,
+            self.discard_btn,
+            self.finish_btn,
             self.fresh_btn,
             self.resume_saved_btn,
-            self.finish_btn,
+            self.resume_btn,
             self.handoff_btn,
-            self.discard_btn,
         ):
-            brow.addWidget(b)
-        brow.addStretch(1)
-        bl.addLayout(brow)
+            bl.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)
         self.banner.hide()
         self.body.addWidget(self.banner)
 
         # Cards
-        cards = QGroupBox("Cards")
-        cl = QVBoxLayout(cards)
+        cards_box, cl = style.section("Cards")
         grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
         self.class_boxes: dict[CardClass, QCheckBox] = {}
         for i, c in enumerate(CARD_CLASSES):
-            box = QCheckBox(c)
+            box = style.chip(QCheckBox(c))
             box.setChecked(c in self.enabled)
             qconnect(box.toggled, self._on_class_toggled)
             self.class_boxes[c] = box
-            grid.addWidget(box, i // 3, i % 3)
+            grid.addWidget(box, i // 3, i % 3, Qt.AlignmentFlag.AlignLeft)
+        grid.setColumnStretch(3, 1)
         cl.addLayout(grid)
-        self.hard_only = QCheckBox("Only the cards that were hard in their last handoff")
+        self.hard_only = style.switch(
+            QCheckBox("Only the cards that were hard in their last handoff")
+        )
         self.hard_only.setChecked(True)
         self.hard_only.setToolTip(
             "rd::hard is a note tag, so a hard card's siblings carry it too. "
@@ -291,14 +303,18 @@ class SetupDialog(QDialog):
         qconnect(self.hard_only.toggled, self._schedule)
         cl.addWidget(self.hard_only)
         form = QFormLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(8)
         self.max_cards = SpinBox()
         self.max_cards.setRange(0, 100_000)
         self.max_cards.setSpecialValueText("all")
+        self.max_cards.setFixedWidth(120)
         self.tag_edit = QLineEdit()
         self.tag_edit.setPlaceholderText("optional, an exact tag (e.g. rd::drill::A1)")
         self.order = ComboBox()
         self.order.addItem("Priority first", "priority_first")
         self.order.addItem("Deck order", "deck_order")
+        self.order.setMinimumWidth(160)
         form.addRow("Max cards", self.max_cards)
         form.addRow("Only with tag", self.tag_edit)
         form.addRow("Order", self.order)
@@ -306,26 +322,27 @@ class SetupDialog(QDialog):
         qconnect(self.max_cards.valueChanged, self._schedule)
         qconnect(self.tag_edit.textChanged, self._schedule)
         qconnect(self.order.currentIndexChanged, self._schedule)
-        self.templates_box = QGroupBox("Templates")
-        self.templates_layout = QVBoxLayout(self.templates_box)
+        self.templates_box = QWidget()
+        tbl = QVBoxLayout(self.templates_box)
+        tbl.setContentsMargins(0, 0, 0, 0)
+        tbl.setSpacing(6)
+        tbl.addWidget(style.text_label("Templates", "muted"))
+        self.templates_layout = QVBoxLayout()
+        self.templates_layout.setSpacing(6)
+        tbl.addLayout(self.templates_layout)
         cl.addWidget(self.templates_box)
         self.sibling_label = QLabel()
         self.sibling_label.setWordWrap(True)
         cl.addWidget(self.sibling_label)
         # 2026-10-12: stale drill cards still suspended and waiting in this deck.
-        self.waiting_label = QLabel()
-        self.waiting_label.setWordWrap(True)
-        self.waiting_label.setStyleSheet("color: #b26b00;")
+        self.waiting_label = style.note(kind="warn")
         self.waiting_label.setVisible(False)
         cl.addWidget(self.waiting_label)
         # v0.3: handed-off cards that still need their first Anki rating.
-        self.unrated_label = QLabel()
-        self.unrated_label.setWordWrap(True)
-        self.unrated_label.setStyleSheet("color: #b26b00;")
+        self.unrated_label = style.note(kind="warn")
         self.unrated_label.setVisible(False)
         cl.addWidget(self.unrated_label)
-        self.difficulty_label = QLabel()
-        self.difficulty_label.setWordWrap(True)
+        self.difficulty_label = style.text_label(kind="muted")
         cl.addWidget(self.difficulty_label)
         srow = QHBoxLayout()
         self.summary_label = QLabel()
@@ -333,11 +350,11 @@ class SetupDialog(QDialog):
         self.holdout_row = QWidget()
         hrow = QHBoxLayout(self.holdout_row)
         hrow.setContentsMargins(0, 0, 0, 0)
-        self.holdout_label = QLabel()
-        self.holdout_label.setWordWrap(True)
+        self.holdout_label = style.text_label(kind="muted")
         self.holdout_pct = SpinBox()
         self.holdout_pct.setRange(0, deck_settings.HOLDOUT_MAX_PCT)
         self.holdout_pct.setSuffix(" %")
+        self.holdout_pct.setFixedWidth(100)
         self.holdout_pct.setToolTip(
             "Share of eligible new cards that skip the drill and go to Anki as plain new "
             "cards, as a fair comparison (tuning report). Saved for this deck. "
@@ -350,32 +367,31 @@ class SetupDialog(QDialog):
         hrow.addWidget(self.holdout_pct)
         self.holdout_row.hide()
         cl.addWidget(self.holdout_row)
-        self.mapping_btn = QPushButton("Edit mapping…")
+        self.mapping_btn = style.button("Edit mapping…")
         self.mapping_btn.setAutoDefault(False)
         qconnect(self.mapping_btn.clicked, self._edit_mapping)
         srow.addWidget(self.summary_label, 1)
-        srow.addWidget(self.mapping_btn)
+        srow.addWidget(self.mapping_btn, 0, Qt.AlignmentFlag.AlignTop)
         cl.addLayout(srow)
-        self.body.addWidget(cards)
+        self.body.addWidget(cards_box)
 
         # Settings
-        settings = QGroupBox("Settings for this deck")
-        stl = QVBoxLayout(settings)
+        settings_box, stl = style.section("Settings for this deck")
         prow = QHBoxLayout()
-        self.proposal_label = QLabel(
+        self.proposal_label = style.note(
             "Most answers here are 3 words or fewer: terminology settings fit "
-            "(strict punctuation on, word-ending tolerance off, hints on)."
+            "(strict punctuation on, word-ending tolerance off, hints on).",
+            "info",
         )
-        self.proposal_label.setWordWrap(True)
-        self.proposal_btn = QPushButton("Use terminology settings")
+        self.proposal_btn = style.button("Use terminology settings")
         self.proposal_btn.setAutoDefault(False)
         qconnect(self.proposal_btn.clicked, self._use_proposal)
         prow.addWidget(self.proposal_label, 1)
-        prow.addWidget(self.proposal_btn)
+        prow.addWidget(self.proposal_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         self.proposal_row = QWidget()
         self.proposal_row.setLayout(prow)
+        prow.setContentsMargins(0, 0, 0, 0)
         stl.addWidget(self.proposal_row)
-        sform = QFormLayout()
         self.batch_size = SpinBox()
         self.batch_size.setRange(0, 50)
         self.batch_size.setSpecialValueText("Whole deck")
@@ -384,37 +400,49 @@ class SetupDialog(QDialog):
         self.cycle_order = ComboBox()
         self.cycle_order.addItem("Shuffled", "shuffled")
         self.cycle_order.addItem("In order", "inOrder")
-        self.strict = QCheckBox("Punctuation must match (strict)")
-        self.stem = QCheckBox("Forgive minor word endings (e.g. plurals)")
-        self.hints = QCheckBox("Disambiguation hints on prompts")
-        self.difficulty_adjust = QCheckBox(
-            "Adjust reps by difficulty (cards with review history only)"
+        self.strict = style.switch(QCheckBox("Punctuation must match (strict)"))
+        self.stem = style.switch(QCheckBox("Forgive minor word endings (e.g. plurals)"))
+        self.hints = style.switch(QCheckBox("Disambiguation hints on prompts"))
+        self.difficulty_adjust = style.switch(
+            QCheckBox("Adjust reps by difficulty (cards with review history only)")
         )
         self.difficulty_adjust.setToolTip(
             "Cards Anki finds hard (FSRS difficulty ≥ 7, or many lapses without FSRS) get "
             "one more blind typing and chunk earlier; easy ones (difficulty ≤ 3) one fewer. "
             "New cards have no FSRS data and keep the deck's settings."
         )
-        sform.addRow("Cards per batch", self.batch_size)
-        sform.addRow("Blind typings required", self.encode_reps)
-        sform.addRow("Cycle review order", self.cycle_order)
-        sform.addRow("", self.strict)
-        sform.addRow("", self.stem)
-        sform.addRow("", self.hints)
-        sform.addRow("", self.difficulty_adjust)
-        stl.addLayout(sform)
+        numbers = QGridLayout()  # the number fields, two columns of label + field
+        numbers.setHorizontalSpacing(12)
+        numbers.setVerticalSpacing(8)
+        numbers.addWidget(QLabel("Cards per batch"), 0, 0)
+        numbers.addWidget(self.batch_size, 0, 1)
+        numbers.addWidget(QLabel("Blind typings required"), 0, 2)
+        numbers.addWidget(self.encode_reps, 0, 3)
+        numbers.addWidget(QLabel("Cycle review order"), 1, 0)
+        numbers.addWidget(self.cycle_order, 1, 1)
+        numbers.setColumnStretch(1, 1)
+        numbers.setColumnStretch(3, 1)
+        stl.addLayout(numbers)
+        switches = QGridLayout()  # the on/off options, two columns
+        switches.setHorizontalSpacing(16)
+        switches.setVerticalSpacing(6)
+        switches.addWidget(self.strict, 0, 0)
+        switches.addWidget(self.stem, 0, 1)
+        switches.addWidget(self.hints, 1, 0)
+        switches.addWidget(self.difficulty_adjust, 1, 1)
+        stl.addLayout(switches)
         # v0.3: keep a deck's new cards out of Anki until they are drilled.
         self.hold_back_box = QWidget()
         hbl = QHBoxLayout(self.hold_back_box)
         hbl.setContentsMargins(0, 0, 0, 0)
-        self.hold_back = QCheckBox("Keep new cards out of Anki until drilled")
+        self.hold_back = style.switch(QCheckBox("Keep new cards out of Anki until drilled"))
         self.hold_back.setToolTip(
             "For this deck and its subdecks. Turning it on offers to suspend the new "
             "cards that are out of Anki undrilled (tagged rd::held; one undo step). The "
             "handoff unsuspends drilled cards; Tools → Recall Drill: waiting cards sends "
             "the rest undrilled. Turning it off offers to release the held cards."
         )
-        self.hold_back_btn = QPushButton(button_label(0))
+        self.hold_back_btn = style.button(button_label(0))
         self.hold_back_btn.setAutoDefault(False)
         self.hold_back_btn.setToolTip(
             "Suspend this deck's new, unsuspended cards that aren't handed off and waiting "
@@ -425,19 +453,19 @@ class SetupDialog(QDialog):
         hbl.addWidget(self.hold_back_btn)
         hbl.addStretch(1)
         stl.addWidget(self.hold_back_box)
-        self.hold_back_note = QLabel()
-        self.hold_back_note.setStyleSheet("color: gray; font-size: small;")
+        self.hold_back_note = style.text_label(kind="muted")
         self.hold_back_note.hide()
         stl.addWidget(self.hold_back_note)
         qconnect(self.hold_back.toggled, self._on_hold_back)
         qconnect(self.hold_back_btn.clicked, self._hold_back_now)
-        self.settings_note = QLabel()
-        self.settings_note.setWordWrap(True)
-        stl.addWidget(self.settings_note)
-        self.save_settings_btn = QPushButton("Save settings")
+        self.settings_note = style.text_label(kind="muted")
+        srow2 = QHBoxLayout()
+        srow2.addWidget(self.settings_note, 1)
+        self.save_settings_btn = style.button("Save settings")
         self.save_settings_btn.setAutoDefault(False)
         qconnect(self.save_settings_btn.clicked, self._save_settings)
-        stl.addWidget(self.save_settings_btn, 0, Qt.AlignmentFlag.AlignRight)
+        srow2.addWidget(self.save_settings_btn, 0, Qt.AlignmentFlag.AlignRight)
+        stl.addLayout(srow2)
         qconnect(self.batch_size.valueChanged, self._on_setting)
         qconnect(self.encode_reps.valueChanged, self._on_setting)
         qconnect(self.cycle_order.currentIndexChanged, self._on_setting)
@@ -445,19 +473,20 @@ class SetupDialog(QDialog):
         qconnect(self.stem.toggled, self._on_setting)
         qconnect(self.hints.toggled, self._on_setting)
         qconnect(self.difficulty_adjust.toggled, self._on_setting)
-        self.body.addWidget(settings)
+        self.body.addWidget(settings_box)
 
         # Hints
-        self.hints_box = QGroupBox("Hints")
-        hl = QVBoxLayout(self.hints_box)
+        self.hints_box, hl = style.section("Hints")
         hl.addWidget(
-            QLabel(
+            style.text_label(
                 "Prompts another card shares, which no automatic hint can tell apart. "
-                "Type a hint to show after the prompt; empty the cell to remove yours."
+                "Type a hint to show after the prompt; empty the cell to remove yours.",
+                "muted",
             )
         )
         self.hints_table = QTableWidget(0, 4)
-        self.hints_table.setHorizontalHeaderLabels(["Prompt", "Answer", "Conflicts with", "Hint"])
+        self.hints_table.setHorizontalHeaderLabels(["PROMPT", "ANSWER", "CONFLICTS WITH", "HINT"])
+        self.hints_table.setShowGrid(False)
         header = self.hints_table.horizontalHeader()
         if header is not None:
             header.setStretchLastSection(True)
@@ -466,21 +495,18 @@ class SetupDialog(QDialog):
         self.body.addWidget(self.hints_box)
 
         # Drill time (measured)
-        est = QGroupBox("Drill time")
-        el = QFormLayout(est)
+        est, el = style.section("Drill time")
         self.estimate_label = QLabel()
-        self.estimate_source = QLabel()
-        self.estimate_source.setWordWrap(True)
-        self.estimate_source.setStyleSheet("color: gray; font-size: small;")
-        el.addRow(self.estimate_label)
-        el.addRow("", self.estimate_source)
+        self.estimate_label.setWordWrap(True)
+        self.estimate_source = style.text_label(kind="muted")
+        el.addWidget(self.estimate_label)
+        el.addWidget(self.estimate_source)
         self.body.addWidget(est)
 
         # Pacing (deck scopes)
-        self.pacing_box = QGroupBox("Pacing")
-        pl = QVBoxLayout(self.pacing_box)
+        self.pacing_box, pl = style.section("Pacing")
         prow1 = QHBoxLayout()
-        self.pace_on = QCheckBox("Pace to a target date")
+        self.pace_on = style.switch(QCheckBox("Pace to a target date"))
         self.pace_date = DateEdit()
         self.pace_date.setCalendarPopup(True)
         self.pace_date.setDisplayFormat("ddd d MMM yyyy")
@@ -495,37 +521,34 @@ class SetupDialog(QDialog):
         prow1.addStretch(1)
         pl.addLayout(prow1)
         prow2 = QHBoxLayout()
+        prow2.setSpacing(6)
         prow2.addWidget(QLabel("Drill on"))
         self.pace_days: list[QCheckBox] = []
         for name in pacing.WEEKDAY_NAMES:
-            box = QCheckBox(name)
+            box = style.chip(QCheckBox(name))
             self.pace_days.append(box)
             prow2.addWidget(box)
         prow2.addStretch(1)
         pl.addLayout(prow2)
         prow3 = QHBoxLayout()
-        self.exam_on = QCheckBox("Exam date")
+        self.exam_on = style.switch(QCheckBox("Exam date"))
         self.exam_date = DateEdit()
         self.exam_date.setCalendarPopup(True)
         self.exam_date.setDisplayFormat("ddd d MMM yyyy")
-        self.exam_label = QLabel()
-        self.exam_label.setWordWrap(True)
+        self.exam_label = style.text_label(kind="muted")
         prow3.addWidget(self.exam_on)
         prow3.addWidget(self.exam_date)
         prow3.addWidget(self.exam_label, 1)
         pl.addLayout(prow3)
         self.pace_line = QLabel()
         self.pace_line.setWordWrap(True)
-        self.pace_sources = QLabel()
-        self.pace_sources.setWordWrap(True)
-        self.pace_sources.setStyleSheet("color: gray; font-size: small;")
-        self.pace_warning = QLabel()
-        self.pace_warning.setWordWrap(True)
-        self.pace_warning.setStyleSheet("color: #b26b00;")
+        self.pace_sources = style.text_label(kind="muted")
+        self.pace_warning = style.note(kind="warn")
+        self.pace_warning.hide()
         pl.addWidget(self.pace_line)
         pl.addWidget(self.pace_sources)
         pl.addWidget(self.pace_warning)
-        self.use_n_btn = QPushButton("Use N as max cards")
+        self.use_n_btn = style.button("Use N as max cards")
         self.use_n_btn.setAutoDefault(False)
         qconnect(self.use_n_btn.clicked, self._use_pace_n)
         pl.addWidget(self.use_n_btn, 0, Qt.AlignmentFlag.AlignRight)
@@ -540,25 +563,94 @@ class SetupDialog(QDialog):
         self.body.addWidget(self.pacing_box)
         self.body.addStretch(1)
 
-        # Bottom
-        bottom = QHBoxLayout()
+        # Footer bar: the count on the left, Sections…, Close and Start on the right
+        footer = style.frame("rdBar", "footer")
+        bottom = QHBoxLayout(footer)
+        bottom.setContentsMargins(20, 10, 20, 10)
+        bottom.setSpacing(8)
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        self.sections_btn = QPushButton("Sections…")
+        self.sections_btn = style.button("Sections…")
         self.sections_btn.setAutoDefault(False)
         self.sections_btn.setToolTip("Which sections (subdecks) of this deck are drilled.")
         qconnect(self.sections_btn.clicked, self._open_sections)
-        self.start_btn = QPushButton("Start")
+        self.start_btn = style.button("Start", "primary")
         self.start_btn.setDefault(True)
-        close = QPushButton("Close")
+        close = style.button("Close", "ghost")
         close.setAutoDefault(False)
         qconnect(self.start_btn.clicked, self._start)
         qconnect(close.clicked, self.close)
         bottom.addWidget(self.status_label, 1)
         bottom.addWidget(self.sections_btn)
-        bottom.addWidget(self.start_btn)
         bottom.addWidget(close)
-        outer.addLayout(bottom)
+        bottom.addWidget(self.start_btn)
+        outer.addWidget(footer)
+
+    def _build_header(self) -> QWidget:
+        """The strip above the scroll area: the deck's name and path, the exam tracker's pill
+        and countdown when the deck has an exam, and up to two tiles."""
+        strip = style.frame("rdBar", "header")
+        col = QVBoxLayout(strip)
+        col.setContentsMargins(20, 14, 20, 14)
+        col.setSpacing(10)
+        top = QHBoxLayout()
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        self.header_title = style.text_label("", "title", wrap=False)
+        self.header_path = style.text_label("", "muted", wrap=False)
+        names.addWidget(self.header_title)
+        names.addWidget(self.header_path)
+        top.addLayout(names, 1)
+        self.header_pill = style.status_pill("exam", "")
+        self.header_exam = style.text_label("", "strong", wrap=False)
+        top.addWidget(self.header_pill, 0, Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(self.header_exam, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.header_pill.hide()
+        self.header_exam.hide()
+        col.addLayout(top)
+        tiles = QHBoxLayout()
+        tiles.setSpacing(10)
+        self.tile_cards, self.tile_cards_value = style.tile("cards to drill")
+        self.tile_pace, self.tile_pace_value = style.tile("a day")
+        tiles.addWidget(self.tile_cards)
+        tiles.addWidget(self.tile_pace)
+        tiles.addStretch(1)
+        self.tile_cards.hide()
+        self.tile_pace.hide()
+        self.tiles_row = tiles
+        col.addLayout(tiles)
+        return strip
+
+    def _show_header(self) -> None:
+        """Name, exam and tiles, from what the panel already loaded (the scope's label, the
+        panel data, the pacing view, and the exam tracker's cached numbers: no read)."""
+        label = self._scope_text
+        if self.scope.deck_id is not None:
+            *parents, leaf = label.split("::")
+            self.header_title.setText(leaf)
+            self.header_path.setText(" › ".join(parents))
+        else:
+            self.header_title.setText(label)
+            self.header_path.setText("Search")
+        self.header_path.setVisible(bool(self.header_path.text()))
+        data = self.data
+        numbers = (
+            exam_tracker.cached_numbers(data.exam_did, data.today) if data is not None else None
+        )
+        if numbers is not None:
+            pill, line = exam_tracker.panel_summary(numbers)
+            self.header_pill.setText(pill)
+            style.set_prop(self.header_pill, "rdPill", numbers.status)
+            self.header_exam.setText(line)
+        self.header_pill.setVisible(numbers is not None)
+        self.header_exam.setVisible(numbers is not None)
+        self.tile_cards_value.setText(f"{data.drillable:,}" if data is not None else "")
+        self.tile_cards.setVisible(data is not None)
+        view = self.pacing_view
+        pace_n = view.pace.per_day if view is not None and view.pace.status == "ok" else 0
+        show_pace = self.scope.deck_id is not None and self.pace_on.isChecked() and pace_n > 0
+        self.tile_pace_value.setText(f"{pace_n:,}")
+        self.tile_pace.setVisible(show_pace)
 
     # -- scope --------------------------------------------------------------
 
@@ -632,8 +724,10 @@ class SetupDialog(QDialog):
                     self._updating = False
             what = "Deck" if scope.deck_id is not None else "Search"
             self.scope_label.setText(f"<b>{what}:</b> {label}")
+            self._scope_text = label
             self.setWindowTitle(f"Recall Drill: {label}")
             self._show_saved(saved)
+            self._show_header()
             self._refresh()
 
         QueryOp(parent=self, op=op, success=done).failure(self._failed).run_in_background()
@@ -709,6 +803,7 @@ class SetupDialog(QDialog):
             self._show_hints(data)
             self._show_estimate(data)
             self._show_start(data)
+            self._show_header()
         finally:
             self._updating = False
 
@@ -729,10 +824,11 @@ class SetupDialog(QDialog):
                 row = QWidget()
                 rl = QHBoxLayout(row)
                 rl.setContentsMargins(0, 0, 0, 0)
-                rl.addWidget(QLabel(nt.name))
+                rl.setSpacing(6)
+                rl.addWidget(style.text_label(nt.name, "strong", wrap=False))
                 boxes: list[tuple[int, QCheckBox]] = []
                 for ord_, name in nt.templates:
-                    box = QCheckBox(name)
+                    box = style.chip(QCheckBox(name))
                     qconnect(box.toggled, self._on_template_toggled)
                     rl.addWidget(box)
                     boxes.append((ord_, box))
@@ -746,12 +842,16 @@ class SetupDialog(QDialog):
                 box.setChecked(allowed is None or ord_ in allowed)
         self.templates_box.setVisible(bool(multi))
         if sel.sibling_cards:
+            style.set_prop(self.sibling_label, "rdNote", "warn")
+            style.set_prop(self.sibling_label, "rdText", None)
             self.sibling_label.setText(
                 f"⚠ Siblings: {sel.sibling_cards} picked cards share a note with another "
                 f"picked card ({_plural(sel.sibling_notes, 'note')}). Drilling both directions "
                 "at once lets one card give the other away."
             )
         else:
+            style.set_prop(self.sibling_label, "rdNote", None)
+            style.set_prop(self.sibling_label, "rdText", "muted")
             self.sibling_label.setText("Siblings: 0 picked cards share a note.")
         self.waiting_label.setText(f"⚠ {data.waiting_line}" if data.waiting_line else "")
         self.waiting_label.setVisible(bool(data.waiting_line))
@@ -860,11 +960,11 @@ class SetupDialog(QDialog):
                 f"{_next_cards(data.drillable)}: {data.drill_source}" if data.drillable else "—"
             )
             self.estimate_source.setText("")
+            self.estimate_source.setVisible(False)
         else:
-            self.estimate_label.setText(
-                f"{_next_cards(data.drillable)}: {data.estimate_text()}"
-            )
+            self.estimate_label.setText(f"{_next_cards(data.drillable)}: {data.estimate_text()}")
             self.estimate_source.setText(f"From {data.drill_source}.")
+            self.estimate_source.setVisible(True)
 
     # -- pacing -----------------------------------------------------------------
 
@@ -923,6 +1023,8 @@ class SetupDialog(QDialog):
         gen = self._pacing_generation
         if data is None or did is None or data.scope.deck_id != did:
             self.pacing_box.hide()
+            self.pacing_view = None
+            self._show_header()
             return
         self.pacing_box.show()
         self._show_exam_line()
@@ -930,8 +1032,11 @@ class SetupDialog(QDialog):
             self.pacing_view = None
             self.pace_line.setText("Set a target date (a chapter exam) to pace this deck.")
             self.pace_sources.setText("")
+            self.pace_sources.setVisible(False)
             self.pace_warning.setText("")
+            self.pace_warning.setVisible(False)
             self.use_n_btn.setEnabled(False)
+            self._show_header()
             return
         self.pace_line.setText("Working out the pace…")
         self.use_n_btn.setEnabled(False)
@@ -959,11 +1064,13 @@ class SetupDialog(QDialog):
         self.pace_line.setText(view.line())
         ok = view.pace.status == "ok"
         self.pace_sources.setText(view.sources() if ok else "")
+        self.pace_sources.setVisible(ok)
         self.pace_warning.setText(f"⚠ {view.warning}" if view.warning else "")
         self.pace_warning.setVisible(bool(view.warning))
         n = view.pace.per_day
         self.use_n_btn.setEnabled(ok and n > 0)
         self.use_n_btn.setText(f"Use {n} as max cards" if ok and n > 0 else "Use N as max cards")
+        self._show_header()
 
     def _use_pace_n(self) -> None:
         view = self.pacing_view
@@ -1227,7 +1334,7 @@ class SetupDialog(QDialog):
         self.close()
 
     def _finish_early(self) -> None:
-        """"Finish with K mastered cards": confirm, cut the save, and open the
+        """ "Finish with K mastered cards": confirm, cut the save, and open the
         drill window on its Final check (refused while a window drives the save)."""
         saved = self.saved_info
         if saved is None or not self._finish_button(saved).show or self._already_open():

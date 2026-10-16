@@ -34,6 +34,7 @@ import json
 import logging
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Protocol, cast
 
 from .. import exam_tracker as rules
@@ -141,6 +142,32 @@ def _e(text: str) -> str:
     return html.escape(text, quote=True)
 
 
+def days_phrase(f: TrackerNumbers) -> str:
+    """ "8 days to finish", or "finish date passed" (the row's and the setup panel's wording)."""
+    if f.finish_passed:
+        return "finish date passed"
+    return f"{f.days_left} day{'' if f.days_left == 1 else 's'} to finish"
+
+
+def panel_summary(f: TrackerNumbers) -> tuple[str, str]:
+    """(the status pill's text, the line beside it) for the setup panel's header: the pill is
+    the tracker's icon plus word; the line is "N days to finish · exam Fri Oct 23", or just the
+    exam on the exam day."""
+    pill = f"{STATUS_ICON[f.status]} {STATUS_WORD[f.status]}"
+    exam = f"exam {short_date(f.exam_date)}"
+    if f.needed is None:
+        return pill, exam
+    return pill, f"{days_phrase(f)} · {exam}"
+
+
+def cached_numbers(deck_id: int | None, day: date | None) -> TrackerNumbers | None:
+    """The tracker's last result for exam deck ``deck_id`` on Anki day ``day``, or None (no
+    exam, or no result yet). Reads the in-memory cache only, never the collection."""
+    if deck_id is None or day is None:
+        return None
+    return _cache.get(deck_id, day)
+
+
 def row_html(deck_name: str, f: TrackerNumbers, *, via: str | None, level: int) -> str:
     """The status pill, bar, days and the "N a day" line, shown under the deck name.
 
@@ -162,10 +189,7 @@ def row_html(deck_name: str, f: TrackerNumbers, *, via: str | None, level: int) 
         days_html = ""
         line = f"{_n(f.done_today)} done today"
     else:
-        if f.finish_passed:
-            days = "finish date passed"
-        else:
-            days = f"{f.days_left} day{'' if f.days_left == 1 else 's'} to finish"
+        days = days_phrase(f)
         days_html = f'<span class="rd-days">{_e(days)}</span>'
         # The exam date stays on the row (Don, 2026-10-15): the countdown is to the finish date.
         days_html += f'<span class="rd-exam-on">· exam {_e(short_date(f.exam_date))}</span>'

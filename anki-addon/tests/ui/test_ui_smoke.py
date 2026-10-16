@@ -36,6 +36,20 @@ def qt_app() -> object:
     return QApplication.instance() or QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def _application_style_is_untouched() -> Any:
+    """No window of ours may style the application (v0.5): Anki's own windows keep their look."""
+    from aqt.qt import QApplication
+
+    def sheet() -> str:
+        app = QApplication.instance()
+        return app.styleSheet() if isinstance(app, QApplication) else ""
+
+    before = sheet()
+    yield
+    assert sheet() == before
+
+
 def test_every_ui_module_is_listed() -> None:
     assert {
         "recalldrill.ui.about",
@@ -45,6 +59,7 @@ def test_every_ui_module_is_listed() -> None:
         "recalldrill.ui.handoff_dialog",
         "recalldrill.ui.mapping_dialog",
         "recalldrill.ui.setup_dialog",
+        "recalldrill.ui.style",
         "recalldrill.ui.tuning_dialog",
         "recalldrill.ui.waiting_dialog",
     } <= set(UI_MODULES)
@@ -1947,3 +1962,237 @@ def test_a_failing_automatic_export_is_quiet(
     seen: list[Any] = []
     export_ui.export_in_background(ctx, seen.append)  # no exception, no warning dialog
     assert seen == []
+
+
+# -- v0.5: the shared window style, and the setup panel in it ----------------------------
+
+TABLE_TOKENS = {
+    "dark": {
+        "window": "#282c34", "card": "#2c313a", "footer": "#262a31", "input": "#21252b",
+        "border": "#3a404b", "control_border": "#454c59", "text": "#abb2bf",
+        "strong": "#dcdfe4", "muted": "#8b929e", "accent": "#61afef", "on_accent": "#1b1f27",
+        "ok": "#56d364", "warn": "#e3b341", "bad": "#ff7b72",
+    },
+    "light": {
+        "window": "#f6f7f9", "card": "#ffffff", "footer": "#eef0f3", "input": "#ffffff",
+        "border": "#d9dce1", "control_border": "#c4c9d1", "text": "#2b3036",
+        "strong": "#14171a", "muted": "#5c6570", "accent": "#1f6feb", "on_accent": "#ffffff",
+        "ok": "#1a7f37", "warn": "#9a6700", "bad": "#cf222e",
+    },
+}  # fmt: skip
+"""The approved mockup's colour table (docs/DECISIONS.md, "v0.5 window redesign")."""
+
+
+def test_style_tokens_are_the_approved_table() -> None:
+    from recalldrill.ui import style
+
+    assert style.TOKENS == TABLE_TOKENS
+
+
+@pytest.mark.parametrize("night", [True, False])
+def test_stylesheet_holds_the_tokens_and_every_role_and_kind(night: bool) -> None:
+    import re
+
+    from recalldrill.ui import style
+
+    sheet = style.stylesheet(night)
+    tokens = TABLE_TOKENS["dark" if night else "light"]
+    for name, value in tokens.items():
+        assert value in sheet, name
+    other = TABLE_TOKENS["light" if night else "dark"]
+    for name in ("window", "card", "accent"):
+        assert other[name] not in sheet, name
+    for role in style.ROLES:
+        assert f'QPushButton[rdRole="{role}"]' in sheet
+    for kind in ("chip", "switch"):
+        assert f'QCheckBox[rdKind="{kind}"]' in sheet
+    for note in ("warn", "info"):
+        assert f'QLabel[rdNote="{note}"]' in sheet
+    for status in style.PILL_COLOR:
+        assert f'QLabel[rdPill="{status}"]' in sheet
+    # Every rule is scoped to our own content (or to a property only our widgets carry), so a
+    # message box a window opens keeps Anki's look.
+    for line in sheet.splitlines():
+        head = line.split("{")[0].strip()
+        if head and "{" in line:
+            assert head.startswith(("#rdRoot", 'QDialog[rdWindow="true"]')), head
+    # The switch and arrow images are real files.
+    paths = re.findall(r'url\("([^"]+)"\)', sheet)
+    assert len(set(paths)) == 4  # two switch images and two arrows for this theme
+    assert all(Path(p).is_file() for p in paths), paths
+    # Warning notes: the warning colour at about 12 % behind and 35 % on the border.
+    t = style.derived("dark" if night else "light")
+    assert t["warn_bg"] == style.mix(tokens["warn"], tokens["card"], 0.12)
+    assert t["warn_border"] == style.mix(tokens["warn"], tokens["card"], 0.35)
+
+
+def test_a_theme_change_restyles_the_open_windows(
+    panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aqt import gui_hooks
+
+    from recalldrill.ui import style
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    _col, did = panel_env
+    monkeypatch.setattr(style, "is_night", lambda: False)
+    d: Any = SetupDialog(AddonContext("recall_drill", str(window_env)), did)
+    assert d.styleSheet() == style.stylesheet(False)
+    monkeypatch.setattr(style, "is_night", lambda: True)
+    gui_hooks.theme_did_change()  # Anki's own hook, as the theme manager runs it
+    assert d.styleSheet() == style.stylesheet(True)
+    d.close()
+    gui_hooks.theme_did_change()  # a closed window is skipped, not an error
+
+
+@pytest.mark.parametrize("night", [True, False])
+def test_setup_panel_in_dark_and_light(
+    panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch, night: bool
+) -> None:
+    from aqt.qt import QCheckBox, QPushButton, Qt
+
+    from recalldrill.ui import style
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    monkeypatch.setattr(style, "is_night", lambda: night)
+    _col, did = panel_env
+    d: Any = SetupDialog(AddonContext("recall_drill", str(window_env)), did)
+    assert d.styleSheet() == style.stylesheet(night)
+    # Roles: Start is the one primary button and the default; Sections secondary; Close ghost.
+    assert style.role_of(d.start_btn) == "primary" and d.start_btn.isDefault()
+    assert style.role_of(d.sections_btn) == "secondary"
+    visible = [b for b in d.findChildren(QPushButton) if b.isVisibleTo(d)]
+    assert [b for b in visible if style.role_of(b) == "primary"] == [d.start_btn]
+    assert [b.text() for b in visible if style.role_of(b) == "ghost"] == ["Close"]
+    assert not any(b.isDefault() for b in visible if b is not d.start_btn)
+    # The footer order: Sections…, Close, Start.
+    footer = [b.text() for b in visible if b.text() in ("Sections…", "Close", "Start")]
+    assert footer == ["Sections…", "Close", "Start"]
+
+    # Chips: the card types and the weekdays are pills with their old text, still checkable.
+    box = d.class_boxes["suspended_new"]
+    assert box.text() == "suspended new (6)" and box.property("rdKind") == "chip"
+    assert all(b.property("rdKind") == "chip" for b in d.pace_days)
+    before = set(d.enabled)
+    box.setChecked(False)
+    assert "suspended_new" not in d.enabled and "suspended_new" in before
+    box.setChecked(True)
+    (ntid,) = d._template_boxes
+    assert all(b.property("rdKind") == "chip" for _o, b in d._template_boxes[ntid])
+
+    # Switches: real, tabbable check boxes that save into the draft as before.
+    for sw in (d.strict, d.stem, d.hints, d.difficulty_adjust, d.hold_back, d.pace_on, d.exam_on):
+        assert isinstance(sw, QCheckBox) and sw.property("rdKind") == "switch"
+        assert sw.focusPolicy() & Qt.FocusPolicy.TabFocus
+    d.strict.setChecked(True)
+    assert d.draft["strictPunctuation"] is True and not d.stem.isEnabled()
+    d.close()
+
+
+def test_setup_header_shows_the_trackers_numbers_only_when_there_are_some(
+    panel_env: Any, window_env: Path
+) -> None:
+    from datetime import timedelta
+
+    from recalldrill import pacing
+    from recalldrill.exam_tracker import TrackerNumbers
+    from recalldrill.ui import exam_tracker
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    _col, did = panel_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    assert d.header_title.text() == "3 - Skeletal System"
+    assert d.header_path.text() == "Medical Terminology"
+    assert d.data is not None and d.data.today is not None
+    today = d.data.today
+    # No exam date, nothing cached: no pill and no countdown.
+    assert not d.header_pill.isVisibleTo(d) and not d.header_exam.isVisibleTo(d)
+    d.close()
+
+    # An exam date on the deck, but no tracker result yet: still nothing (never computed here).
+    exam = today + timedelta(days=8)
+    pacing.save(ctx.storage(), did, pacing.PacingSettings(None, frozenset(), 1, exam))
+    d = SetupDialog(ctx, did)
+    assert d.data is not None and d.data.exam_did == did
+    assert not d.header_pill.isVisibleTo(d)
+    d.close()
+
+    numbers = TrackerNumbers(
+        exam_date=exam,
+        days_left=7,
+        status="green",
+        drill=6,
+        new=0,
+        reviews=0,
+        done_today=0,
+        needed=1,
+        pace=1.0,
+        est_seconds=None,
+        finish_date=exam - timedelta(days=1),
+    )
+    exam_tracker._cache.store(today, {did: numbers})  # pyright: ignore[reportPrivateUsage]
+    try:
+        d = SetupDialog(ctx, did)
+        assert d.header_pill.isVisibleTo(d) and d.header_pill.text() == "✓ On pace"
+        assert d.header_pill.property("rdPill") == "green"
+        assert d.header_exam.text() == f"7 days to finish · exam {pacing.short_date(exam)}"
+        d.close()
+    finally:
+        exam_tracker._cache.clear()  # pyright: ignore[reportPrivateUsage]
+
+
+def test_setup_header_tiles_appear_only_with_their_data(panel_env: Any, window_env: Path) -> None:
+    from aqt.qt import QDate
+
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    _col, did = panel_env
+    d: Any = SetupDialog(AddonContext("recall_drill", str(window_env)), did)
+    assert d.tile_cards.isVisibleTo(d) and d.tile_cards_value.text() == "6"
+    assert not d.tile_pace.isVisibleTo(d)  # pacing is off: no "a day"
+    d.pace_on.setChecked(True)
+    for box in d.pace_days:
+        box.setChecked(True)
+    d.pace_early.setValue(1)
+    d.pace_date.setDate(QDate.currentDate().addDays(3))
+    assert d.tile_pace.isVisibleTo(d) and d.tile_pace_value.text() == "2"
+    d.pace_on.setChecked(False)
+    assert not d.tile_pace.isVisibleTo(d)
+    d.close()
+
+
+def test_building_the_panel_reads_the_collection_no_more_than_before(
+    panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two background reads (the scope, then the cards), none for the header, which only reads
+    what the panel loaded and the tracker's cache (nothing may touch ``mw.col`` there)."""
+    import aqt
+
+    from recalldrill.ui import setup_dialog
+    from recalldrill.ui.context import AddonContext
+
+    ops: list[object] = []
+
+    class Counting(_SyncQueryOp):
+        def run_in_background(self) -> None:
+            ops.append(self._op)
+            super().run_in_background()
+
+    monkeypatch.setattr(setup_dialog, "QueryOp", Counting)
+    _col, did = panel_env
+    d: Any = setup_dialog.SetupDialog(AddonContext("recall_drill", str(window_env)), did)
+    assert len(ops) == 2
+
+    class NoReads:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"the header read mw.col.{name}")
+
+    monkeypatch.setattr(aqt.mw, "col", NoReads())
+    d._show_header()  # pyright: ignore[reportPrivateUsage]
+    assert len(ops) == 2
+    d.close()
