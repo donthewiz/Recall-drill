@@ -15,7 +15,8 @@ outcomes export is rewritten (``export_ui``).
 
 from __future__ import annotations
 
-import html
+import dataclasses
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Literal, cast
@@ -24,16 +25,14 @@ from aqt import mw
 from aqt.operations import CollectionOp, QueryOp
 from aqt.qt import (
     QDialog,
+    QGridLayout,
     QHBoxLayout,
-    QLabel,
     QMessageBox,
-    QPushButton,
     Qt,
     QVBoxLayout,
     QWidget,
     qconnect,
 )
-from aqt.theme import theme_manager
 from aqt.utils import disable_help_button, showWarning, tooltip
 
 from .. import launch, sessions
@@ -52,14 +51,48 @@ from ..anki_io.handoff import (
     plan_handoff,
     top_deck_for,
 )
-from . import exam_tracker
+from ..layers import section_label
+from . import exam_tracker, style
 from .context import AddonContext
 from .export_ui import export_in_background
 
 Choice = Literal["handoff", "later", "decline"]
 
-AMBER = ("#D97706", "#F59E0B")
-"""The web app's --warning, light and night."""
+_COUNT = re.compile(r"^Hand off (\d+ cards?)")
+_FACT = re.compile(r"^([A-Z][A-Za-z ]{1,20}): (.*)$")
+
+
+def title_for(text: HandoffText) -> tuple[str, str]:
+    """("Hand off 6 cards to Anki", what is done to them): the dialog's title from the
+    headline's count, and the rest of the headline as its first fact."""
+    m = _COUNT.match(text.headline)
+    if m is None:
+        return text.headline, ""
+    rest = text.headline[m.end() :].lstrip(": ").strip()
+    return f"Hand off {m.group(1)} to Anki", rest[:1].upper() + rest[1:]
+
+
+def fact_rows(text: HandoffText) -> list[tuple[str, str]]:
+    """The facts as (label, value): the headline's action first, then each line ("Siblings: 6."
+    is ("Siblings", "6."); a line with no label has an empty one)."""
+    rows: list[tuple[str, str]] = []
+    _title, action = title_for(text)
+    if action:
+        rows.append(("Handoff", action))
+    for line in text.lines:
+        m = _FACT.match(line)
+        rows.append((m.group(1), m.group(2)) if m is not None else ("", line))
+    return rows
+
+
+def where_text(saved: dict[str, Any]) -> str:
+    """The deck (parents joined with " › ") and section of a finished session, for the muted
+    line under the dialog's title."""
+    deck = " › ".join(str(saved.get("deckName") or "").split("::"))
+    addon = cast(dict[str, Any], saved.get("addon") or {})
+    options = cast(dict[str, Any], addon.get("selectOptions") or {})
+    section = section_label(str(options.get("extra_tag") or ""))
+    return " · ".join(x for x in (deck, section) if x)
 
 
 class HandoffDialog(QDialog):
@@ -69,32 +102,53 @@ class HandoffDialog(QDialog):
         self.setWindowTitle("Recall Drill: hand off to Anki")
         self.choice: Choice = "later"
         self.text = text
-        layout = QVBoxLayout(self)
+        root = style.install(self)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(22, 18, 22, 16)
+        layout.setSpacing(12)
 
-        def label(markup: str) -> QLabel:
-            lab = QLabel(markup)
-            lab.setWordWrap(True)
-            lab.setTextFormat(Qt.TextFormat.RichText)
-            layout.addWidget(lab)
-            return lab
+        title, _action = title_for(text)
+        self.headline = style.text_label(title, "title")
+        layout.addWidget(self.headline)
+        self.where = style.text_label(text.where, "muted")
+        self.where.setVisible(bool(text.where))
+        layout.addWidget(self.where)
 
-        self.headline = label(f"<b>{html.escape(text.headline)}</b>")
-        self.body = label("<br>".join(html.escape(x) for x in text.lines))
-        self.forecast = label("<br>".join(html.escape(x) for x in text.forecast))
+        # The facts: a small two-column list in a card.
+        self.facts_card, fl = style.card_frame()
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
+        for i, (name, value) in enumerate(fact_rows(text)):
+            if name:
+                grid.addWidget(style.text_label(name, "muted"), i, 0, Qt.AlignmentFlag.AlignTop)
+                grid.addWidget(style.text_label(value), i, 1)
+            else:
+                grid.addWidget(style.text_label(value), i, 0, 1, 2)
+        fl.addLayout(grid)
+        layout.addWidget(self.facts_card)
+
+        # The forecast, in its own card.
+        self.forecast_card, cl = style.card_frame()
+        self.forecast = style.text_label("\n".join(text.forecast))
+        cl.addWidget(self.forecast)
+        self.forecast_card.setVisible(bool(text.forecast))
         self.forecast.setVisible(bool(text.forecast))
-        amber = AMBER[1 if theme_manager.night_mode else 0]
-        self.warnings = label(
-            "<br>".join(
-                f'<span style="color:{amber}">⚠ {html.escape(w)}</span>' for w in text.warnings
-            )
-        )
+        layout.addWidget(self.forecast_card)
+
+        self.warnings = style.note("\n".join(f"⚠ {w}" for w in text.warnings), "warn")
         self.warnings.setVisible(bool(text.warnings))
-        label('<span style="color:gray">One undo step: Edit → Undo "Recall Drill handoff".</span>')
+        layout.addWidget(self.warnings)
+        layout.addWidget(
+            style.text_label('One undo step: Edit → Undo "Recall Drill handoff".', "muted")
+        )
 
         row = QHBoxLayout()
-        self.handoff_btn = QPushButton("Hand off")
-        self.later_btn = QPushButton("Not now")
-        self.decline_btn = QPushButton("Don't hand off")
+        row.setSpacing(8)
+        self.handoff_btn = style.button("Hand off", "primary")
+        self.later_btn = style.button("Not now")
+        self.decline_btn = style.button("Don't hand off", "ghost")
         self.decline_btn.setToolTip(
             "Clear this finished session without handing it off. Nothing is written to Anki."
         )
@@ -110,6 +164,7 @@ class HandoffDialog(QDialog):
         row.addWidget(self.later_btn)
         row.addWidget(self.handoff_btn)
         layout.addLayout(row)
+        self.setMinimumWidth(520)
 
     def _choose(self, choice: Choice) -> None:
         self.choice = choice
@@ -159,7 +214,8 @@ def offer_handoff(
 
     def planned(result: tuple[HandoffPlan, Forecast | None, datetime]) -> None:
         plan, fc, when = result
-        choice = ask(parent, describe(plan, fc, when))
+        text = dataclasses.replace(describe(plan, fc, when), where=where_text(saved))
+        choice = ask(parent, text)
         if choice == "handoff":
             _run(ctx, parent, key, saved, plan, fc, on_done)
         elif choice == "decline":
@@ -213,7 +269,7 @@ def _run(
 
 
 def confirm_finish_early(parent: QWidget | None, counts: sessions.FinishEarlyCounts) -> bool:
-    """"Finish with K cards?" (the drill window's and the setup panel's button):
+    """ "Finish with K cards?" (the drill window's and the setup panel's button):
     **Finish** cuts the save, **Cancel** leaves it as it is."""
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Question)

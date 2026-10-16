@@ -841,11 +841,18 @@ def _html_table(header: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     return f'<table border="1" cellspacing="0" cellpadding="4"><tr>{head}</tr>{body}</table>'
 
 
-def render_html(r: Report) -> str:
-    """The dialog's body (Qt rich text). Suggestions get their buttons in Qt."""
-    parts = [
-        "<p>" + "<br>".join(html.escape(x) for x in header_lines(r)) + "</p>",
-        f"<p><i>{html.escape(CONFOUND_WARNING)}</i></p>",
+def render_html(r: Report, *, facts: bool = True) -> str:
+    """The dialog's body (Qt rich text). Suggestions get their buttons in Qt.
+
+    ``facts=False`` leaves out the header lines and the caution, which the dialog shows
+    as tiles and an info note (v0.5)."""
+    parts: list[str] = []
+    if facts:
+        parts += [
+            "<p>" + "<br>".join(html.escape(x) for x in header_lines(r)) + "</p>",
+            f"<p><i>{html.escape(CONFOUND_WARNING)}</i></p>",
+        ]
+    parts += [
         "<h3>Next-day Again</h3>",
         _html_table(COMPARISON_COLUMNS, [comparison_cells(s) for s in r.comparison]),
         "<p><small>n: next-day outcomes (1–2 Anki days after t0). Trials and misses + "

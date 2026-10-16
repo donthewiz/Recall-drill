@@ -1,10 +1,11 @@
 """Tools → "Recall Drill: waiting cards" (2026-10-12), and the once-a-day notice.
 
-A table of the drill cards still suspended and waiting, per deck (the cards'
-home deck): waiting, stale, oldest added, pacing target, and two buttons per
-row: **Drill…** (the setup panel on that deck) and **Send to Anki undrilled…**
-(``anki_io/release.py``: plan, confirm, apply as one undo step, then the
-history line). Reads run in ``QueryOp``, the write in ``CollectionOp``.
+The drill cards still suspended and waiting, per deck (the cards' home deck), as rounded
+rows (v0.5; it was a table): the deck's name over its parent path, waiting, stale (an amber
+pill above 0), the pacing target, and two buttons per row: **Drill…** (the setup panel on
+that deck) and **Send undrilled…** (``anki_io/release.py``: plan, confirm, apply as one undo
+step, then the history line). The oldest added date is in the row's tooltip. Reads run in
+``QueryOp``, the write in ``CollectionOp``.
 """
 
 from __future__ import annotations
@@ -17,14 +18,11 @@ from aqt import mw
 from aqt.operations import CollectionOp, QueryOp
 from aqt.qt import (
     QDialog,
-    QDialogButtonBox,
+    QFrame,
     QHBoxLayout,
-    QLabel,
     QMessageBox,
-    QPushButton,
+    QScrollArea,
     Qt,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
     qconnect,
@@ -53,11 +51,78 @@ from ..waiting import (
     save_last_shown,
     stale_total,
 )
+from . import style
 from .context import AddonContext
 
 TITLE = "Recall Drill: waiting cards"
 GEOM_KEY = "recalldrill_waiting"
-COLUMNS = ("Deck", "Waiting", "Stale", "Oldest added", "Pacing target", "", "")
+EXPLANATION = (
+    "Stale: added more than the configured days ago (stale_drill_days), or in a deck "
+    "whose pacing target has passed or has no drill days left. Sending to Anki "
+    "undrilled offers the stale cards (the default) or all waiting cards: it "
+    "unsuspends them (and their notes' suspended new siblings) as new cards in their "
+    "current queue place, tags the notes rd::undrilled, and is one undo step."
+)
+
+
+def summary_text(rows: list[WaitingRow]) -> str:
+    """ "12 cards suspended and waiting in 3 decks · 4 stale"."""
+    if not rows:
+        return "No drill cards are waiting."
+    stale, _ = stale_total(rows)
+    waiting = sum(r.waiting for r in rows)
+    return (
+        f"{waiting} card{'' if waiting == 1 else 's'} suspended and waiting in "
+        f"{len(rows)} deck{'' if len(rows) == 1 else 's'} · {stale} stale"
+    )
+
+
+class WaitingCard(QFrame):
+    """One deck's row."""
+
+    def __init__(
+        self, row: WaitingRow, drill: Callable[[], None], send: Callable[[], None]
+    ) -> None:
+        super().__init__()
+        self.setProperty("rdRow", "true")
+        self.setToolTip(f"Oldest added: {short_date(row.oldest)}")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(18)
+        *parents, leaf = row.deck.split("::")
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        self.name_label = style.text_label(leaf, "strong", wrap=False)
+        names.addWidget(self.name_label)
+        self.path_label = style.text_label(" › ".join(parents), "muted", wrap=False)
+        self.path_label.setVisible(bool(parents))
+        names.addWidget(self.path_label)
+        lay.addLayout(names, 1)
+        count = QVBoxLayout()
+        count.setSpacing(0)
+        self.waiting_label = style.text_label(str(row.waiting), "strong", wrap=False)
+        self.waiting_label.setMinimumWidth(56)
+        count.addWidget(self.waiting_label)
+        count.addWidget(style.text_label("waiting", "muted", wrap=False))
+        lay.addLayout(count)
+        self.stale_label = (
+            style.chip_label(f"{row.stale} stale", "warn")
+            if row.stale
+            else style.text_label("0 stale", "muted", wrap=False)
+        )
+        self.stale_label.setMinimumWidth(70)
+        lay.addWidget(self.stale_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.target_label = style.text_label(
+            f"target {short_date(row.target)}" if row.target else "", "muted", wrap=False
+        )
+        self.target_label.setMinimumWidth(110)
+        lay.addWidget(self.target_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.drill_btn = style.button("Drill…")
+        self.send_btn = style.button("Send undrilled…", "ghost")
+        for b, fn in ((self.drill_btn, drill), (self.send_btn, send)):
+            b.setAutoDefault(False)
+            qconnect(b.clicked, fn)
+            lay.addWidget(b)
 
 
 class WaitingDialog(QDialog):
@@ -66,30 +131,38 @@ class WaitingDialog(QDialog):
         self.ctx = ctx
         self._open_setup = open_setup
         self.rows: list[WaitingRow] = []
+        self.row_cards: list[WaitingCard] = []
         self.setWindowTitle(TITLE)
         disable_help_button(self)
-        layout = QVBoxLayout(self)
-        self.summary = QLabel("Reading cards…")
-        self.summary.setWordWrap(True)
+        root = style.install(self)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(20, 16, 20, 14)
+        layout.setSpacing(12)
+        layout.addWidget(style.text_label("Waiting cards", "title", wrap=False))
+        self.summary = style.text_label("Reading cards…", "muted")
         layout.addWidget(self.summary)
-        self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(list(COLUMNS))
-        self.table.verticalHeader().setVisible(False)  # type: ignore[union-attr]
-        layout.addWidget(self.table, 1)
-        note = QLabel(
-            "Stale: added more than the configured days ago (stale_drill_days), or in a deck "
-            "whose pacing target has passed or has no drill days left. Sending to Anki "
-            "undrilled offers the stale cards (the default) or all waiting cards: it "
-            "unsuspends them (and their notes' suspended new siblings) as new cards in their "
-            "current queue place, tags the notes rd::undrilled, and is one undo step."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: gray; font-size: small;")
-        layout.addWidget(note)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        qconnect(buttons.rejected, self.close)
-        layout.addWidget(buttons)
-        self.resize(820, 420)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)  # type: ignore[union-attr]
+        holder = QWidget()
+        holder.setObjectName("rdScrollBody")
+        self.rows_layout = QVBoxLayout(holder)
+        self.rows_layout.setContentsMargins(0, 0, 4, 0)
+        self.rows_layout.setSpacing(8)
+        self.rows_layout.addStretch(1)
+        scroll.setWidget(holder)
+        holder.setAutoFillBackground(False)
+        layout.addWidget(scroll, 1)
+        layout.addWidget(style.text_label(EXPLANATION, "muted"))
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        close = style.button("Close", "ghost")
+        close.setAutoDefault(False)
+        qconnect(close.clicked, self.close)
+        bottom.addWidget(close)
+        layout.addLayout(bottom)
+        self.resize(900, 460)
         restoreGeom(self, GEOM_KEY)
         ctx.dialogs.append(self)
         self.refresh()
@@ -110,41 +183,20 @@ class WaitingDialog(QDialog):
 
     def _show(self, rows: list[WaitingRow]) -> None:
         self.rows = rows
-        stale, _ = stale_total(rows)
-        waiting = sum(r.waiting for r in rows)
-        self.summary.setText(
-            f"{waiting} drill cards suspended and waiting, {stale} of them stale."
-            if rows
-            else "No drill cards are waiting."
-        )
-        self.table.setRowCount(len(rows))
+        self.summary.setText(summary_text(rows))
+        for card in self.row_cards:
+            self.rows_layout.removeWidget(card)
+            card.deleteLater()
+        self.row_cards = []
         for i, r in enumerate(rows):
-            cells = (
-                r.deck,
-                str(r.waiting),
-                str(r.stale),
-                short_date(r.oldest),
-                short_date(r.target) if r.target else "",
+            # ``clicked`` passes its ``checked`` flag to the first parameter: swallow it.
+            card = WaitingCard(
+                r,
+                lambda _checked=False, did=r.did: self._drill(did),
+                lambda _checked=False, row=r: self._send(row),
             )
-            for j, text in enumerate(cells):
-                item = QTableWidgetItem(text)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.table.setItem(i, j, item)
-            drill = self._button("Drill…", lambda did=r.did: self._drill(did))
-            self.table.setCellWidget(i, 5, drill)
-            self.table.setCellWidget(
-                i, 6, self._button("Send to Anki undrilled…", lambda row=r: self._send(row))
-            )
-        self.table.resizeColumnsToContents()
-
-    def _button(self, text: str, fn: Callable[[], None]) -> QWidget:
-        b = QPushButton(text)
-        qconnect(b.clicked, fn)
-        box = QWidget()
-        hl = QHBoxLayout(box)
-        hl.setContentsMargins(2, 0, 2, 0)
-        hl.addWidget(b)
-        return box
+            self.row_cards.append(card)
+            self.rows_layout.insertWidget(i, card)
 
     def _drill(self, did: int) -> None:
         self._open_setup(did)

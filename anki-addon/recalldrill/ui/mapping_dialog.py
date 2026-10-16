@@ -10,9 +10,8 @@ from collections.abc import Sequence
 from aqt.qt import (
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
-    QLabel,
+    QHBoxLayout,
     QVBoxLayout,
     QWidget,
     qconnect,
@@ -22,6 +21,7 @@ from aqt.utils import disable_help_button
 from ..anki_io.notetypes import MappingOverride, NoteMapping, save_override
 from ..anki_io.panel import NoteTypeTemplates
 from ..storage import Storage
+from . import style
 from .widgets import ComboBox
 
 NO_EXTRA = "(no Extra)"
@@ -44,34 +44,49 @@ class MappingDialog(QDialog):
         self.fields = {nt.ntid: list(nt.fields) for nt in note_types}
         self.saved = False
 
-        layout = QVBoxLayout(self)
+        root = style.install(self)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(22, 18, 22, 16)
+        layout.setSpacing(12)
+        layout.addWidget(style.text_label("Edit mapping", "title", wrap=False))
         layout.addWidget(
-            QLabel(
+            style.text_label(
                 "Which field is the typed answer, and which is shown as Extra after it.\n"
-                "Saved in the add-on's mappings.json; your cards are not changed."
+                "Saved in the add-on's mappings.json; your cards are not changed.",
+                "muted",
             )
         )
+        card, cl = style.card_frame()
         form = QFormLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(10)
         self.which = ComboBox()
         for m in self.mappings:
             self.which.addItem(f"{m.notetype_name} › {m.template_name}")
-        self.why = QLabel()
-        self.why.setWordWrap(True)
+        self.why = style.text_label(kind="muted")
         self.answer = ComboBox()
         self.extra = ComboBox()
-        self.ineligible = QCheckBox("Not drillable (mark this template ineligible)")
+        self.ineligible = style.switch(QCheckBox("Not drillable (mark this template ineligible)"))
         form.addRow("Template", self.which)
         form.addRow("Now", self.why)
         form.addRow("Answer field", self.answer)
         form.addRow("Extra field", self.extra)
         form.addRow("", self.ineligible)
-        layout.addLayout(form)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close
-        )
-        qconnect(buttons.accepted, self._save)
-        qconnect(buttons.rejected, self.reject)
-        layout.addWidget(buttons)
+        cl.addLayout(form)
+        layout.addWidget(card)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addStretch(1)
+        self.close_btn = style.button("Close", "ghost")
+        self.save_btn = style.button("Save", "primary")
+        self.save_btn.setDefault(True)
+        self.close_btn.setAutoDefault(False)
+        qconnect(self.save_btn.clicked, self._save)
+        qconnect(self.close_btn.clicked, self.reject)
+        row.addWidget(self.close_btn)
+        row.addWidget(self.save_btn)
+        layout.addLayout(row)
+        self.setMinimumWidth(520)
 
         qconnect(self.which.currentIndexChanged, self._load)
         qconnect(self.ineligible.toggled, self._toggle)
