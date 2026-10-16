@@ -940,7 +940,7 @@ Step 2 replaces the fake table with numbers read from Don's collection, `pacing.
 3. A deck with no date in its chain shows nothing; a child that only inherits a date shows nothing of its own (its parent's row covers it); a passed exam shows nothing.
 4. A collapsed parent with exam decks below it shows its **worst** descendant's status (red beats amber beats green; first in tree order on a tie) with "via <deck name>". An expanded parent shows nothing; its child rows show their own. An exam today is neutral and ranks under green.
 
-**The step, and why a to-be-drilled card counts twice.** The unit is a **step**: one drill, one first Anki rating of a new card, or one review. A card that still has to be drilled needs two steps before the exam: the drill, then its first Anki rating. So it is counted in **Drill to go** and again in **New**. Counts are over the scope; suspended, buried and new cards are included unless said otherwise.
+**The step, and why a to-be-drilled card counts twice.** (Superseded the same evening by "Cards, not steps" below; kept for the record.) The unit is a **step**: one drill, one first Anki rating of a new card, or one review. A card that still has to be drilled needs two steps before the exam: the drill, then its first Anki rating. So it is counted in **Drill to go** and again in **New**. Counts are over the scope; suspended, buried and new cards are included unless said otherwise.
 
 **The numbers for one exam deck.**
 
@@ -973,6 +973,18 @@ Step 2 replaces the fake table with numbers read from Don's collection, `pacing.
 **Not changed:** nothing under `recalldrill/engine/`, `src/` or the goldens; no card selection, drill or handoff; the setup panel and the sections table (the tracker reuses their code). The TEST label and the fake table are gone.
 
 **Fix after the first real run (2026-10-15 evening).** On Don's deck screen the rows showed bare text ("✖Behind8 days left176 a day needed…") with no pill or bar. The JSON block's escaping (`script_tag`) had been meant to escape the two line separators U+2028 and U+2029; step 1 had them as raw, invisible characters in the source, and the rename to `ui/exam_tracker.py` turned them into plain spaces, so every space in the row and card HTML became U+2028. The page then read `<div` + U+2028 + `class=…` as one unknown tag with no class, so the stylesheet (which loaded fine) matched nothing. Fixed: the separators are written as escapes (`"\u2028"`), never raw. Test `test_the_json_block_gives_back_the_exact_html` parses the block back and requires the payload unchanged, and fails if either module has a raw separator; it fails on the broken code. The earlier tests only checked that dangerous characters were escaped, not that the HTML came back intact. Found with two read-only Debug Console checks (the stylesheet was served `200 text/css` and loaded with 40 rules, but no `.rd-et` element existed).
+
+### Cards, not steps (Don, 2026-10-15 evening)
+
+After the first real run Don found "1,357 left" on Lab 2, a 781-card deck, confusing and intimidating: the step unit counted every card still to drill twice (607 drills + their 607 first Anki ratings). **Decided by Don: count cards, each once.** It replaces "The step" above; everything else in step 2 stands.
+
+- **A drilled card is done.** It leaves Drill to go when it is drilled, and its first Anki rating the next day is **not counted again**: not in New, not in Done today, not in the pace. Its later reviews count as reviews.
+- **Drill to go** is unchanged (the sections table's Held / waiting).
+- **New** = unsuspended new cards (queue new or buried) that **no handoff drilled** (the handoff lines' `cards`; siblings and holdout cards handed off undrilled still need a first rating, so they count), plus held cards the drill can't take. A Drill-to-go card is no longer also counted as New.
+- **Reviews**, **Days left**, **Needed a day** (`ceil((Cards left + Done today) / Days left)`) and the status rule are unchanged, in the new unit.
+- **Done today and the pace**: a drill counts on the handoff day; a first Anki rating counts only for a card that was not drilled; a review counts each card once a day (`daily_steps(handoffs, ratings, drilled)`).
+- **Est. time keeps the hidden work:** a drill card costs `drill_s + new_s` (the drill, then its first day in Anki), so the minutes still include the ratings the count leaves out. With a drill card left and no new-card rate, the estimate says "not enough history yet".
+- On Don's collection (copy of 2026-10-15 ~18:26), Lab 2 went from 1,357 left / 176 a day / pace 51 to the figures in the report of this change; the scene's hand counts are in `tests/anki_io/exam_scene.py` (52 left, 8 a day, pace 8/7).
 
 ## Changing the engine now
 
