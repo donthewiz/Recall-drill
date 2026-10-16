@@ -300,6 +300,25 @@ def test_deck_names_are_escaped() -> None:
     assert "alert(1)" in json.loads(inner)["decks"]["1"]["card"]
 
 
+def test_the_json_block_gives_back_the_exact_html() -> None:
+    """What the page's ``JSON.parse`` reads is the row and card HTML unchanged: spaces stay
+    spaces, and only the two line separators (and <, >, &) are escaped. A plain space
+    replaced by U+2028 once broke every tag on Don's deck screen."""
+    name = "Lab 2 \u2028 x\u2029y & <b>"
+    top = node(0, "", 0, [node(1, name, 1)])
+    payload = et.build_payload(et.rows_from_tree(top), None, {1: MEDTERM})
+    block = et.script_tag(payload)
+    inner = block[block.index(">") + 1 : block.rindex("</script>")]
+    assert json.loads(inner) == payload
+    row = payload["decks"]["1"]["row"]
+    assert row.startswith('<div class="rd-et rd-')
+    assert "\u2028" not in inner and "\u2029" not in inner
+    assert "\\u2028" in inner and "\\u2029" in inner
+    assert " " in inner  # ordinary spaces pass through untouched
+    source = Path(et.__file__).read_text(encoding="utf-8")
+    assert "\u2028" not in source and "\u2029" not in source  # escapes only, never raw
+
+
 def test_pin_in_the_payload_needs_a_row_now() -> None:
     rows = et.rows_from_tree(tree())
     assert et.build_payload(rows, 10, NUMBERS)["pinned"] == 10
