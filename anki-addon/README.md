@@ -26,6 +26,15 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.5.0
+
+- **A new look for every window.** The setup panel, the sections list, the drill window, the handoff confirmation, the waiting cards list, the tuning report and Edit mapping now share the look of the exam tracker on the deck screen: rounded cards with a small label above each, dark or light to match Anki (and switching with it), three kinds of buttons (one bright main button, grey ones, plain text ones), pill-shaped choices for the card types and weekdays, and little on/off switches for the options. Anki's own windows are not touched, and your cards look exactly as before inside the drill.
+- **The setup panel has a header.** The deck's name with its parent decks under it; when the deck has an exam date (and the tracker has its numbers) the tracker's status tag and "7 days to finish · exam Fri Oct 23"; and small tiles for the cards to drill and, with pacing on, how many a day. **Start**, **Close** and **Sections…** sit in a bar at the bottom that stays put while you scroll.
+- **Sections is a list of rows.** One row per layer (or subdeck) with a bar of how much is done, what is left, each chapter's done/total (green when finished) and, on the row marked **NEXT**, the **Drill next** button. The other counts (released undrilled, waiting, can't drill and so on) show when you hover a row.
+- **The drill window** has a strip on top with the deck, the stage (Encoding, Cycle or Final) and how many cards are mastered, a bigger answer box with **Check** beside it, and a strip below with the New / Encoding / Ready / Mastered counts and the batch dots. The keys are the same.
+- **Waiting cards fix.** The **Drill…** and **Send undrilled…** buttons on a waiting-cards row now act on that row's deck (they could pass the wrong value before).
+- Nothing about how a card is drilled, handed off or paced changed.
+
 ## What's new in 0.4.0
 
 - **Exam tracker, with real numbers.** Give a deck an **Exam date** in the setup panel and Anki's main deck screen shows, under that deck's name, a status tag ("On pace", "Slightly behind" or "Behind"), a thin progress bar, the days left and what you need a day. Hover the row for a small card with the cards left, the split (drill, new, reviews) and a time estimate; click the tag to keep the card open (it stays open after a restart). One example row: **Lab 2 · Behind · 8 days left · 61 a day needed · 18 done today**.
