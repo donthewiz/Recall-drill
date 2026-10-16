@@ -1128,6 +1128,68 @@ A drill window for the deck that is **already open** is raised instead, as befor
 
 - **About moved (review, 2026-10-16).** The About box used to add its own Tools entry ("Recall Drill (dev)" from the dev folder), which left two Recall Drill entries in Tools beside the new submenu. It is now the last item of More, "About Recall Drill", after the exam tracker's toggle; `about.register_menu` adds nothing (kept for older entry points).
 
+## v0.6 math answer mode (2026-10-16)
+
+Decided by Don 2026-10-16 for College Algebra. **Add-on only.** The shared engine (`recalldrill/engine/`), `src/`, the golden files and `simulate.py` are not touched; non-math cards behave as before, byte for byte (a test drills the Lab 2 deck with and without math notes and compares the other cards' counters).
+
+### Why
+
+Lenient grading keeps only letters, digits, spaces and `+ % < > =`, so `x^2` graded equal to `x-2`, `1/2` to `12` and `[-2, 5)` to `(-2, 5]`; strict mode ignores brackets. A math card needs its own check, and a way to enter symbols by clicking, as in MyMathLab.
+
+### The card contract (what the math skill writes)
+
+- Tag **`rd::math`** on every card whose answer has math symbols (exact tag; never `tag:rd::*`; `rd::mathx` and `rd::math::equiv` alone don't count).
+- A note field **`MathAnswer`**: the answer in plain keyboard form: `^` powers, `sqrt()`, `+-` for ±, `/` with parentheses, `abs()`, `pi`, `i` (the imaginary unit), `<=`, `>=`, intervals `[-2,5)`, `(-inf,3]`, unions with `U`, comma lists (`x=2, x=-3`, `(1,2),(3,4)`), subscripts `y2` or `y_2`. Examples: `x=(-b+-sqrt(b^2-4ac))/(2a)`, `m=(y2-y1)/(x2-x1)`, `(a+b)(a-b)`, `2+3i`, `[-2,5)`.
+- The cloze keeps the MathJax version for display; one cloze per math card.
+- Optional tag **`rd::math::equiv`**: an equivalent answer in another form counts as right.
+- A card tagged `rd::math` with no `MathAnswer` (or an empty or unreadable one) is drilled as a normal card; the setup panel shows one amber line with how many.
+
+### The form rule (`math_answer.py`, `math_parse.py`; pure, strict pyright)
+
+- **Same form, any order** is right: the typed answer and the card's parse (own parser, `math_parse.parse`) to the same canonical tree up to the order of sums and products, flattening, numeric coefficients and fractions (`0.5x` = `x/2`), spacing, `2a` = `2*a`, `y2` = `y_2`, `−` = `-`, redundant parentheses, `x^(1/2)` = `sqrt(x)`. Not folded, so a different form: `2(x+1)` vs `2x+2`, `1/2+1/3` vs `5/6`.
+- Equations and inequalities may have their sides swapped (`y=mx+b` = `mx+b=y`, `x<=5` = `5>=x`, `1<x<=5` = `5>=x>1`). `x<5` vs `x<=5` is wrong.
+- `+-` means both branches (up to 64): typing one branch is wrong.
+- Intervals, points and sets compare endpoints **and** bracket types; `{...}`, `U` unions and comma lists have no order.
+- **Equivalent but another form** is wrong, with "Equivalent, but this card wants: <target, rendered>"; Count as correct still works. With `rd::math::equiv` it is right. Equivalence: a numeric spot check at 12 seeded sample points (complex arithmetic, so `sqrt(b^2-4ac)` is fine), then `simplify(a - b) == 0` in the vendored SymPy (skipped for expressions over 300 operations, or if SymPy can't load); equations and inequalities compare `rhs - lhs` up to a constant factor (positive for inequalities); `inf` endpoints must match in form. `sqrt(x^2)` is not `x`.
+- **Unreadable input** (including an empty field) is wrong with "Couldn't read that as math"; nothing raises.
+
+### How the check meets the engine (no engine change)
+
+- The item's `back` is `engine_target(MathAnswer)`: the answer with all whitespace removed and `,` / `;` replaced by private-use characters. The engine sees one word, so it never chunks it (not even with a chunk threshold of 0) and never splits it as a list (tests: intervals, points, long formulas, ±, 40-term sums). A math card is always one item in the `full` stage, then cycle and Final check.
+- `SourceRef` gained `math_target` (the raw `MathAnswer`) and `math_equiv`; every display uses them, never `back`. Old saves load (defaults).
+- `submit` runs `check_answer` first. Right: the engine gets the trial's own target. Otherwise it gets `"wrong"` + the typed text in the same one-word form: letters the engine keeps, not a stopword, never equal to the target (a plain copy could grade exact: lenient mode reads `x^2` and `x-2` alike). So the verdict is `exact` or `wrong`, never `near`. Count as correct, reveals, misses, history, handoff and outcomes work as for any card. The "other card's answer" catch skips math cards.
+- Build: `anki_io/mathcards.py` (tags, field), `build.py` and `rebuild_card` (the item and source), `resume.py` (the answer hash), `select.py` (`Candidate.math`; `Selection.math_cards`, `math_gaps`). Math cards are left out of hints and any-order.
+
+### Display
+
+Everything that shows a math answer is rendered with MathJax from LaTeX made by `math_parse.to_latex` (the answer as the card wrote it): the reveal, a wrong answer ("Your answer", "Target", the message; no word diff; an unreadable answer shows as typed), the done screen's lists. **Cue stages:** the first-letter cue on a math card reads "Type the whole formula" (badge "Whole formula"); the blind stages are as for any card.
+
+### The palette
+
+- `ui/drill_window.py` makes a second `AnkiWebView` on the first math card (a plain session never builds it) holding one **MathLive 0.110.0** (MIT, published 2026-06-09) field and an always-visible palette: fraction, power, square root, parentheses, |x|, ±, ≤, ≥, π, i, ∞, ∪, `[` `)` `(` `]`, backspace, ← and →; every button at least 48 px. Letters and digits come from the keyboard. Under the palette: "Graded by form; any order". The text box is hidden on a math card and back on the next plain one.
+- Files: `web/mathlive/` (`mathlive.min.js`, the 20 KaTeX fonts, `LICENSE.txt`, `README.txt`), `web/rd_math_input.js`; the page's HTML and CSS come from `math_input.py` with `ui/style.py`'s tokens. Offline: no sounds, no virtual keyboard or menu, fonts from the add-on's own folder (a test blocks every non-`file:` request). `web_exports.py` holds the single `setWebExports` pattern (Anki keeps one per add-on): the exam tracker's files plus these.
+- The page sends its LaTeX to Python on every change (`rd:math:<latex>`); `math_parse.latex_to_keyboard` turns it into the keyboard form, so one parser serves both. A placeholder left empty or unsupported LaTeX is "Couldn't read that as math".
+- Keys from the field: Enter (Check or Continue), Esc (reveal), Ctrl+Enter (Count as correct), Ctrl+I, Ctrl+E, Ctrl+R, caught before MathLive sees them. `smartSuperscript` is off, so `x^10` keeps both digits in the exponent; the → button (or the arrow key) leaves it.
+- Focus goes to the field when a math card appears; it is locked while a verdict shows.
+
+### Setup panel
+
+The Cards summary ends with "· 12 math" when the cards the drill will take include math cards; an amber line says how many `rd::math` cards have no usable `MathAnswer`.
+
+### Vendored packages (`vendor/`, loaded from the add-on's folder by `math_vendor.py`, the one place that touches `sys.path`; imported on the first equivalence check; no network)
+
+| Package | Version | Licence | On disk |
+|---|---|---|---|
+| SymPy | 1.14.0 | BSD-3-Clause (`LICENSE-sympy.txt`, `AUTHORS-sympy.txt`) | pure Python |
+| mpmath | 1.3.0 | BSD (`LICENSE-mpmath.txt`) | pure Python |
+| MathLive (in `web/`) | 0.110.0 | MIT (`web/mathlive/LICENSE.txt`) | 0.8 MB JS + 0.3 MB fonts |
+
+SymPy's `tests/` folders and subpackages nothing imports (`diffgeom`, `stats`, `codegen`, `crypto`, `vector`, `liealgebras`, `holonomic`, `sandbox`, `categories`, `unify`, `benchmarks`) were removed; `import sympy` and `simplify` were checked on what is left. The same pins are in `requirements-dev.txt`; `tests/test_math_vendor.py` checks they match the vendored files, that no tests ship, and that SymPy is not imported before it is needed. `build.py` packages `vendor/` and all of `web/`. Size added: about 17.9 MB unpacked (16.9 MB vendor, 1.1 MB web) and 4.5 MB in the `.ankiaddon` (5.0 MB in all).
+
+### Tests
+
+`tests/test_math_answer.py` (the required table, same form, different form, ±, LaTeX in, engine safety), `tests/controller/test_math_controller.py`, `tests/anki_io/test_math_cards.py` (the contract; a Lab 2 deck with math notes drilled through every stage, handoff, history, outcomes), `tests/ui/test_ui_smoke.py` (window and setup panel offscreen), `tests/ui/test_math_palette.py` (the real page in Chromium through Playwright; it skips itself without a browser: `playwright install chromium`).
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:

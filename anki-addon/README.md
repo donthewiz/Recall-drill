@@ -26,6 +26,21 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.6.0
+
+- **Math answers.** A card tagged `rd::math` with a `MathAnswer` field is drilled with a math field and a click palette instead of the text box: fraction, power, square root, ±, parentheses, absolute value, ≤, ≥, interval brackets `[ ) ( ]`, π, i, ∞, ∪, backspace and the arrows, all always on screen. Type letters and digits on the keyboard. Enter, Esc, Ctrl+Enter, Ctrl+I, Ctrl+E and Ctrl+R work with the cursor in the field.
+- **Graded by form, any order.** Your answer is right when it has the same form as the card's: the order of terms and factors, spacing, `2a` or `2*a`, `y2` or `y_2` don't matter; an equation or inequality may be turned around (`5>=x` is `x<=5`); `±` means both answers (one alone is wrong); intervals must have the right brackets. `x^2` is no longer the same as `x-2`. An answer that is equal but written another way (`a^2-b^2` for `(a+b)(a-b)`) is marked wrong with "Equivalent, but this card wants: …" (Count as correct still works); add the tag `rd::math::equiv` to a card to accept any equivalent answer.
+- **Everything shows as math.** The reveal, a wrong answer ("Your answer" and "Target", both typeset, with a message instead of the word diff) and the done screen show the formula, not keyboard text. The first cue on a math card says "Type the whole formula".
+- **Setup panel.** The Cards line adds "· 12 math" when math cards are in the pick, and an amber line says how many `rd::math` cards have no usable `MathAnswer` (they are drilled as normal cards).
+- Cards that aren't math are drilled exactly as before. The package is about 4.5 MB bigger (SymPy and MathLive are included; nothing is downloaded).
+
+**The card contract (for the math skill).**
+
+- Tag `rd::math` on every card whose answer has math symbols (exact tag); optional `rd::math::equiv`.
+- A note field `MathAnswer` with the answer in plain keyboard form: `^` for powers, `sqrt()`, `+-` for ±, `/` with parentheses, `abs()`, `pi`, `i` for the imaginary unit, `<=` `>=`, intervals like `[-2,5)` and `(-inf,3]`, unions with `U`, lists with commas (`x=2, x=-3`), subscripts as `y2` or `y_2`. Examples: `x=(-b+-sqrt(b^2-4ac))/(2a)`, `m=(y2-y1)/(x2-x1)`, `(a+b)(a-b)`, `2+3i`, `[-2,5)`.
+- The cloze keeps the MathJax version for display; one cloze per math card.
+- A card with the tag but no (or an unreadable) `MathAnswer` is drilled as a normal card.
+
 ## What's new in 0.5.1
 
 - **One Recall Drill entry in Tools.** The eight "Recall Drill…" lines are now one **Recall Drill** submenu: **Drill this deck…** and **Sections · Drill next…** at the top, then **More** with Waiting cards…, My rd::hard cards, Filtered deck for rd::hard, Tuning report…, Export outcomes now and the Exam tracker on deck screen switch. Nothing was removed; the deck gear's "Recall Drill this deck" and the overview's "Recall Drill" button are as before.
@@ -147,6 +162,7 @@ Cards that already have a schedule keep it either way.
 | `rd::long` | The note's answer was drilled in chunks. **Off by default** (`tag_long`). |
 | `rd::undrilled` | The note's drill cards were sent to Anki without the drill (Tools → Recall Drill → More → Waiting cards). |
 | `rd::held` | The note has cards held back from Anki until drilled (**Keep new cards out of Anki until drilled**). Removed by the handoff and by sending the cards to Anki undrilled. |
+| `rd::math` | (You or the math skill add it.) The note's cards are drilled with the math field and palette; needs a `MathAnswer` field. `rd::math::equiv` on top accepts any equivalent answer. |
 
 Tools → **Recall Drill → More → My rd::hard cards** opens the panel on `tag:rd::hard`; **Filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*` (it would also match `rd::drilled`, `rd::undrilled` and `rd::held`).
 
