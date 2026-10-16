@@ -34,6 +34,14 @@ What the add-on adds on top of SessionView (none of it reaches the engine):
   :meth:`DrillController.start` and stops at Save and stop, so a gap across a
   saved or closed session never counts. Both are saved in the ``addon`` block.
 
+- **math cards** (v0.6): a card with ``SourceRef.math_target`` is checked by
+  ``math_answer`` (same form, any order) before the engine, which is handed the
+  card's own target when the check says right and a string that never grades right
+  or near otherwise (``math_answer.engine_typed``). The item's ``back`` is the
+  engine-safe form of the answer (one word, never chunked or split as a list).
+  The view carries the rendered answer and the check's message (``MathView``) in
+  place of the word diff; a math answer is never shown as raw text.
+
 - **fewer clicks** (2026-10-12): with ``ControllerSettings.auto_advance_correct``
   an exact or near answer (or "Count as correct") in the cycle and the Final
   check dwells (:data:`CORRECT_DWELL_MS`) and moves on by itself, as the encode
@@ -94,6 +102,7 @@ from .engine.types import (
     Verdict,
     WordDiffResult,
 )
+from .math_answer import MathCheck, check_answer, engine_typed, latex_of
 from .pacing import minutes_text
 from .sources import SourceRef, sources_to_json
 
@@ -269,6 +278,39 @@ class FeedbackView:
 
 
 @dataclass(frozen=True)
+class MathFeedback:
+    """A wrong math answer, rendered: what was typed, the target and the message."""
+
+    outcome: str
+    """"wrong", "equivalent" or "unreadable"."""
+    your_latex: str | None
+    """The typed answer as LaTeX; None when it couldn't be read."""
+    your_text: str
+    """The typed answer as typed (shown as plain text when ``your_latex`` is None)."""
+    target_latex: str
+    message: str
+    """"Not the same expression", "Equivalent, but this card wants: \\(...\\)" or
+    "Couldn't read that as math"."""
+
+
+@dataclass(frozen=True)
+class MathView:
+    """What a math card shows instead of raw text (``ViewModel.math``)."""
+
+    sub_latex: str
+    """The target as LaTeX once revealed, else ""."""
+    feedback: MathFeedback | None
+    """Set on a wrong answer: replaces the word diff."""
+
+
+MATH_CUE_TEXT = "Type the whole formula"
+"""What a math card's first-letter cue shows: the engine's cue is letters of an
+encoded string, which would be noise."""
+MATH_BADGE = "Whole formula"
+MATH_PLACEHOLDER = "Type the answer with the palette..."
+
+
+@dataclass(frozen=True)
 class Buttons:
     check: bool
     """Check answer (or Continue on a presentation beat): ``submit``."""
@@ -388,6 +430,9 @@ class ViewModel:
     any_order: bool = False
     """The card's list answer grades in any order (``DrillItem.anyOrder``): the
     card shows an "any order" note."""
+    math: MathView | None = None
+    """Set on a math card (v0.6): the window shows the math field and palette, and
+    the page shows answers rendered."""
 
 
 @dataclass(frozen=True)
@@ -536,6 +581,8 @@ class DrillController:
         # the feedback now showing displays it.
         self._extra_seen: set[int] = set(extra_seen or ())
         self._extra_visible = False
+        self._math_check: MathCheck | None = None  # the last math answer's check
+        self._math_typed = ""
 
     # -- read-only accessors ------------------------------------------------
 
@@ -778,6 +825,7 @@ class DrillController:
         self._feedback = None
         self._last_verdict = None
         self._extra_visible = False
+        self._math_check = None
 
     # -- actions ------------------------------------------------------------
 
@@ -819,8 +867,14 @@ class DrillController:
         if self._is_presentation():
             typed = ""
 
+        src = self._sources[trial["itemId"]]
         # The "other card's answer" catch: before the engine, and nothing changes.
-        if self.settings.collision_catch and trial["stage"] in _WHOLE_ANSWER_STAGES:
+        # (A math card's answers aren't text to compare: no catch.)
+        if (
+            self.settings.collision_catch
+            and trial["stage"] in _WHOLE_ANSWER_STAGES
+            and not src.math_target
+        ):
             other = self._colliding_answer(typed, trial)
             if other is not None:
                 self.collisions += 1
@@ -830,7 +884,15 @@ class DrillController:
         self._notice = None
         self._processing = True
         pre = self._state
-        result = apply_answer(pre, typed, revealed=self._revealed)
+        engine_in = typed
+        self._math_check = None
+        if src.math_target:
+            # Math (v0.6): checked here; the engine gets the target itself when
+            # right, else a string that grades wrong.
+            self._math_check = check_answer(typed, src.math_target, equiv=src.math_equiv)
+            self._math_typed = typed
+            engine_in = engine_typed(typed, self._math_check, trial["target"])
+        result = apply_answer(pre, engine_in, revealed=self._revealed)
         self._extra_visible = self._extra_on_feedback(result["verdict"])
         self._pre_wrong_state = pre if result["verdict"] == "wrong" else None
         self._feedback = result["feedback"]
@@ -921,6 +983,7 @@ class DrillController:
         # The Extra the wrong answer showed stays (and holds) on this trial.
         # The trial that was answered, on the pre-answer snapshot.
         result = apply_answer(pre, pre_trial["target"], revealed=False, override=True)
+        self._math_check = None
         self._feedback = result["feedback"]
         self._last_verdict = result["verdict"]
         effects.append(Flash(True))
@@ -1120,17 +1183,21 @@ class DrillController:
         cue = CueView("none", "")
         sub_text = ""
         placeholder = ""
+        is_math = src is not None and bool(src.math_target)
+        math_tex = (latex_of(src.math_target) or "") if src is not None and is_math else ""
         if trial is not None:
             engine_cue = trial["cue"]
             if engine_cue["kind"] == "firstLetter":
-                cue = CueView("firstLetter", engine_cue["pattern"])
+                cue = CueView("firstLetter", MATH_CUE_TEXT if is_math else engine_cue["pattern"])
             elif engine_cue["kind"] == "present":
                 cue = CueView("present", trial["target"])
+            # A math target is shown rendered, never as the engine's encoded text.
+            shown = f"\\({math_tex}\\)" if is_math else trial["target"]
             if revealed:
-                sub_text = trial["target"]
-                placeholder = trial["target"]
+                sub_text = shown
+                placeholder = MATH_PLACEHOLDER if is_math else trial["target"]
             elif cue.kind == "present":
-                sub_text = trial["target"]
+                sub_text = shown
                 placeholder = "Press Enter to continue"
             elif cue.kind == "firstLetter":
                 sub_text = cue.text
@@ -1142,7 +1209,7 @@ class DrillController:
         if presentation:
             cue_badge = "Read & Continue"
         elif not revealed and cue.kind == "firstLetter":
-            cue_badge = "First-Letter Cue"
+            cue_badge = MATH_BADGE if is_math else "First-Letter Cue"
         elif not revealed and cue.kind == "none" and trial is not None:
             cue_badge = "Blind Recall"
 
@@ -1158,8 +1225,20 @@ class DrillController:
             answer_html = answer_side(src.front_html, src.answer_html)
 
         feedback = None
+        math_feedback: MathFeedback | None = None
         if self._feedback is not None:
             diff = self._feedback.get("diff")
+            check = self._math_check
+            if is_math and check is not None and self._last_verdict == "wrong":
+                # The word diff compares encoded text; the page shows both sides rendered.
+                diff = None
+                math_feedback = MathFeedback(
+                    check.outcome,
+                    check.typed_latex,
+                    self._math_typed,
+                    check.target_latex or math_tex,
+                    check.message,
+                )
             feedback = FeedbackView(
                 self._feedback["text"],
                 self._feedback["type"],
@@ -1275,6 +1354,7 @@ class DrillController:
                 for it in items
             ),
             any_order=item is not None and item.get("anyOrder") is True,
+            math=MathView(math_tex if revealed else "", math_feedback) if is_math else None,
         )
 
     def _remaining_text(self) -> str | None:
@@ -1380,7 +1460,7 @@ class DrillController:
                     it["id"],
                     self._sources[it["id"]].cid,
                     it["front"],
-                    it["back"],
+                    self._back_text(it),
                     it.get("attempts", 0),
                     " • ".join(parts),
                     tuple(it.get("hardSpans", [])),
@@ -1414,7 +1494,7 @@ class DrillController:
                     i["id"],
                     self._sources[i["id"]].cid,
                     i["front"],
-                    i["back"],
+                    self._back_text(i),
                     i.get("finalMisses", 0),
                 )
                 for i in missed
@@ -1424,6 +1504,12 @@ class DrillController:
                 "Drill this card again" if n_missed == 1 else f"Drill these {n_missed} cards again"
             ),
         )
+
+    def _back_text(self, item: DrillItem) -> str:
+        """An item's answer for the done screen: a math answer as inline MathJax."""
+        target = self._sources[item["id"]].math_target
+        tex = latex_of(target) if target else None
+        return f"\\({tex}\\)" if tex else item["back"]
 
     def drill_again_input(self) -> tuple[list[DeckItem], list[SourceRef]]:
         """DoneView's ``onDrillAgain`` cards (front, back, extra) and their sources."""

@@ -36,9 +36,11 @@ from ..deck_settings import DeckSettings, hints_enabled, standard_share
 from ..difficulty import CardAdjustment, DifficultySettings, adjust_card
 from ..engine.types import DeckItem, ItemOverrides
 from ..list_kind import any_order_for
+from ..math_answer import engine_target
 from ..prompts import HintEntry, compute_hints, find_conflicts
 from ..sources import SourceRef
 from .cards import NoteCache
+from .mathcards import MathCard, math_card
 from .notetypes import MappingTable, NoteMapping, answer_text, extra_html
 from .select import Candidate, Selection
 from .text import grading_text
@@ -95,6 +97,8 @@ class _Row:
     answer_html: str
     css: str
     image_front: bool
+    math: MathCard | None = None
+    """The card is drilled with the math check (v0.6): ``answer`` is the engine form of it."""
 
     @property
     def key(self) -> str:
@@ -129,7 +133,11 @@ def _rows(col: Collection, picked: Sequence[Candidate], notes: NoteCache) -> tup
         out = card.render_output(reload=True)
         front_html = out.question_text
         note = notes.get(card.nid)
-        answer = answer_text(col, note, cand.mapping, card.ord)
+        math = math_card(note, cand.snap.tags)
+        if math:
+            answer = engine_target(math.target)
+        else:
+            answer = answer_text(col, note, cand.mapping, card.ord)
         if not answer:
             empty += 1
             continue
@@ -146,6 +154,7 @@ def _rows(col: Collection, picked: Sequence[Candidate], notes: NoteCache) -> tup
                 out.answer_text,
                 out.css,
                 has_image(front_html),
+                math,
             )
         )
     return rows, empty
@@ -217,7 +226,7 @@ def build_session(
         image_keys = {r.key for r in rows if r.image_front}
         for r in rows:
             m = r.cand.mapping
-            if m.kind != "standard" or r.image_front:
+            if m.kind != "standard" or r.image_front or r.math is not None:
                 continue
             top = top_level_name(col, r.cand.snap.home_did)
             groups.setdefault((top, m.ntid, m.template_ord), []).append(r)
@@ -252,7 +261,7 @@ def build_session(
         s = r.cand.snap
         # 2026-10-12: a list answer grades in any order unless its ListKind tag
         # or its front's wording says the order matters.
-        any_order = any_order_for(r.front, r.answer, s.tags)
+        any_order = None if r.math else any_order_for(r.front, r.answer, s.tags)
         if any_order is not None:
             item["anyOrder"] = any_order
         deck_items.append(item)
@@ -280,6 +289,8 @@ def build_session(
                 colliding_answers=colliding.get(r.key, ()),
                 fsrs_d=s.fsrs_d,
                 fsrs_s=s.fsrs_s,
+                math_target=r.math.target if r.math else "",
+                math_equiv=r.math.equiv if r.math else False,
             )
         )
     return BuildResult(deck_items, sources, hints_on, flagged, empty, pool_size, adjustments)
@@ -308,7 +319,8 @@ def rebuild_card(col: Collection, src: SourceRef, mappings: MappingTable) -> Reb
         return None
     note = card.note()
     mapping = mappings.for_card(note.mid, card.ord)
-    answer = answer_text(col, note, mapping, card.ord)
+    math = math_card(note, note.tags)
+    answer = engine_target(math.target) if math else answer_text(col, note, mapping, card.ord)
     if not answer:
         return None
     out = card.render_output(reload=True)
@@ -323,6 +335,8 @@ def rebuild_card(col: Collection, src: SourceRef, mappings: MappingTable) -> Reb
         answer_html=out.answer_text,
         css=out.css,
         image_front=has_image(front_html),
+        math_target=math.target if math else "",
+        math_equiv=math.equiv if math else False,
     )
     front = grading_text(front_html)
     return RebuiltCard(
@@ -330,7 +344,7 @@ def rebuild_card(col: Collection, src: SourceRef, mappings: MappingTable) -> Reb
         answer,
         grading_text(x_html),
         source,
-        any_order_for(front, answer, note.tags),
+        None if math else any_order_for(front, answer, note.tags),
     )
 
 

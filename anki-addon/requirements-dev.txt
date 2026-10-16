@@ -5,4 +5,8 @@ aqt==26.8.1  # for type-checking ui/; pulls PyQt6 6.11.x like Anki 26.08.1's Qt 
 pytest==9.1.1
 pytest-cov==7.1.0
 ruff==0.16.10
+# The vendored copies in vendor/ (the add-on ships them; tests/test_math_vendor.py
+# checks these pins match). pytest runs against the vendored ones.
+sympy==1.14.0
+mpmath==1.3.0
 pyright==1.1.414

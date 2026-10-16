@@ -155,6 +155,49 @@ def add_amc_models(col: Collection) -> tuple[NotetypeDict, NotetypeDict]:
     return _cloze_model(col, AMC, AMC_FRONT), _cloze_model(col, AMC_TYPEIN, AMC_TYPEIN_FRONT)
 
 
+MATH = "Cloze Math (anki-medical-cards)+"
+MATH_FIELDS = ["Text", "Extra", "MathAnswer"]
+MATH_FRONT = "{{cloze:Text}}"
+
+
+def add_math_model(col: Collection) -> NotetypeDict:
+    """The math skill's note type (v0.6): a cloze with Text, Extra and MathAnswer fields."""
+    mm = col.models
+    m = mm.copy(model(col, "Cloze"), add=False)
+    m["name"] = MATH
+    for f in list(m["flds"]):
+        if f["name"] != "Text":
+            mm.remove_field(m, f)
+    for f in MATH_FIELDS[1:]:
+        mm.add_field(m, mm.new_field(f))
+    t = m["tmpls"][0]
+    t["qfmt"] = MATH_FRONT
+    t["afmt"] = (
+        MATH_FRONT + "<br><hr id=answer>{{#Extra}}<div class='extra'>{{Extra}}</div>{{/Extra}}"
+    )
+    mm.add(m)
+    return model(col, MATH)
+
+
+def add_math_note(
+    col: Collection,
+    did: DeckId,
+    prompt: str,
+    cloze: str,
+    answer: str,
+    tags: Sequence[str] = ("rd::math",),
+    extra: str = "",
+) -> Note:
+    """A math note: ``cloze`` is the MathJax shown in the cloze, ``answer`` the keyboard form."""
+    return add_note(
+        col,
+        MATH,
+        did,
+        {"Text": f"{prompt} {{{{c1::\\({cloze}\\)}}}}", "Extra": extra, "MathAnswer": answer},
+        tags,
+    )
+
+
 AMC_SAMPLE = {
     "Text": "Bone tissue is formally called {{c1::osseous tissue}}.",
     "Extra": "From <i>oss-</i> (bone).",

@@ -33,11 +33,20 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 def test_file_name_and_exact_file_list(built: Path) -> None:
     assert built.name == f"recall_drill-{recalldrill.VERSION}.ankiaddon"
-    expected = TOP_LEVEL | {
-        p.relative_to(ADDON_ROOT).as_posix()
-        for p in (ADDON_ROOT / "recalldrill").rglob("*.py")
-        if "__pycache__" not in p.parts
-    } | {p.relative_to(ADDON_ROOT).as_posix() for p in (ADDON_ROOT / "web").glob("*")}
+    expected = (
+        TOP_LEVEL
+        | {
+            p.relative_to(ADDON_ROOT).as_posix()
+            for p in (ADDON_ROOT / "recalldrill").rglob("*.py")
+            if "__pycache__" not in p.parts
+        }
+        | {
+            p.relative_to(ADDON_ROOT).as_posix()
+            for folder in ("web", "vendor")
+            for p in (ADDON_ROOT / folder).rglob("*")
+            if p.is_file() and "__pycache__" not in p.parts
+        }
+    )
     with zipfile.ZipFile(built) as z:
         names = z.namelist()
     assert sorted(names) == sorted(set(names))  # no duplicates
@@ -69,6 +78,8 @@ def test_no_test_or_dev_files(built: Path) -> None:
             assert name == "user_files/README.txt"
         if parts[0] == "recalldrill":
             assert name.endswith(".py")
+        if parts[0] == "vendor":
+            assert not {"tests", "__pycache__"} & set(parts), name
 
 
 def test_user_data_is_never_packaged(tmp_path: Path) -> None:
