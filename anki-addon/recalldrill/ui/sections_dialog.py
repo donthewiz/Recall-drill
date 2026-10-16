@@ -8,11 +8,13 @@ cells, and "✓ Done" or, on the first row not done (marked **NEXT**, accent bor
 **Drill next** button. The other counts the table used to show (released undrilled, held /
 waiting, not in Anki not held, % drilled, can't drill) are in the row's tooltip.
 
-**Drill next** opens the setup panel with Order = Deck order, only the new and suspended new
-card types ticked, and, by layer, Only with tag = ``Layer::N`` (v0.3.2), so it picks the cards
-the row counts as to go. Clicking a row opens the setup panel on its deck. Read in a
-``QueryOp``; nothing is written. The rules are in ``sections.py``, the reading in
-``anki_io/sections.py``.
+**Drill next** starts a session (v0.5.1; before, it opened the setup panel first) with Order =
+Deck order, only the new and suspended new card types, and, by layer, Only with tag =
+``Layer::N`` (v0.3.2): the cards the row counts as to go. It is the setup panel's own selection
+and Start, run without showing the panel; the panel opens instead, with the reason in a line, when
+the deck has a saved session, the selection is empty or it can't be read. Clicking a row opens
+the setup panel on its deck. Read in a ``QueryOp``; nothing is written. The rules are in
+``sections.py``, the reading in ``anki_io/sections.py``.
 """
 
 from __future__ import annotations
@@ -221,9 +223,9 @@ class SectionsDialog(QDialog):
         self.next_btn = style.button("Drill next", "primary")
         self.next_btn.setAutoDefault(False)
         self.next_btn.setToolTip(
-            "Opens the setup panel with Order = Deck order and only new cards ticked, "
-            "limited to the lowest unfinished layer (Only with tag = Layer::N); for "
-            "subdecks, on the next subdeck."
+            "Starts a session with Order = Deck order and only new cards, limited to the "
+            "lowest unfinished layer (Only with tag = Layer::N); for subdecks, on the next "
+            "subdeck. Opens the setup panel instead if the deck has a saved session."
         )
         self.next_btn.setEnabled(False)
         self.next_btn.setParent(root)
@@ -299,7 +301,8 @@ class SectionsDialog(QDialog):
             self._open_setup(rows[row].did)
 
     def _go_next(self) -> None:
-        """Drill next: the setup panel on the chosen deck with Order = Deck order,
+        """Drill next: a session on the chosen deck (the setup panel if it can't start) with
+        Order = Deck order,
         "Only with tag" = Layer::N (or on the next subdeck, no tag, when the rows are
         subdecks) and only the new card types ticked (``PACE_CLASSES``): the table's
         "to go" counts new cards only, so reviews (young, lapsed, flagged) stay out."""

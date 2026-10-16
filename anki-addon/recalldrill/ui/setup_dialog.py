@@ -164,9 +164,13 @@ class SetupDialog(QDialog):
         order: str | None = None,
         tag: str | None = None,
         classes: frozenset[CardClass] | None = None,
+        auto_start: bool = False,
     ) -> None:
         super().__init__(None, Qt.WindowType.Window)
         self.ctx = ctx
+        self._auto_start = auto_start
+        """Drill next (v0.5.1): stay hidden, and press Start as soon as the cards are read.
+        The panel opens instead, with a one-line reason, when it can't (see ``_direct_start``)."""
         self._forced_tag = tag
         """"Only with tag" asked for by the caller (Drill next: Layer::N); first load only."""
         self._forced_order = order
@@ -231,6 +235,11 @@ class SetupDialog(QDialog):
             False
         )  # QScrollArea.setWidget turns it on: keep the window's colour
         outer.addWidget(scroll, 1)
+
+        # Why Drill next opened this panel instead of starting (one line, hidden otherwise)
+        self.reason_label = style.note(kind="info")
+        self.reason_label.hide()
+        self.body.addWidget(self.reason_label)
 
         # Saved-session banner: the text on the left, the buttons on the right
         self.banner = style.frame("rdBanner")
@@ -850,6 +859,8 @@ class SetupDialog(QDialog):
     def _failed(self, exc: Exception) -> None:
         if self._closed:
             return
+        if self._auto_start:
+            self._open_instead("Couldn't read the selection, so Drill next opened the panel.")
         self._set_loading(False)
         self.status_label.setText(f"Couldn't read the cards: {exc}")
         self.start_btn.setEnabled(False)
@@ -900,7 +911,10 @@ class SetupDialog(QDialog):
             self.data = data
             self._show(data)
             self._set_loading(False)
-            self._refresh_pacing()
+            if self._auto_start:
+                self._direct_start()
+            if not self._closed:
+                self._refresh_pacing()
 
         QueryOp(parent=self, op=op, success=done).failure(self._failed).run_in_background()
 
@@ -1377,6 +1391,38 @@ class SetupDialog(QDialog):
         if dialog.saved:
             self._refresh()
 
+    # -- Drill next: start without opening the panel ------------------------------
+
+    def _open_instead(self, reason: str) -> None:
+        """Drill next can't start: this panel opens, prefilled, saying why in one line."""
+        self._auto_start = False
+        self.reason_label.setText(reason)
+        self.reason_label.show()
+        self.show()
+        self.activateWindow()
+
+    def _direct_start(self) -> None:
+        """The first read is in. Press Start, exactly as the panel's button does (same cards,
+        same settings, same launch), unless the choice is mine: a saved session, nothing to
+        pick, a drill window already open."""
+        self._auto_start = False
+        data = self.data
+        if data is None:
+            return
+        if self.ctx.raise_window(scope_key(self.scope)):
+            self.close()  # a window for this deck is open: it is raised, no second one
+            return
+        if self.saved_info is not None:
+            self._open_instead(
+                "This deck has a saved session: choose Resume, Start fresh or Hand off."
+            )
+        elif not data.drillable:
+            self._open_instead("Drill next would pick 0 cards, so it opened the panel.")
+        else:
+            self._start()
+            if not self._closed:  # Start declined (it says why itself)
+                self._open_instead("Drill next could not start the session.")
+
     # -- start / resume ---------------------------------------------------------
 
     def _confirm_replace(self) -> bool:
@@ -1537,8 +1583,12 @@ def open_setup(
     order: str | None = None,
     tag: str | None = None,
     classes: frozenset[CardClass] | None = None,
+    auto_start: bool = False,
 ) -> SetupDialog:
-    dialog = SetupDialog(ctx, deck_id, search, order, tag, classes)
-    dialog.show()
-    dialog.activateWindow()
+    """The setup panel. ``auto_start`` (Drill next) keeps it hidden and starts the session when
+    the cards are read; it shows itself only when it can't."""
+    dialog = SetupDialog(ctx, deck_id, search, order, tag, classes, auto_start)
+    if not auto_start:
+        dialog.show()
+        dialog.activateWindow()
     return dialog

@@ -68,6 +68,27 @@ def open_setup_for(
     open_setup(_ctx, deck_id, order=order, tag=tag, classes=classes)
 
 
+def drill_next(
+    deck_id: int | None,
+    order: str | None = None,
+    tag: str | None = None,
+    classes: frozenset[CardClass] | None = None,
+) -> None:
+    """Sections → Drill next: starts the session with the selection the setup panel would
+    have been opened with (v0.5.1). The panel opens instead, saying why, when the deck has a
+    saved session or the selection is empty or can't be read; a drill window that is already
+    open for the deck is raised."""
+    if _ctx is None or mw.col is None:
+        return
+    from ..sessions import deck_key
+    from .setup_dialog import open_setup
+
+    if deck_id is not None and _ctx.raise_window(deck_key(deck_id)):
+        return
+
+    open_setup(_ctx, deck_id, order=order, tag=tag, classes=classes, auto_start=True)
+
+
 def open_hard_cards() -> None:
     """The setup panel over ``tag:rd::hard`` (narrowed to the cards that were hard)."""
     if _ctx is None or mw.col is None:
@@ -111,7 +132,7 @@ def open_sections() -> None:
         return
     from .sections_dialog import open_sections as show
 
-    show(_ctx, open_setup_for, _current_deck(), open_setup_for)
+    show(_ctx, open_setup_for, _current_deck(), drill_next)
 
 
 def export_outcomes_now() -> None:
