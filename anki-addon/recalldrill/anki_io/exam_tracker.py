@@ -170,7 +170,7 @@ def _buried_reviews(
 def _rates(
     col: Collection, storage: Storage, top_name: str, top_revlog: Sequence[RevlogRow], now_ms: int
 ) -> Rates:
-    """Seconds a step takes in this top-level deck: the setup panel's measured drill speed
+    """Seconds a card takes in this top-level deck: the setup panel's measured drill speed
     (``speed_for``) and the last 30 days of Don's own answer times (``revlog_times``).
     A missing figure stays None; nothing is invented."""
     speed = speed_for(col, storage, top_name)
@@ -208,6 +208,8 @@ def read_trackers(col: Collection, storage: Storage, now_ms: int | None = None) 
     )
     lines = history_store.read_every_log(storage)
     handoffs = _handoffs(lines, rollover)
+    # Cards a handoff actually drilled (not siblings or holdout): done once drilled.
+    drilled_cards = frozenset(c for c, _day in handoffs)
     day_number = int(col.sched.today)
     day_cutoff = int(col.sched.day_cutoff)
     top_rows: dict[int, list[RevlogRow]] = {}
@@ -215,7 +217,7 @@ def read_trackers(col: Collection, storage: Storage, now_ms: int | None = None) 
     for did, exam in exams.items():
         scope = by_exam[did]
         cids = {r.cid for r in scope}
-        counts = _counts(scope, drilled, undrillable)
+        counts = _counts(scope, drilled, undrillable, drilled_cards)
         horizon = reviews_horizon(exam, today)
         deck_name = col.decks.name(DeckId(did))
         found = col.find_cards(
@@ -235,7 +237,7 @@ def read_trackers(col: Collection, storage: Storage, now_ms: int | None = None) 
             top_rows[top] = deck_revlog(col, top)
         scope_rev = [r for r in top_rows[top] if r.cid in cids]
         ratings = [(r.cid, anki_day(r.id, rollover)) for r in scope_rev if is_counted(r)]
-        steps = daily_steps(((c, d) for c, d in handoffs if c in cids), ratings)
+        steps = daily_steps(((c, d) for c, d in handoffs if c in cids), ratings, drilled_cards)
         earliest = min((r.nid for r in scope), default=None)
         window = pace_window(anki_day(earliest, rollover) if earliest is not None else None, today)
         numbers = compute(
@@ -261,24 +263,30 @@ class _Counts:
 
 
 def _counts(
-    scope: Sequence[_CardRow], drilled: set[int] | frozenset[int], undrillable: set[int]
+    scope: Sequence[_CardRow],
+    drilled: set[int] | frozenset[int],
+    undrillable: set[int],
+    drilled_cards: set[int] | frozenset[int] = frozenset(),
 ) -> _Counts:
-    """Drill to go and New for one scope (docs/DECISIONS.md, "Step 2").
+    """Drill to go and New for one scope, in cards, each card once (docs/DECISIONS.md,
+    "Cards, not steps").
 
     - **Drill to go**: cards in the sections table's "held / waiting" bucket; can't-drill
       cards are a bucket of their own (``sections.bucket``), so they are excluded.
-    - **New**: new cards that will need a first Anki rating: every unsuspended new card
-      (queue new or buried), plus every Drill-to-go card (it becomes new in Anki after its
-      drill), plus held cards the drill can't take (they go to Anki undrilled), once each."""
+    - **New**: new cards that will need a first Anki rating and were **not drilled**: every
+      unsuspended new card (queue new or buried) that no handoff drilled (``drilled_cards``:
+      the handoff lines' ``cards``; siblings and holdout cards handed off undrilled still
+      count), plus held cards the drill can't take (they go to Anki undrilled). A drilled
+      card is done; a Drill-to-go card is counted once, under Drill."""
     drill = new = 0
     for r in scope:
         facts = CardFacts(r.cid, r.type == 0, r.queue == -1, r.tags, r.cid in undrillable)
         b = bucket(facts, drilled)
         if b == "held":
             drill += 1
-            new += 1
         elif r.type == 0 and r.queue != -1:
-            new += 1
+            if r.cid not in drilled_cards:
+                new += 1
         elif b == "cant_drill" and bucket(replace(facts, undrillable=False), drilled) == "held":
             new += 1
     return _Counts(drill, new)

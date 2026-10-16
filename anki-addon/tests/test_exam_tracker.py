@@ -172,10 +172,12 @@ def test_the_exam_day_has_no_needed_figure() -> None:
 # --- the estimate -----------------------------------------------------------------------
 
 
-def test_estimate_splits_the_remaining_steps_in_the_split_proportions() -> None:
-    # 7 steps left today of 100 cards: 40 drill, 50 new, 10 reviews.
+def test_estimate_splits_the_remaining_cards_in_the_split_proportions() -> None:
+    # 7 cards left today of 100: 40 drill, 50 new, 10 reviews. A drill card costs the drill
+    # plus its first day in Anki tomorrow (30 + 20 s): the count leaves that rating out, the
+    # minutes don't.
     s = et.estimate_seconds(13, 6, 40, 50, 10, ALL_RATES)
-    assert s == pytest.approx(7 * (40 * 30 + 50 * 20 + 10 * 10) / 100)
+    assert s == pytest.approx(7 * (40 * (30 + 20) + 50 * 20 + 10 * 10) / 100)
     # Done today beyond Needed: nothing left today.
     assert et.estimate_seconds(13, 20, 40, 50, 10, ALL_RATES) == 0.0
     assert et.estimate_seconds(0, 0, 0, 0, 0, ALL_RATES) == 0.0
@@ -193,6 +195,13 @@ def test_estimate_splits_the_remaining_steps_in_the_split_proportions() -> None:
 def test_a_missing_rate_gives_no_estimate_never_a_made_up_one(rates: et.Rates) -> None:
     assert et.estimate_seconds(13, 6, 40, 50, 10, rates) is None
     assert et.est_text(None) == "Est. time: not enough history yet"
+
+
+def test_drill_cards_need_the_new_card_rate_too() -> None:
+    # Only drill cards left: their first Anki rating is part of their cost, so a missing new
+    # rate means no estimate, never a drill-only figure.
+    assert et.estimate_seconds(10, 0, 10, 0, 0, et.Rates(30, None, 10)) is None
+    assert et.estimate_seconds(10, 0, 10, 0, 0, et.Rates(30, 20, None)) == pytest.approx(10 * 50)
 
 
 def test_a_rate_nothing_needs_may_be_missing() -> None:
@@ -221,7 +230,7 @@ def test_exam_text() -> None:
     assert et.exam_text(EXAM) == "Exam · Fri Oct 23"
 
 
-# --- steps and pace ---------------------------------------------------------------------
+# --- cards done and pace ----------------------------------------------------------------
 
 
 def d(k: int) -> date:
@@ -244,6 +253,23 @@ def test_daily_steps_count_a_drill_a_first_rating_and_a_review() -> None:
     assert steps[d(1)] == 2 + 1  # drills of 1 and 2, first rating of 6
     assert steps[d(3)] == 1
     assert sum(steps.values()) == 3 + 3 + 1
+
+
+def test_a_drilled_cards_first_anki_rating_is_not_counted_again() -> None:
+    """Cards, not steps: a card counts once when drilled; its next-day first rating in Anki
+    adds nothing, while its later reviews still count."""
+    handoffs = [(1, d(2))]  # card 1 drilled two days ago
+    ratings = [
+        (1, d(1)),  # its first Anki rating yesterday: already counted at the drill
+        (1, d(0)),  # a review today: counts
+        (2, d(1)),  # card 2 was never drilled: its first rating counts
+    ]
+    done = et.daily_steps(handoffs, ratings, drilled={1})
+    assert done[d(2)] == 1  # the drill
+    assert done[d(1)] == 1  # only card 2's first rating
+    assert done[d(0)] == 1  # card 1's review
+    # Without the drilled set it would be the old step count (2 yesterday).
+    assert et.daily_steps(handoffs, ratings)[d(1)] == 2
 
 
 def test_pace_averages_the_seven_days_before_today_not_today() -> None:

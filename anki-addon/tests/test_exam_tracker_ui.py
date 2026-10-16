@@ -129,8 +129,9 @@ def test_the_three_states_from_real_numbers() -> None:
     assert "<b>490</b><span>left</span>" in red["card"]
     assert f"<b>18 of {LAB2.needed}</b><span>today</span>" in red["card"]
     assert f"<b>{LAB2.needed}</b><span>a day</span>" in red["card"]
-    # drill 30 s, new 20 s, review 10 s over the share of today's steps left
-    assert "<div>330 drill · 110 new · 50 reviews</div><div>Est. 20 min today</div>" in red["card"]
+    # drill 30 s + its first day in Anki 20 s, new 20 s, review 10 s, over the share of
+    # today's cards left: 46 x (330 x 50 + 110 x 20 + 50 x 10) / 490 = 1,802 s
+    assert "<div>330 drill · 110 new · 50 reviews</div><div>Est. 30 min today</div>" in red["card"]
     assert "Slightly behind" in p["22"]["row"] and "11 days left" in p["22"]["row"]
     assert "Exam · Mon Oct 26" in p["22"]["card"]
     assert "On pace" in p["40"]["row"] and "54 days left" in p["40"]["row"]

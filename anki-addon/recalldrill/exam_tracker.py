@@ -1,12 +1,14 @@
 """Exam tracker numbers (v0.4 step 2; pure, no Anki imports).
 
 docs/DECISIONS.md, "v0.4 exam tracker" -> "Step 2: real numbers (v0.4.0)". Plain inputs
-(counts, dates, per-day step totals, rates) in, a frozen :class:`TrackerNumbers` out. Every
+(counts, dates, per-day card totals, rates) in, a frozen :class:`TrackerNumbers` out. Every
 figure the deck screen shows is made here, each by one function whose docstring quotes its rule.
 
-The unit is a **step**: one drill, one first Anki rating of a new card, or one review. A card
-that still has to be drilled needs two steps before the exam: the drill, then its first
-Anki rating, so it counts in both *Drill to go* and *New*.
+The unit is a **card** (Don, 2026-10-15, after "steps" read as confusing): each card left
+before the exam counts once, as *Drill to go*, *New* or *Reviews*. A drilled card is done:
+its first Anki rating the next day is not counted again (not in *New*, not in *Done today*,
+not in the pace), but its time is part of the drill rate in the estimate, so the minutes stay
+honest. (v0.4.0 counted "steps", where a card still to drill counted twice.)
 
 All days are Anki days (``measure.anki_day``): "today" is Anki's today.
 """
@@ -15,7 +17,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
@@ -42,7 +44,8 @@ NO_ESTIMATE_TEXT = "Est. time: not enough history yet"
 
 @dataclass(frozen=True)
 class Rates:
-    """Seconds one step takes, each from Don's own data (None: no such figure)."""
+    """Seconds one card takes, each from Don's own data (None: no such figure). ``new_s``
+    is a new card's first-day time in Anki (its learning ratings)."""
 
     drill_s: float | None = None
     new_s: float | None = None
@@ -64,7 +67,7 @@ class TrackerNumbers:
     needed: int | None
     """Needed a day; None on the exam day."""
     pace: float
-    """Average steps a day over the pace window."""
+    """Average cards a day over the pace window."""
     est_seconds: float | None
     """Seconds of work left today, or None (exam day, or a rate is missing)."""
 
@@ -125,15 +128,23 @@ def status_for(
 def estimate_seconds(
     needed: int, done_today: int, drill: int, new: int, reviews: int, rates: Rates
 ) -> float | None:
-    """Est. time today: the steps still to take today, ``max(0, Needed a day - Done today)``,
-    split in the proportions of Drill / New / Reviews, times each kind's seconds a step.
-    None when a rate a non-empty kind needs is missing: a rate is never invented."""
+    """Est. time today: the cards still to do today, ``max(0, Needed a day - Done today)``,
+    split in the proportions of Drill / New / Reviews, times each kind's seconds a card.
+    A drilled card still gets its first Anki rating the next day, so a drill card costs the
+    drill **plus** a new card's first day (``drill_s + new_s``): the count leaves that rating
+    out, the minutes don't. None when a rate a non-empty kind needs is missing: a rate is
+    never invented."""
     left = drill + new + reviews
     remaining = max(0, needed - done_today)
     if left == 0 or remaining == 0:
         return 0.0
+    drill_rate = (
+        rates.drill_s + rates.new_s
+        if rates.drill_s is not None and rates.new_s is not None
+        else None
+    )
     total = 0.0
-    for count, rate in ((drill, rates.drill_s), (new, rates.new_s), (reviews, rates.review_s)):
+    for count, rate in ((drill, drill_rate), (new, rates.new_s), (reviews, rates.review_s)):
         if count == 0:
             continue
         if rate is None:
@@ -167,7 +178,7 @@ def compute(
     rates: Rates,
 ) -> TrackerNumbers | None:
     """The numbers for one exam deck, or None when the exam has passed (a passed exam shows
-    nothing). ``pace_total``: steps over the pace window; ``pace_days``: its length."""
+    nothing). ``pace_total``: cards done over the pace window; ``pace_days``: its length."""
     left_days = days_left(exam, today)
     if left_days < 0:
         return None
@@ -191,15 +202,20 @@ def compute(
 
 
 def daily_steps(
-    handoffs: Iterable[tuple[int, date]], ratings: Iterable[tuple[int, date]]
+    handoffs: Iterable[tuple[int, date]],
+    ratings: Iterable[tuple[int, date]],
+    drilled: Collection[int] = frozenset(),
 ) -> Counter[date]:
-    """Steps taken per Anki day in one scope. ``handoffs``: (card id, day) of each card a
+    """Cards done per Anki day in one scope. ``handoffs``: (card id, day) of each card a
     Recall Drill handoff drilled. ``ratings``: (card id, day) of each counted Anki rating
-    (``measure.is_counted``), all history. A step is
+    (``measure.is_counted``), all history. ``drilled``: every card a handoff drilled (any
+    day). A card counts as done
 
-    - a drill: a card handed off that day (each card once a day);
-    - a first Anki rating: the day of a card's first counted rating (the card was new);
-    - a review: a counted rating on a day after the card's first, each card once a day
+    - when drilled: handed off that day (each card once a day);
+    - on its first counted Anki rating (it was new), **unless it was drilled**: a drilled
+      card was already counted when it was drilled, so its next-day first rating is not
+      counted again;
+    - as a review: a counted rating on a day after the card's first, each card once a day
       (the card was not new at the start of the day)."""
     out: Counter[date] = Counter()
     for _cid, day in set(handoffs):
@@ -207,9 +223,10 @@ def daily_steps(
     days_by_card: dict[int, set[date]] = {}
     for cid, day in ratings:
         days_by_card.setdefault(cid, set()).add(day)
-    for days in days_by_card.values():
+    for cid, days in days_by_card.items():
         first = min(days)
-        out[first] += 1
+        if cid not in drilled:
+            out[first] += 1
         for day in days:
             if day > first:
                 out[day] += 1
@@ -217,5 +234,5 @@ def daily_steps(
 
 
 def pace_total(steps: Mapping[date, int], today: date, window: int) -> int:
-    """Steps over the ``window`` Anki days before today."""
+    """Cards done over the ``window`` Anki days before today."""
     return sum(steps.get(today - timedelta(days=k), 0) for k in range(1, window + 1))

@@ -1,4 +1,4 @@
-"""The exam tracker's reader (v0.4 step 2) on real scratch collections.
+"""The exam tracker's reader (v0.4 step 2, counted in cards) on real scratch collections.
 
 Every expected figure is counted by hand in ``exam_scene.py``.
 """
@@ -26,16 +26,18 @@ def test_every_figure_equals_the_hand_count(col: Collection, tmp_path: Path) -> 
     assert set(result.numbers) == {s.lab2}  # Lab 1 and the chapters have no exam date
     n = result.numbers[s.lab2]
     assert n.exam_date == s.exam
-    assert (n.drill, n.new, n.reviews) == (40, 48, 9)
-    assert n.cards_left == 97 == EXPECTED["cards_left"]
+    # Cards, each once: D1-D5 are drilled, so they are done and not New.
+    assert (n.drill, n.new, n.reviews) == (40, 3, 9)
+    assert n.cards_left == 52 == EXPECTED["cards_left"]
     assert n.days_left == 8
     assert n.done_today == 6
-    assert n.needed == 13
-    assert n.pace == pytest.approx(9 / 7)
+    assert n.needed == 8  # ceil((52 + 6) / 8)
+    assert n.pace == pytest.approx(8 / 7)  # r7's first rating after its drill no longer counts
     assert n.status == "red"
-    # Est.: 7 x (40 x 30 s + 48 x 1.125 x 10 s + 9 x 10 s) / 97
-    assert n.est_seconds == pytest.approx(7 * (40 * 30 + 48 * 11.25 + 9 * 10) / 97)
-    assert est_text(n.est_seconds) == "Est. 2 min today"
+    # Est.: 2 cards left today = 8 - 6; a drill card costs the drill plus its first day in
+    # Anki (30 + 11.25 s): 2 x (40 x 41.25 + 3 x 11.25 + 9 x 10) / 52
+    assert n.est_seconds == pytest.approx(2 * (40 * 41.25 + 3 * 11.25 + 9 * 10) / 52)
+    assert est_text(n.est_seconds) == "Est. 1 min today"
 
 
 def test_drill_to_go_agrees_with_the_sections_table(col: Collection, tmp_path: Path) -> None:
@@ -59,11 +61,11 @@ def test_nested_exam_dates_split_the_scope(col: Collection, tmp_path: Path) -> N
     result = read_trackers(col, s.st)
     assert set(result.numbers) == {s.lab2, s.ch10}  # Ch 9 only inherits: no tracker
     parent, child = result.numbers[s.lab2], result.numbers[s.ch10]
-    # Lab 2 without Ch 10: 20 held, 20 + 1 can't-drill new, all 9 reviews, done today r1 r2 r3.
-    assert (parent.drill, parent.new, parent.reviews, parent.done_today) == (20, 21, 9, 3)
-    # Ch 10: 20 held; 20 + D1-D5 + U1 U2 new; no reviews; the 3 drills of today.
-    assert (child.drill, child.new, child.reviews, child.done_today) == (20, 27, 0, 3)
-    assert (child.days_left, child.needed) == (3, 17)  # ceil((47 + 3) / 3)
+    # Lab 2 without Ch 10: 20 held, the can't-drill card new, all 9 reviews, done today r1 r2 r3.
+    assert (parent.drill, parent.new, parent.reviews, parent.done_today) == (20, 1, 9, 3)
+    # Ch 10: 20 held; U1 U2 new (D1-D5 are drilled: done); no reviews; the 3 drills of today.
+    assert (child.drill, child.new, child.reviews, child.done_today) == (20, 2, 0, 3)
+    assert (child.days_left, child.needed) == (3, 9)  # ceil((22 + 3) / 3)
     # Lab 2 + Ch 10 add up to the one-exam deck's figures.
     assert parent.drill + child.drill == EXPECTED["drill"]
     assert parent.new + child.new == EXPECTED["new"]
@@ -123,7 +125,7 @@ def test_a_young_scope_averages_over_the_days_since_it_began(
     col.db.execute("update notes set id = ? where id = ?", new_id, oldest)
     col.db.execute("update cards set nid = ? where nid = ?", new_id, oldest)
     n = read_trackers(col, s.st).numbers[s.lab2]
-    # Days -1, -2 and -3 held 3 + 2 + 0 steps (the very first note is among the scope's).
+    # Days -1, -2 and -3 held 3 + 2 + 0 cards (the very first note is among the scope's).
     assert n.pace == pytest.approx(5 / 3)
 
 
@@ -159,7 +161,7 @@ def test_no_rates_means_no_estimate(col: Collection, tmp_path: Path) -> None:
     today, _ = today_for(col)
     set_exam(st, did, today + timedelta(days=5))
     n = read_trackers(col, st).numbers[did]
-    assert (n.drill, n.new, n.reviews) == (3, 3, 0)
+    assert (n.drill, n.new, n.reviews) == (3, 0, 0)  # held cards count once, as drill
     assert n.est_seconds is None and est_text(n.est_seconds) == "Est. time: not enough history yet"
 
 
@@ -207,6 +209,6 @@ def test_a_large_scope_is_read_in_bounded_time(col: Collection, tmp_path: Path) 
     n = read_trackers(col, st).numbers[did]
     elapsed = clock.perf_counter() - started
     print(f"\nexam tracker reader, 8,000-card scope: {elapsed:.2f} s")
-    assert (n.drill, n.new) == (3900, 3900 + 1000)  # held + the 1,000 unsuspended new
+    assert (n.drill, n.new) == (3900, 1000)  # held once, as drill; the 1,000 unsuspended new
     assert n.reviews == sum(1 for c in reviews if c % 90 <= 53)  # due <= the day before the exam
     assert elapsed < 10  # measured ~0.3 s locally
