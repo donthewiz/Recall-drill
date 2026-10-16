@@ -20,7 +20,7 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `clear_flag_on_handoff` (default true; Phase 4): remove the red flag from drilled cards that have it.
 - `tag_long` (default false; Phase 4): tag notes whose answer was drilled in chunks `rd::long`.
 
-**Measurement** (Tools → Recall Drill: tuning report):
+**Measurement** (Tools → Recall Drill → More → Tuning report):
 
 - `min_words_to_chunk` (default 8; Phase 5): answers with at most this many words are drilled whole; longer ones are chunked. The tuning report can suggest a new value, applied only when you confirm it.
 - `holdout_pct` (default 0, off; Phase 5): the default **Holdout %** for decks without their own. Percent of eligible new cards, in deck sessions only, that skip the drill and go to Anki as plain new cards at the handoff (tagged `rd::holdout`), as a fair comparison for the drilled cards. Set it per deck in the Recall Drill panel (Holdout %, saved with the deck's settings). Which cards is decided by a hash, so changing the % only changes which cards are held out from now on. At most 50.
@@ -39,7 +39,7 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 - `skip_min_stability` (default 30; Phase 6): with `skip_max_difficulty`, defines the **stable** class: a card with FSRS stability at least this many days, difficulty at most `skip_max_difficulty`, and not a leech. The class is off by default; the panel counts the stable cards it skips.
 - `skip_max_difficulty` (default 5; Phase 6): the difficulty ceiling of the stable class (see `skip_min_stability`).
 
-**Waiting drill cards** (Tools → Recall Drill: waiting cards; v0.2):
+**Waiting drill cards** (Tools → Recall Drill → More → Waiting cards; v0.2):
 
 - `stale_drill_days` (default 7): a drill card (note tagged `rd::drill` or a child of it) still suspended and new this many days after its note was added is **stale**. A card in a deck whose pacing target has passed, or that has no drill days left, is stale whatever its age.
 - `waiting_notice` (default true): once per Anki day, after the profile opens, a tooltip says how many stale drill cards are waiting. false: no tooltip (the Tools entry and the panel's line stay).
@@ -47,15 +47,15 @@ Global defaults for new drill sessions. They match the web app's `recall_drill_*
 **Unrated cards and the outcomes export** (v0.3):
 
 - `unrated_warning` (default true; v0.3): in the setup panel of a deck, an amber line when handed-off drilled or holdout cards have no counted Anki rating yet and their primary window is still open: "N drilled cards are waiting for their first Anki rating. Rate them by <weekday, date> (before <rollover hour>) to keep them in the comparison." The deadline is the end of Anki day (handoff day + 2); with several handoffs pending it is the earliest. Cards in a filtered deck are noted. false: no line.
-- `export_on_open` (default true; v0.3): once when the profile opens, write `exports/outcomes.csv` in the profile's `user_files` folder (one row per drilled and holdout card: next-day outcome, the 14-day Anki cost, the drill counters, the exam date and the predicted recall on exam day). It is also written after every handoff, and by Tools → Recall Drill: export outcomes now. false: not at profile open.
+- `export_on_open` (default true; v0.3): once when the profile opens, write `exports/outcomes.csv` in the profile's `user_files` folder (one row per drilled and holdout card: next-day outcome, the 14-day Anki cost, the drill counters, the exam date and the predicted recall on exam day). It is also written after every handoff, and by Tools → Recall Drill → More → Export outcomes now. false: not at profile open.
 
 **Exam tracker** (v0.4):
 
-- `exam_tracker` (default true): on Anki's deck screen, every deck with an exam date (set in the setup panel's "Exam date" box) that is today or later gets a status tag (On pace, Slightly behind, Behind), a thin progress bar, the days left and "N a day needed", and a hover card with the cards left, the split (drill, new, reviews) and an estimate of today's time. The numbers are read from your collection, `pacing.json` and the history files; nothing is written to your collection. Tools → Recall Drill: exam tracker flips it and redraws the deck screen without a restart. false: the deck screen is exactly Anki's own. An old `exam_tracker_test` entry in your config is ignored. A card you pin open is remembered in your profile (`exam_tracker.json` in the add-on's `user_files` folder).
+- `exam_tracker` (default true): on Anki's deck screen, every deck with an exam date (set in the setup panel's "Exam date" box) that is today or later gets a status tag (On pace, Slightly behind, Behind), a thin progress bar, the days left and "N a day needed", and a hover card with the cards left, the split (drill, new, reviews) and an estimate of today's time. The numbers are read from your collection, `pacing.json` and the history files; nothing is written to your collection. Tools → Recall Drill → More → Exam tracker on deck screen flips it and redraws the deck screen without a restart. false: the deck screen is exactly Anki's own. An old `exam_tracker_test` entry in your config is ignored. A card you pin open is remembered in your profile (`exam_tracker.json` in the add-on's `user_files` folder).
 
 **Per-deck settings that are not in this config** (saved with the deck in `deck_settings.json`):
 
-- `holdBack` (default off; v0.3): the setup panel's **Keep new cards out of Anki until drilled**. For the deck and its subdecks (the deck's own value wins, else the nearest parent's). Turning it on, and the **Hold back N** button, ask first and then suspend the deck's new, unsuspended cards that aren't handed off and waiting for Anki, and tag their notes `rd::held` (one undo step, Edit → Undo "Recall Drill: hold back"). The handoff unsuspends drilled cards and removes `rd::held`; Tools → Recall Drill: waiting cards sends held cards to Anki undrilled; turning the switch off offers to release them. A deck that holds cards back defaults the panel's Order to Deck order.
+- `holdBack` (default off; v0.3): the setup panel's **Keep new cards out of Anki until drilled**. For the deck and its subdecks (the deck's own value wins, else the nearest parent's). Turning it on, and the **Hold back N** button, ask first and then suspend the deck's new, unsuspended cards that aren't handed off and waiting for Anki, and tag their notes `rd::held` (one undo step, Edit → Undo "Recall Drill: hold back"). The handoff unsuspends drilled cards and removes `rd::held`; Tools → Recall Drill → More → Waiting cards sends held cards to Anki undrilled; turning the switch off offers to release them. A deck that holds cards back defaults the panel's Order to Deck order.
 - The **Exam date** (Pacing box) is saved per deck in `pacing.json`, with the target date: a card's exam date is its deck's, else the nearest parent deck's.
 
 **Pacing** (Recall Drill panel → Pacing; target date and drill weekdays are saved per deck in `pacing.json`):

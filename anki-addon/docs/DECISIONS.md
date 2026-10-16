@@ -1065,6 +1065,67 @@ Dark or light follows Anki (`theme_manager.night_mode`) when a window is built a
 - The card area is the web view itself: it can't be clipped to rounded corners, so the rounded frame is around it.
 - A latent bug fixed in passing: on the waiting-cards rows `Drill…` and `Send to Anki undrilled…` were connected with default-argument lambdas, which receive `clicked`'s `checked` flag instead of the deck or row. The rebuilt row buttons swallow the flag.
 
+## v0.5.1 streamline (2026-10-16)
+
+### Decisions (Don, 2026-10-16)
+
+After the v0.5 redesign the add-on still felt clunky; the only things used are the setup panel and Sections → Drill next. Don approved a mockup (boards "Tools menu (streamlined)", "Setup panel, folded", "Setup panel, one section open") and one behaviour change:
+
+1. **Tools menu:** the eight "Recall Drill…" entries become **one "Recall Drill" submenu**.
+2. **Setup panel:** every section **folds to a one-line summary**, so the panel opens short with Start in reach.
+3. **Drill next starts the session right away** instead of opening the setup panel first.
+
+**Nothing was removed.** Every option and menu item is still reachable; the deck gear's "Recall Drill this deck" and the overview's "Recall Drill" button are unchanged. Nothing about which cards a session picks, how they are drilled, handed off, held back or paced, the tracker or any saved data format changed; no file under `recalldrill/engine/`, `src/` or the golden files changed. (The one new file is the per-profile `ui_state.json`, below.)
+
+### The menu (`ui/entry.py`, `build_menu`; labels are the constants at the top of the module)
+
+| Item | Calls (what the old entry called) |
+|---|---|
+| **Drill this deck…** | `drill_this_deck` (the setup panel on the current deck; was "Recall Drill…") |
+| **Sections · Drill next…** | `open_sections` (was "Recall Drill: sections") |
+| (separator) | |
+| **More ›** | a submenu: |
+| Waiting cards… | `open_waiting_cards` |
+| My rd::hard cards | `open_hard_cards` |
+| Filtered deck for rd::hard | `open_hard_filtered_deck` |
+| (separator) | |
+| Tuning report… | `open_tuning` |
+| Export outcomes now | `export_outcomes_now` |
+| (separator) | |
+| Exam tracker on deck screen | the checkable toggle of `ui/exam_tracker.py`, unchanged behaviour (`register(ctx, menu)` adds it to More) |
+
+Each item looks its function up when clicked. Tools → "Recall Drill" (About, `ui/about.py`) is a separate, older entry and is left as it was.
+
+### The folds (`ui/fold.py`, `setup_summary.py`, `ui/setup_dialog.py`)
+
+- Below the header and the saved-session banner: **Cards**, **Settings**, **Pacing**, **Scope**, in that order. Drill time is now a line in Cards; Hints (when a prompt needs one) sits at the end of Cards. Each fold is a full-width focusable `QPushButton` (Enter and Space toggle it; accessible name "Cards: <summary>", plus "(needs a look)" with a dot) showing the section name, a one-line summary and a chevron. Opening it shows the section's existing widgets in place: same objects, same signals.
+- All folds start closed. The open ones are kept per profile in the add-on's own storage (`ui_state.json`, key `setup_folds_open`), not the collection, and restored next time.
+- **Summaries** (live: they follow the controls as they change):
+  - Cards: the "Only with tag" value (`Layer::3` reads "Layer 3"; none: "all cards") · the ticked types, `new` and `suspended new` first ("new + suspended new") · the order · "max N" when Max cards is set. Lab 2 after Drill next: *Layer 1 · new + suspended new · Deck order*.
+  - Settings: cards per batch ("whole deck in one batch" for 0) · blind typings · "hold back on/off" (not for a search). *5 per batch · 3 blind typings · hold back off*.
+  - Pacing: "off", or *finish Tue Oct 20 · 111 today · every day* (the finish date is target minus "days early"; the number is today's N on a drill day, else "N a day"; "every day" for all seven weekdays, else *Mon, Wed, Fri*). Hidden for a search scope, as before.
+  - Scope: the deck and "whole deck", or the deck and "tag Layer 1"; for a search, *search: <text>*. *AP Lab::Lab 2 · tag Layer 1*.
+- **Warnings stay outside the folds**, right under the banner: the sibling warning, the unrated-cards and waiting-cards amber lines and the terminology-settings proposal (with its button). The "Siblings: 0" line is not shown. A fold whose section holds one shows a dot: Cards (sibling, waiting or unrated line, or nothing to drill), Settings (the proposal), Pacing (the pacing warning or a failed pace read), Scope (the cards could not be read).
+- The footer is unchanged. The default size is 640 × 900 (a saved size still wins). To fit 640 px with every fold open, the Settings number fields are one column and its switches one column (they were two); with every fold open the content's minimum width is 630 px.
+
+### Drill next starts the session
+
+Sections → **Drill next** calls `entry.drill_next`, which opens the setup panel **hidden** with `auto_start`: the same prefill as before (the Next layer's `Layer::N` tag, or the "No layer" rule; Order = Deck order; `new` and `suspended new` only; the deck's saved settings). When the panel's first read arrives it presses its own Start (`_start`, the same selection and launch code; no second copy of the rules) and closes. A test checks the direct start picks the same cards, in the same order, with the same settings as opening the panel by Drill next and pressing Start, on a Lab 2-shaped deck.
+
+It falls back to showing the panel, prefilled as before, with one line above the banner saying why, when:
+
+- the deck has a **saved session** (resume / start fresh / hand off / finish early stay Don's choice): "This deck has a saved session: choose Resume, Start fresh or Hand off.";
+- the selection would pick **0 cards**: "Drill next would pick 0 cards, so it opened the panel.";
+- reading the selection **fails**: "Couldn't read the selection, so Drill next opened the panel.";
+- (Start declined for another reason: "Drill next could not start the session.")
+
+A drill window for the deck that is **already open** is raised instead, as before; no panel, no second window.
+
+### Also changed
+
+- Messages that named "Tools → Recall Drill: waiting cards" now say "Tools → Recall Drill → More → Waiting cards" (the waiting notice, the hold-back texts and tooltip). The README and `config.md` use the new menu names.
+- `VERSION` 0.5.1.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
