@@ -218,7 +218,8 @@ def read_trackers(col: Collection, storage: Storage, now_ms: int | None = None) 
         scope = by_exam[did]
         cids = {r.cid for r in scope}
         counts = _counts(scope, drilled, undrillable, drilled_cards)
-        horizon = reviews_horizon(exam, today)
+        finish_before = pacing.load(storage, did).finish_days_before
+        horizon = reviews_horizon(exam, today, finish_before)
         deck_name = col.decks.name(DeckId(did))
         found = col.find_cards(
             col.build_search_string(
@@ -250,6 +251,7 @@ def read_trackers(col: Collection, storage: Storage, now_ms: int | None = None) 
             pace_total=pace_total(steps, today, window),
             pace_days=window,
             rates=_rates(col, storage, top_name, top_rows[top], now),
+            finish_days_before=finish_before,
         )
         if numbers is not None:
             out[did] = numbers

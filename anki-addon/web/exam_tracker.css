@@ -77,7 +77,10 @@
 .rd-seg-new { background: #3b82f6; }
 .rd-seg-rev { background: #8a929c; }
 .rd-days { font-weight: 600; }
+/* The exam date right after the countdown, on the same line (pulled into the gap). */
+.rd-exam-on { margin-inline-start: -6px; white-space: nowrap; }
 .rd-via,
+.rd-exam-on,
 .rd-line { color: var(--rd-fg-muted); }
 
 /* Decorated rows: the New / Learn / Due numbers line up with the deck name. The name link has

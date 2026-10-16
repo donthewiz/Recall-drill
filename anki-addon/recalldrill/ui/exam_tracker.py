@@ -39,6 +39,7 @@ from typing import Any, Protocol, cast
 from .. import exam_tracker as rules
 from ..addon_config import parse_config
 from ..exam_tracker import STATUS_ICON, STATUS_WORD, Status, TrackerNumbers
+from ..pacing import short_date
 from ..storage import EXAM_TRACKER, Storage
 from ..tracker_cache import NumbersCache, Refresher
 
@@ -161,8 +162,13 @@ def row_html(deck_name: str, f: TrackerNumbers, *, via: str | None, level: int) 
         days_html = ""
         line = f"{_n(f.done_today)} done today"
     else:
-        days = f"{f.days_left} day{'' if f.days_left == 1 else 's'} left"
+        if f.finish_passed:
+            days = "finish date passed"
+        else:
+            days = f"{f.days_left} day{'' if f.days_left == 1 else 's'} to finish"
         days_html = f'<span class="rd-days">{_e(days)}</span>'
+        # The exam date stays on the row (Don, 2026-10-15): the countdown is to the finish date.
+        days_html += f'<span class="rd-exam-on">· exam {_e(short_date(f.exam_date))}</span>'
         line = f"{_n(f.needed)} a day needed · {_n(f.done_today)} done today"
     return (
         f'<div class="rd-et rd-{f.status}" style="--rd-lvl:{max(level - 1, 0)}">'
@@ -210,6 +216,10 @@ def card_html(deck_name: str, f: TrackerNumbers) -> str:
             f"<div><b>{_n(f.done_today)} of {_n(f.needed)}</b><span>today</span></div>"
         )
         foot = f"<div>{_e(split)}</div><div>{_e(rules.est_text(f.est_seconds))}</div>"
+        if f.finish_date is not None:
+            when = short_date(f.finish_date)
+            finish = f"Finish date {when} passed" if f.finish_passed else f"Finish by {when}"
+            foot += f"<div>{_e(finish)}</div>"
     return (
         f'<div class="rd-card rd-{f.status}" role="dialog"'
         f' aria-label="Exam details: {_e(deck_name)}">'

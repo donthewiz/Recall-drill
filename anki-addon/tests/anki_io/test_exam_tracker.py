@@ -13,6 +13,7 @@ from anki.collection import Collection
 from anki_fixtures import add_note, deck
 from exam_scene import EXPECTED, build, set_exam, storage
 
+from recalldrill import pacing
 from recalldrill.anki_io.exam_tracker import exam_scopes, read_trackers
 from recalldrill.anki_io.sections import read_progress
 from recalldrill.anki_io.workload import today_for
@@ -38,6 +39,20 @@ def test_every_figure_equals_the_hand_count(col: Collection, tmp_path: Path) -> 
     # Anki (30 + 11.25 s): 2 x (40 x 41.25 + 3 x 11.25 + 9 x 10) / 52
     assert n.est_seconds == pytest.approx(2 * (40 * 41.25 + 3 * 11.25 + 9 * 10) / 52)
     assert est_text(n.est_seconds) == "Est. 1 min today"
+
+
+def test_the_reader_counts_to_the_decks_finish_date(col: Collection, tmp_path: Path) -> None:
+    """ "Finish 2 days before" (the setup panel's Pacing box) moves the countdown and the
+    review window to exam - 2; the exam date itself is unchanged."""
+    s = build(col, storage(tmp_path))
+    exam = s.today + timedelta(days=8)
+    pacing.save(s.st, s.lab2, pacing.PacingSettings(exam_date=exam, finish_days_before=2))
+    n = read_trackers(col, s.st).numbers[s.lab2]
+    assert n.exam_date == exam and n.finish_date == exam - timedelta(days=2)
+    assert n.days_left == 7 and not n.finish_passed
+    # r6 (due the day before the exam) now falls after the finish date: 8 reviews, not 9.
+    assert (n.drill, n.new, n.reviews) == (40, 3, 8)
+    assert n.needed == 9  # ceil((51 + 6) / 7)
 
 
 def test_drill_to_go_agrees_with_the_sections_table(col: Collection, tmp_path: Path) -> None:

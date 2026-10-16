@@ -77,6 +77,7 @@ def make(
     exam: date,
     today: date = TODAY,
     rates: Rates = Rates(30, 20, 10),  # noqa: B008
+    finish_days_before: int = 1,
 ) -> TrackerNumbers:
     n = rules.compute(
         exam=exam,
@@ -88,6 +89,7 @@ def make(
         pace_total=pace_total,
         pace_days=7,
         rates=rates,
+        finish_days_before=finish_days_before,
     )
     assert n is not None
     return n
@@ -123,7 +125,9 @@ def test_the_three_states_from_real_numbers() -> None:
     assert set(p) == {"13", "22", "40"}
     assert [p[k]["status"] for k in ("13", "22", "40")] == ["red", "amber", "green"]
     red = p["13"]
-    assert "Behind" in red["row"] and "8 days left" in red["row"]
+    assert "Behind" in red["row"] and "8 days to finish" in red["row"]
+    assert '<span class="rd-exam-on">· exam Fri Oct 23</span>' in red["row"]
+    assert "<div>Finish by Thu Oct 22</div>" in red["card"]  # default: the day before
     assert f"{LAB2.needed} a day needed · 18 done today" in red["row"]
     assert "<button" in red["row"] and "Exam · Fri Oct 23" in red["card"]
     assert "<b>490</b><span>left</span>" in red["card"]
@@ -132,12 +136,28 @@ def test_the_three_states_from_real_numbers() -> None:
     # drill 30 s + its first day in Anki 20 s, new 20 s, review 10 s, over the share of
     # today's cards left: 46 x (330 x 50 + 110 x 20 + 50 x 10) / 490 = 1,802 s
     assert "<div>330 drill · 110 new · 50 reviews</div><div>Est. 30 min today</div>" in red["card"]
-    assert "Slightly behind" in p["22"]["row"] and "11 days left" in p["22"]["row"]
+    assert "Slightly behind" in p["22"]["row"] and "11 days to finish" in p["22"]["row"]
     assert "Exam · Mon Oct 26" in p["22"]["card"]
-    assert "On pace" in p["40"]["row"] and "54 days left" in p["40"]["row"]
+    assert "On pace" in p["40"]["row"] and "54 days to finish" in p["40"]["row"]
     assert "<b>3,780</b>" in p["40"]["card"]
     assert "<div>1,500 drill · 2,100 new · 180 reviews</div>" in p["40"]["card"]
     assert "70 of" in p["40"]["card"]
+
+
+def test_the_row_counts_to_the_finish_date_and_still_shows_the_exam() -> None:
+    """Don, 2026-10-15: count down to the finish date (the exam minus "finish N days
+    before"), and keep the exam date on the row and the card."""
+    two = make(330, 110, 50, 18, 350, date(2026, 10, 23), finish_days_before=2)
+    assert (two.days_left, two.finish_date, two.finish_passed) == (7, date(2026, 10, 21), False)
+    p = payload_of({13: two}, **OPEN)["decks"]["13"]
+    assert "7 days to finish" in p["row"] and "· exam Fri Oct 23" in p["row"]
+    assert "Exam · Fri Oct 23" in p["card"] and "<div>Finish by Wed Oct 21</div>" in p["card"]
+    # Past the finish date (Thu Oct 22): it counts to the day before the exam and says so.
+    late = make(5, 0, 2, 0, 70, date(2026, 10, 23), today=date(2026, 10, 22), finish_days_before=2)
+    assert (late.days_left, late.finish_passed) == (1, True)
+    p = payload_of({13: late}, **OPEN)["decks"]["13"]
+    assert "finish date passed" in p["row"] and "· exam Fri Oct 23" in p["row"]
+    assert "<div>Finish date Wed Oct 21 passed</div>" in p["card"]
 
 
 def test_est_line_without_history_and_the_bar_lengths() -> None:
@@ -160,7 +180,7 @@ def test_exam_day_shows_the_exam_today_pill_and_two_numbers() -> None:
     assert today.status == "exam"
     p = payload_of({13: today}, **OPEN)["decks"]["13"]
     assert p["status"] == "exam" and 'class="rd-et rd-exam"' in p["row"]
-    assert "Exam today" in p["row"] and "days left" not in p["row"]
+    assert "Exam today" in p["row"] and "to finish" not in p["row"] and "rd-exam-on" not in p["row"]
     assert "a day needed" not in p["row"] and "3 done today" in p["row"]
     assert "<b>18</b><span>left</span>" in p["card"]
     assert "<b>3</b><span>done today</span>" in p["card"]
