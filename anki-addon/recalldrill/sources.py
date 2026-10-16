@@ -67,6 +67,12 @@ class SourceRef:
     """FSRS difficulty (1-10) when the session was built, or None (no memory state)."""
     fsrs_s: float | None = None
     """FSRS stability in days when the session was built, or None."""
+    math_target: str = ""
+    """A math card (v0.6, tag ``rd::math`` and a usable ``MathAnswer``): the card's
+    ``MathAnswer`` in keyboard form. The engine item's ``back`` is
+    ``math_answer.engine_target`` of it, and answers are checked by ``math_answer``."""
+    math_equiv: bool = False
+    """The card has ``rd::math::equiv``: an equivalent answer in another form is right."""
 
 
 _FIELDS = {f.name for f in dataclasses.fields(SourceRef)}

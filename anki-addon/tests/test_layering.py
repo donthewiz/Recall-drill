@@ -101,6 +101,9 @@ PURE_MODULES = (
     "holdback.py",
     "sections.py",
     "outcomes.py",
+    "math_vendor.py",
+    "math_parse.py",
+    "math_answer.py",
 )
 
 

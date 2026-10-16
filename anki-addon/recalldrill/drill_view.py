@@ -22,7 +22,7 @@ from html import escape
 from typing import Any
 
 from .card_html import display_extra, display_front
-from .controller import BatchDoneView, DoneSummary, FeedbackView, ViewModel
+from .controller import BatchDoneView, DoneSummary, FeedbackView, MathFeedback, ViewModel
 from .engine.types import WordDiffResult
 
 Prepare = Callable[[str], str]
@@ -84,6 +84,19 @@ body { margin: 12px 16px; }
   text-decoration-thickness: 2px; text-underline-offset: 4px; background: var(--rd-danger-bg);
   border: 1px solid var(--rd-danger); border-radius: 4px; padding: 0 5px; }
 .rd-answer { margin-top: 12px; }
+.rd-cue-math { font-family: inherit; font-size: 20px; font-weight: 400; color: var(--rd-text);
+  white-space: normal; }
+.rd-math { margin: 8px 0; border: 1px solid var(--rd-border); border-radius: 10px;
+  background: var(--rd-surface-1); padding: 4px 12px; }
+.rd-math-row { display: flex; align-items: baseline; gap: 14px; padding: 6px 0;
+  border-top: 1px solid var(--rd-border); }
+.rd-math-row:first-child { border-top: none; }
+.rd-math-label { flex: 0 0 96px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--rd-text-2); }
+.rd-math-val { font-size: 20px; color: var(--rd-text); overflow-x: auto; }
+.rd-math-raw { font-family: Consolas, "Courier New", monospace; font-size: 15px; }
+.rd-math-bad .rd-math-val { color: var(--rd-danger); }
+.rd-math-msg { font-size: 14px; color: var(--rd-text-2); padding: 6px 0 4px; }
 /* Image cards fit the window: header + whole figure + cue without scrolling.
    !important beats the notes' inline max-height:none. The occlusion wrapper is
    an inline-block (.occ-wrap or an inline style), so it shrinks with the image
@@ -198,7 +211,26 @@ def feedback_html(fb: FeedbackView) -> str:
     return out
 
 
+def math_feedback_html(m: MathFeedback) -> str:
+    """The wrong math answer, both sides rendered, then the message (in place of the word diff)."""
+    if m.your_latex is not None:
+        yours = f'<span class="rd-math-val">{escape(f"\\({m.your_latex}\\)")}</span>'
+    else:
+        yours = f'<span class="rd-math-val rd-math-raw">{escape(m.your_text)}</span>'
+    target = f'<span class="rd-math-val">{escape(f"\\({m.target_latex}\\)")}</span>'
+    # The message may hold the target as \\(...\\) for MathJax.
+    return (
+        '<div class="rd-math" id="rd-math-feedback">'
+        f'<div class="rd-math-row rd-math-bad"><span class="rd-math-label">Your answer</span>'
+        f"{yours}</div>"
+        f'<div class="rd-math-row"><span class="rd-math-label">Target</span>{target}</div>'
+        f'<div class="rd-math-msg" id="rd-math-msg">{escape(m.message)}</div></div>'
+    )
+
+
 def sub_html(view: ViewModel) -> str:
+    if view.math is not None and view.math.sub_latex:
+        return f'<span class="rd-cue rd-cue-math">{escape(view.sub_text)}</span>'
     if view.sub_text:
         return f'<span class="rd-cue">{escape(view.sub_text)}</span>'
     if view.blind_hint:
@@ -234,6 +266,8 @@ def card_html(view: ViewModel, prepare: Prepare) -> str:
     if view.notice:
         notices.append(f'<div class="rd-notice">{escape(view.notice)}</div>')
     verdict = feedback_html(view.feedback) if view.feedback is not None else ""
+    if view.math is not None and view.math.feedback is not None:
+        verdict += math_feedback_html(view.math.feedback)
     extra = (
         '<div class="rd-extra"><span class="rd-extra-label">Extra</span>'
         f"{prepare(display_extra(view.extra_html))}</div>"

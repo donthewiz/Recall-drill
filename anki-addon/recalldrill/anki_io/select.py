@@ -75,6 +75,7 @@ from .cards import (
     read_snapshots,
 )
 from .handoff import TAG_DRILLED
+from .mathcards import MathStatus, math_status
 from .notetypes import MappingTable, NoteMapping, answer_text, is_io_note
 
 OrderMode = Literal["priority_first", "deck_order"]
@@ -229,6 +230,9 @@ class Candidate:
     mapping: NoteMapping
     answer: str
     """Grading text of the answer (non-empty)."""
+    math: MathStatus | None = None
+    """"math": drilled with the math check; "no_answer": tagged ``rd::math`` but
+    drilled as a normal card (v0.6); None: not a math note."""
 
 
 @dataclass
@@ -264,6 +268,16 @@ class Selection:
     pace_siblings: int = 0
     """Pacing: suspended new cards left out by the template filter whose note has a
     ``pace_remaining`` card (they go to Anki with it, as siblings)."""
+
+    @property
+    def math_cards(self) -> int:
+        """Picked cards drilled with the math answer check (v0.6)."""
+        return sum(1 for c in self.picked if c.math == "math")
+
+    @property
+    def math_gaps(self) -> int:
+        """Picked cards tagged ``rd::math`` without a usable ``MathAnswer`` (drilled as normal)."""
+        return sum(1 for c in self.picked if c.math == "no_answer")
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +446,8 @@ def select_cards(
             pace_remaining += 1
             pace_suspended += card_class == "suspended_new"
         if card_class in options.enabled:
-            cands.append(Candidate(snap, card_class, mapping, answer))
+            math = math_status(cache.get(snap.nid), snap.tags)
+            cands.append(Candidate(snap, card_class, mapping, answer, math))
 
     picked, held = apply_holdout(
         order_candidates(cands, options.order), options.max_cards, holdout_spec(scope, options)

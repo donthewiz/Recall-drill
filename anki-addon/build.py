@@ -4,7 +4,8 @@
 
 An .ankiaddon is a zip of the add-on folder's *contents* (no top-level folder)
 with a ``manifest.json`` at its root. Only the runtime files go in: the
-package, ``web/`` (the two web-export files), ``config.json``/``config.md``, and
+package, ``web/`` (the web exports, MathLive's folder included), ``vendor/`` (SymPy and
+mpmath with their licenses), ``config.json``/``config.md``, and
 ``user_files/README.txt``. Tests,
 tools, docs, the venv and build files stay out. ``user_files/`` otherwise holds
 the user's own data and is never packaged.
@@ -58,7 +59,12 @@ def package_files(root: Path = ROOT) -> list[str]:
         for p in (root / "recalldrill").rglob("*.py")
         if "__pycache__" not in p.parts
     ]
-    files += [p.relative_to(root).as_posix() for p in (root / "web").glob("*") if p.is_file()]
+    for folder in ("web", "vendor"):
+        files += [
+            p.relative_to(root).as_posix()
+            for p in (root / folder).rglob("*")
+            if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"
+        ]
     missing = [f for f in files if not (root / f).is_file()]
     if missing:
         raise BuildError(f"missing files: {', '.join(missing)}")

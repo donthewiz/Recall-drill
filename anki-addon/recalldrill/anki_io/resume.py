@@ -21,8 +21,10 @@ from anki.cards import CardId
 from anki.collection import Collection
 from anki.errors import NotFoundError
 
+from ..math_answer import engine_target
 from ..sessions import saved_sources
 from .build import answer_hash
+from .mathcards import math_card
 from .notetypes import MappingTable, answer_text
 
 
@@ -54,6 +56,8 @@ def check_resume(
             continue
         note = card.note()
         mapping = table.for_card(note.mid, card.ord)
-        if answer_hash(answer_text(col, note, mapping, card.ord)) != src.answer_hash:
+        math = math_card(note, note.tags)
+        now = engine_target(math.target) if math else answer_text(col, note, mapping, card.ord)
+        if answer_hash(now) != src.answer_hash:
             changed.append(src.cid)
     return ResumeCheck(tuple(missing), tuple(changed))
