@@ -1005,6 +1005,66 @@ Don set Medical Terminology's exam date (Tue Dec 8, finish 2 days early). Its 3,
 - So Drill to go + New equals the sections table's "to go" for a deck with no drilled cards waiting in Anki (`test_suspended_new_cards_without_a_drill_tag_are_still_to_drill`, which fails on the old code with 0 to drill).
 - Considered and not used: tagging Med Term's notes `rd::held` with a Debug Console script (a one-deck workaround); Don chose the code fix.
 - Not changed (deferred by Don, visual): in a narrow window the row's "· exam …" wraps to the start of line 2; the planned fix moves it to the end of the second line.
+## v0.5 window redesign (2026-10-16)
+
+### Decision (Don, 2026-10-16)
+
+The exam tracker card on the deck screen looks calm and modern; the add-on's own windows still looked like plain Qt forms. Don approved a mockup that restyles **all seven windows** to match the tracker: the setup panel, the sections table, the drill window, hand off to Anki, waiting cards, the tuning report and edit mapping. v0.5.0 builds it.
+
+- **Look and layout only.** No drilling rule, selection, handoff, hold back, pacing, tracker number or saved data changes. Every button keeps its widget, signal and effect; chips and switches are the same check boxes with the same text and `toggled` signals.
+- **Only Recall Drill's own windows.** The stylesheet is set on each window of ours (`ui/style.py`, `style.apply`); never `QApplication.setStyleSheet`, never Anki's palette, never Anki's own windows or dialogs. Every rule is scoped to the window's content (`#rdRoot`) or to a widget carrying one of the style module's dynamic properties, so a message box a window opens keeps Anki's look. A test asserts the application's stylesheet is unchanged after every window test.
+- **The card is not restyled.** In the drill window the card's front and back keep the note type's own styling (`drill_view.py` is untouched); only the frame around the web view (rounded, card colour) changed.
+- Not touched: `recalldrill/engine/`, `src/`, the golden files, `simulate.py`.
+
+### Tokens (one place: `TOKENS` in `ui/style.py`)
+
+| Token | Dark | Light |
+|---|---|---|
+| window | `#282c34` | `#f6f7f9` |
+| card (section background) | `#2c313a` | `#ffffff` |
+| footer / header strip | `#262a31` | `#eef0f3` |
+| input | `#21252b` | `#ffffff` |
+| border | `#3a404b` | `#d9dce1` |
+| control border | `#454c59` | `#c4c9d1` |
+| text | `#abb2bf` | `#2b3036` |
+| strong text | `#dcdfe4` | `#14171a` |
+| muted text | `#8b929e` | `#5c6570` |
+| accent | `#61afef` | `#1f6feb` |
+| text on accent | `#1b1f27` | `#ffffff` |
+| on pace | `#56d364` | `#1a7f37` |
+| warning | `#e3b341` | `#9a6700` |
+| behind | `#ff7b72` | `#cf222e` |
+
+Dark or light follows Anki (`theme_manager.night_mode`) when a window is built and again when Anki's theme changes (`gui_hooks.theme_did_change`) for windows that are open. The font is Anki's own; base size 13 px; section labels 12 px semibold, upper case, muted, letter-spaced. Tints (warning 12 % behind and 35 % on the border, accent for info notes and chips) are the token mixed into the card colour, computed in `style.derived`.
+
+### Parts (`ui/style.py`)
+
+- **Section card**: a muted upper-case label above a rounded panel (card colour, 1 px border, 10 px corners, 14-16 px padding). Section titles keep their words.
+- **Buttons, three roles**, set with the dynamic property `rdRole` and selected in the stylesheet (`QPushButton[rdRole="primary"]`): *primary* (accent fill, semibold; one per screen: Start, Drill next, Hand off, Save, Resume, Check, Apply), *secondary* (grey: Sections…, Use search, Save settings, Edit mapping…, Copy as CSV, Drill…), *ghost* (no border: Close, Don't hand off, Start fresh, End session, Replay, Edit in Anki, Send undrilled…). 7 px corners, 32 px tall.
+- **Choice chips** (`rdKind="chip"`): the card-type boxes, the template boxes and the "Drill on" weekdays render as pills (off: outline; on: accent-tinted fill and accent border), no square indicator. Their text is unchanged ("suspended new (6)").
+- **Switches** (`rdKind="switch"`): punctuation, word endings, hints, adjust reps, keep new cards out of Anki, the hard-only filter, the target-date and exam-date boxes and mapping's "Not drillable" are real, keyboard-focusable check boxes whose indicator is a 34 × 20 px track and knob (two SVGs per theme, `web/rd_switch_{off,on}_{dark,light}.svg`; the arrows of the combo and spin boxes are `web/rd_chevron_*`). They ship in the package's `web/` folder, which the build already includes.
+- **Inputs, combo boxes, spin boxes, date edits**: input colour, control border, 7 px corners, 32 px tall, accent border on focus.
+- **Notes**: a warning line (siblings, unrated cards, waiting cards, pacing, handoff warnings) is a rounded note with the warning tint (`rdNote="warn"`); a neutral explanation is an info note (`info`) or muted text.
+- **Status pill**: the tracker's own (`STATUS_ICON` plus `STATUS_WORD`), never colour alone.
+- **Tables and rows**: no grid lines, muted upper-case header; the sections and waiting lists are rows as rounded cards, the Next row has an accent border and tint.
+
+### Window by window
+
+1. **Setup panel.** A header strip over the scroll area: the deck's own name (bold) with its parent path under it; on the right, when the deck or its nearest parent has an exam date **and the tracker has numbers for it**, the tracker's pill and "7 days to finish · exam Fri Oct 23" (`ui/exam_tracker.panel_summary`, read from the in-memory cache, never computed on the UI thread; `PanelData.exam_did` says which deck's numbers). Under that, tiles: "cards to drill" and, with pacing on, "N a day". The "next layer, N to go" tile of the mockup is **left out**: the panel does not load the sections progress, and the rule is to leave out a tile whose data the panel doesn't have. The saved-session banner is an accent-tinted rounded bar (text left; Start fresh ghost, Resume primary; Hand off finished session primary). Sections keep their order and controls: Scope, Cards, Settings for this deck (number fields in a two-column form, switches in a two-column grid), Hints, Drill time, Pacing. A fixed footer (footer colour, top hairline): the "N cards to drill" text, then Sections… (secondary), Close (ghost), **Start (primary, the default button)**.
+2. **Sections.** A title, the summary line ("2 of 4 layers done · Next: Layer 3, 504 to go") and the deck picker on the right; one rounded row per layer (or subdeck): name, a thin bar of done vs to go with "47 of 47", the to-go count, one done/total cell per chapter (green when complete), then "✓ Done" or, on the Next row (NEXT marker, accent border and tint), **Drill next** (primary). Released undrilled, held / waiting, not in Anki not held, % drilled and can't drill moved into the row's tooltip. A short legend replaces the long explanation. Clicking a row opens the setup panel; Drill next does what it did.
+3. **Drill window.** A top strip (deck, parent path and section or layer, a stage chip (Encoding, Cycle, Final), the position text, "N of M mastered", a thin progress bar); the card in a rounded frame; the larger answer box with **Check** (primary) beside it, Show target (secondary), Replay, Edit in Anki and End session (ghost); a bottom strip with the New / Encoding / Ready / Mastered chips, attempts and misses muted, and the batch dots. Keyboard shortcuts unchanged. The bar still shows the batch's *encoded* percent (the number it showed before), with the mastered share in its tooltip.
+4. **Hand off to Anki.** A bold "Hand off N cards to Anki" title, the deck and section muted under it, the facts as a two-column list in a card, the forecast in a card, warnings as warning notes, the undo line muted. Don't hand off (ghost, left), Not now (secondary), **Hand off (primary, the default)**.
+5. **Waiting cards.** A title, "N cards suspended and waiting in K decks · S stale", and rows as rounded cards: the deck name over its muted parent path, waiting, an amber "S stale" pill above 0, the pacing target, Drill… (secondary) and Send undrilled… (ghost). The explanation is muted text at the bottom; Close is ghost.
+6. **Tuning report.** The title with the deck picker on the right; the top facts as three tiles (sessions, drilled cards rated, still waiting); the caution as an info note; the tables with a stylesheet from the tokens; each suggestion as a card with its Apply button (primary); Copy as CSV (secondary) and Close (ghost).
+7. **Edit mapping.** Title and the explanation muted; the form in a card; "Not drillable" as a switch; Close (ghost), **Save (primary, the default)**.
+
+### Deviations from the mockup (Qt)
+
+- Letter-spacing is a font property in Qt, so the section labels set it on the label's font (QSS has no `letter-spacing`).
+- The tuning report is Qt rich text: it has no `text-transform` (the table headers use small caps) and draws no hairline between rows (the grid is gone, the rows are spaced).
+- The card area is the web view itself: it can't be clipped to rounded corners, so the rounded frame is around it.
+- A latent bug fixed in passing: on the waiting-cards rows `Drill…` and `Send to Anki undrilled…` were connected with default-argument lambdas, which receive `clicked`'s `checked` flag instead of the deck or row. The rebuilt row buttons swallow the flag.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
