@@ -245,14 +245,16 @@ def build_payload(
 
 def script_tag(payload: dict[str, Any]) -> str:
     """The JSON block. ``<``, ``>``, ``&`` and the line separators are escaped so no value
-    can end the tag early."""
+    can end the tag early. The two separators are written as escapes (``"\\u2028"``), never as
+    the raw characters: a raw one is invisible and was once lost in an edit, which turned every
+    space of the row HTML into U+2028 and broke the display."""
     text = (
         json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         .replace("&", "\\u0026")
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
-        .replace(" ", "\\u2028")
-        .replace(" ", "\\u2029")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
     )
     return f'<script type="application/json" id="{DATA_ID}">{text}</script>'
 
