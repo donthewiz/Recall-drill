@@ -125,6 +125,9 @@ class PanelData:
     """The deck's own exam date (the panel's date field)."""
     exam_inherited: tuple[date, str] | None = None
     """The date and deck name inherited from a parent, if any."""
+    exam_did: int | None = None
+    """The deck the exam date belongs to (the deck itself, else the parent it inherits from):
+    the key of that deck's exam tracker numbers (v0.5, the panel's header)."""
     today: date | None = None
     """Anki's today, for the exam line the panel redraws when the date is edited."""
     hold_back: bool = False
@@ -278,7 +281,7 @@ def read_panel(
         if scope.deck_id is not None
         else 0
     )
-    exam_own, exam_inherited, today = exam_info(col, storage, scope.deck_id)
+    exam_own, exam_inherited, today, exam_did = exam_info(col, storage, scope.deck_id)
     hold = hold_back_state(col, storage, scope.deck_id) if scope.deck_id is not None else None
     held_n = 0
     release_n = 0
@@ -296,6 +299,7 @@ def read_panel(
         exam_line=exam_text(exam_own, exam_inherited, today),
         exam_own=exam_own,
         exam_inherited=exam_inherited,
+        exam_did=exam_did,
         today=today,
         hold_back=hold is not None and hold.on,
         hold_back_from=(
@@ -329,16 +333,18 @@ def read_panel(
 
 def exam_info(
     col: Collection, storage: Storage, did: int | None
-) -> tuple[date | None, tuple[date, str] | None, date]:
-    """(the deck's own exam date, the one it inherits, Anki's today)."""
+) -> tuple[date | None, tuple[date, str] | None, date, int | None]:
+    """(the deck's own exam date, the one it inherits, Anki's today, the deck the date
+    belongs to: the deck itself when it has its own, else the parent it inherits from)."""
     rollover = col.get_preferences().scheduling.rollover
     today = anki_day(time.time() * 1000, rollover)
     if did is None:
-        return None, None, today
+        return None, None, today, None
     own = pacing.load(storage, did).exam_date
     parent = inherited_exam(col, storage, did)
     inh = (parent.day, col.decks.name(DeckId(parent.did))) if parent is not None else None
-    return own, inh, today
+    owner = did if own is not None else (parent.did if parent is not None else None)
+    return own, inh, today, owner
 
 
 def exam_text(own: date | None, inh: tuple[date, str] | None, today: date) -> str | None:
