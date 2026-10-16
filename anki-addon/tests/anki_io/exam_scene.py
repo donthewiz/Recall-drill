@@ -37,19 +37,21 @@ today     r1 learn; r2 learn twice; r3 review + relearn; r4 cram (type 3: not co
 History: 3 sessions with 30 s of active time per card (drill speed 30 s a card in ``Lab``);
 a handoff today of D1-D3, one yesterday of D4-D5, and one 6 days ago of r7.
 
-What the tracker must say (``EXPECTED``):
+What the tracker must say (``EXPECTED``), in cards, each counted once:
 
 - Drill to go = 40 (the held cards; the can't-drill one is its own bucket);
-- New = 48 = 40 held + 1 can't-drill held + D1-D5 (5) + U1, U2 (2);
+- New = 3 = the can't-drill held card + U1, U2 (D1-D5 are drilled: done, not New);
 - Reviews = 9: r1-r4, r5, r6, r9, rb, rl (r7, r8, rx are later; rs is suspended);
-- Cards left = 97; Days left = 8; Done today = 6 (3 drills D1-D3, 2 first ratings r1 r2,
+- Cards left = 52; Days left = 8; Done today = 6 (3 drills D1-D3, 2 first ratings r1 r2,
   1 review r3);
-- Needed = ceil((97 + 6) / 8) = 13;
-- Pace = 9 / 7: day -1: 2 drills (D4 D5) + r3's first rating = 3; -2: r5 first rating + r6
-  review = 2; -4: r6 first = 1; -5: r7 first = 1; -6: r7 drill = 1; -7: r8 first = 1;
-- Status red (13 > 1.25 x 9/7);
-- Est.: 7 steps left today = 13 - 6; drill 30 s, new 1.125 x 10 s (9 learn ratings over 8
-  cards), review 10 s: 7 x (40 x 30 + 48 x 11.25 + 9 x 10) / 97 = 132.06 s.
+- Needed = ceil((52 + 6) / 8) = 8;
+- Pace = 8 / 7: day -1: 2 drills (D4 D5) + r3's first rating = 3; -2: r5 first rating + r6
+  review = 2; -4: r6 first = 1; -5: r7's first rating, but r7 was drilled (day -6), so it
+  is not counted again = 0; -6: r7 drill = 1; -7: r8 first = 1;
+- Status red (8 > 1.25 x 8/7);
+- Est.: 2 cards left today = 8 - 6; drill 30 s + a new card's first day 1.125 x 10 s (9 learn
+  ratings over 8 cards), new 11.25 s, review 10 s:
+  2 x (40 x 41.25 + 3 x 11.25 + 9 x 10) / 52 = 68.22 s.
 """
 
 from __future__ import annotations
@@ -88,13 +90,13 @@ class ExamScene:
 
 EXPECTED = {
     "drill": 40,
-    "new": 48,
+    "new": 3,
     "reviews": 9,
-    "cards_left": 97,
+    "cards_left": 52,
     "days_left": 8,
     "done_today": 6,
-    "needed": 13,
-    "pace_total": 9,
+    "needed": 8,
+    "pace_total": 8,
     "pace_days": 7,
 }
 
