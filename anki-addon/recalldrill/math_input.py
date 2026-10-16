@@ -110,6 +110,7 @@ body {{ padding: 2px 0 4px; }}
 math-field {{ width: 100%; font-size: 34px; background: transparent; color: var(--rd-strong);
   border: none; outline: none; min-height: 52px; --hue: 210;
   --caret-color: var(--rd-accent); --selection-background-color: var(--rd-accent-bg);
+  --contains-highlight-background-color: var(--rd-accent-bg);
   --placeholder-color: var(--rd-muted); --text-font-family: inherit; }}
 math-field::part(virtual-keyboard-toggle), math-field::part(menu-toggle) {{ display: none; }}
 #rd-pad {{ display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }}
