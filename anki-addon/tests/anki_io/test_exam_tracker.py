@@ -180,6 +180,31 @@ def test_no_rates_means_no_estimate(col: Collection, tmp_path: Path) -> None:
     assert n.est_seconds is None and est_text(n.est_seconds) == "Est. time: not enough history yet"
 
 
+def test_suspended_new_cards_without_a_drill_tag_are_still_to_drill(
+    col: Collection, tmp_path: Path
+) -> None:
+    """Medical Terminology (2026-10-16): every card suspended by an older routine, none tagged
+    ``rd::held`` or ``rd::drill``. The setup panel counted them as to drill; the tracker said
+    0 left. Now a suspended new card counts as Drill to go whatever its tags, unless it was
+    drilled or sent undrilled, and the tracker agrees with the sections table's "to go"."""
+    st = storage(tmp_path)
+    did = int(deck(col, "Med Term"))
+    for i in range(6):
+        add_note(col, "Basic", did, {"Front": f"t{i}", "Back": f"m{i}"}, ())  # type: ignore[arg-type]
+    released = add_note(col, "Basic", did, {"Front": "r", "Back": "r"}, ("rd::undrilled",))  # type: ignore[arg-type]
+    cids = [int(c) for c in col.find_cards("deck:Med*")]
+    col.sched.suspend_cards(cids)  # type: ignore[arg-type]
+    open_card = add_note(col, "Basic", did, {"Front": "o", "Back": "o"}, ())  # type: ignore[arg-type]
+    today, _ = today_for(col)
+    set_exam(st, did, today + timedelta(days=10))
+    n = read_trackers(col, st).numbers[did]
+    # 6 untagged suspended: drill; the released one: not counted; the unsuspended one: new.
+    assert (n.drill, n.new, n.reviews) == (6, 1, 0)
+    progress = read_progress(col, st, did)
+    assert sum(r.to_go for r in progress.rows) == n.drill + n.new
+    assert released.id and open_card.id
+
+
 def test_a_large_scope_is_read_in_bounded_time(col: Collection, tmp_path: Path) -> None:
     """~8,000 cards (3,900 held and suspended, as in Medical Terminology), a revlog of
     ~20,000 rows, a session history: one read must stay a handful of queries, not a search

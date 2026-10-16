@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, cast
 
@@ -271,24 +271,27 @@ def _counts(
     drilled_cards: set[int] | frozenset[int] = frozenset(),
 ) -> _Counts:
     """Drill to go and New for one scope, in cards, each card once (docs/DECISIONS.md,
-    "Cards, not steps").
+    "Cards, not steps" and "Suspended cards without a drill tag").
 
-    - **Drill to go**: cards in the sections table's "held / waiting" bucket; can't-drill
-      cards are a bucket of their own (``sections.bucket``), so they are excluded.
+    - **Drill to go**: every **suspended new card** the drill can take that hasn't been
+      drilled or sent undrilled: the sections table's "held / waiting" bucket (``rd::held`` /
+      ``rd::drill``) **and** suspended new cards with neither tag (its "open" bucket while
+      suspended), as the setup panel's pacing and the sections table's "to go" count them.
+      Medical Terminology's cards were suspended by an older routine and carry no tag.
     - **New**: new cards that will need a first Anki rating and were **not drilled**: every
       unsuspended new card (queue new or buried) that no handoff drilled (``drilled_cards``:
       the handoff lines' ``cards``; siblings and holdout cards handed off undrilled still
-      count), plus held cards the drill can't take (they go to Anki undrilled). A drilled
-      card is done; a Drill-to-go card is counted once, under Drill."""
+      count), plus suspended new cards the drill can't take (they go to Anki undrilled). A
+      drilled card is done; a Drill-to-go card is counted once, under Drill."""
     drill = new = 0
     for r in scope:
         facts = CardFacts(r.cid, r.type == 0, r.queue == -1, r.tags, r.cid in undrillable)
         b = bucket(facts, drilled)
-        if b == "held":
-            drill += 1
-        elif r.type == 0 and r.queue != -1:
-            if r.cid not in drilled_cards:
+        if r.type == 0 and r.queue == -1:
+            if b in ("held", "open"):
+                drill += 1
+            elif b == "cant_drill":
                 new += 1
-        elif b == "cant_drill" and bucket(replace(facts, undrillable=False), drilled) == "held":
+        elif r.type == 0 and r.cid not in drilled_cards:
             new += 1
     return _Counts(drill, new)
