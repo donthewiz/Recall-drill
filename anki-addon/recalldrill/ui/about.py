@@ -1,13 +1,16 @@
-"""Tools-menu entry and About box."""
+"""The About box, and its item at the bottom of Tools → Recall Drill → More (v0.5.1)."""
 
 from __future__ import annotations
 
 from anki.utils import version_with_build
-from aqt import mw
-from aqt.qt import QAction, qconnect
+from aqt.qt import QAction, QMenu, QWidget, qconnect
 from aqt.utils import showInfo
 
 from .. import __version__
+
+ABOUT_LABEL = "About Recall Drill"
+"""The About item, last in Tools → Recall Drill → More (v0.5.1: no longer a Tools entry of its
+own, so Tools has one Recall Drill entry)."""
 
 DEV_FOLDER = "recall_drill_dev"
 """The dev junction's folder name (docs/DECISIONS.md, "Dev install")."""
@@ -19,8 +22,8 @@ def addon_folder(module: str = __name__) -> str:
 
 
 def display_name(folder: str | None = None) -> str:
-    """"Recall Drill (dev)" when running from the dev folder, else "Recall Drill".
-    Used by the Tools menu entry and the About text."""
+    """ "Recall Drill (dev)" when running from the dev folder, else "Recall Drill".
+    Used by the About text."""
     folder = addon_folder() if folder is None else folder
     return "Recall Drill (dev)" if folder == DEV_FOLDER else "Recall Drill"
 
@@ -32,11 +35,16 @@ def show_about() -> None:
     )
 
 
+def add_about(menu: QMenu, parent: QWidget) -> QAction:
+    """Appends "About Recall Drill" to ``menu`` (the Recall Drill submenu's More)."""
+    action = QAction(ABOUT_LABEL, parent)
+    qconnect(action.triggered, lambda _checked=False: show_about())
+    menu.addAction(action)
+    return action
+
+
 def register_menu() -> None:
-    # aqt.mw is typed AnkiQt but is None until Anki's main window exists
-    # (and always None under pytest).
-    if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
-        return
-    action = QAction(display_name(), mw)
-    qconnect(action.triggered, show_about)
-    mw.form.menuTools.addAction(action)
+    """Kept for older entry points. Until v0.5.1 this added a second "Recall Drill" entry to
+    Tools for the About box; that item now sits in the Recall Drill submenu (``add_about``),
+    so this adds nothing."""
+    return

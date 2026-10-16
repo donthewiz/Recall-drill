@@ -1126,6 +1126,8 @@ A drill window for the deck that is **already open** is raised instead, as befor
 - Messages that named "Tools → Recall Drill: waiting cards" now say "Tools → Recall Drill → More → Waiting cards" (the waiting notice, the hold-back texts and tooltip). The README and `config.md` use the new menu names.
 - `VERSION` 0.5.1.
 
+- **About moved (review, 2026-10-16).** The About box used to add its own Tools entry ("Recall Drill (dev)" from the dev folder), which left two Recall Drill entries in Tools beside the new submenu. It is now the last item of More, "About Recall Drill", after the exam tracker's toggle; `about.register_menu` adds nothing (kept for older entry points).
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
