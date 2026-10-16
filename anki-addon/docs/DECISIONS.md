@@ -986,6 +986,16 @@ After the first real run Don found "1,357 left" on Lab 2, a 781-card deck, confu
 - **Est. time keeps the hidden work:** a drill card costs `drill_s + new_s` (the drill, then its first day in Anki), so the minutes still include the ratings the count leaves out. With a drill card left and no new-card rate, the estimate says "not enough history yet".
 - On Don's collection (copy of 2026-10-15 ~18:26), Lab 2 went from 1,357 left / 176 a day / pace 51 to the figures in the report of this change; the scene's hand counts are in `tests/anki_io/exam_scene.py` (52 left, 8 a day, pace 8/7).
 
+### Count down to the finish date (Don, 2026-10-15 evening)
+
+Don asked whether "left" counts down to the exam or to the date he wants to be done, and chose **the finish date, with the exam date still shown**.
+
+- **Finish date** = the exam date minus the deck's **"finish N days before"** (the setup panel's Pacing box, `pacing.json` `finish_days_before`, the same number the drill pacing uses), at least 1 (`exam_tracker.finish_date`). Lab 2 and Lecture 3 use 2, so Fri Oct 23 → finish Wed Oct 21.
+- **Days left** counts today through the finish date (Thu Oct 15 → Wed Oct 21 = 7); **Reviews** counts reviews due on or before the finish date; **Needed a day** spreads over those days. With the default 1 this is exactly v0.4.0's "up to the day before the exam".
+- **After the finish date** (the exam not yet here) the numbers count to the day before the exam instead, and the row says "finish date passed" (`study_window`). The exam day is unchanged ("Exam today").
+- **Display** (previewed with Don's real numbers and approved, 2026-10-15 21:33): the row reads "7 days to finish · exam Fri Oct 23" (the exam date in muted text, `.rd-exam-on`); the card keeps "Exam · Fri Oct 23" at the top right and adds "Finish by Wed Oct 21" (or "Finish date Wed Oct 21 passed") under the estimate.
+- On Don's collection (copy at 21:18): Lab 2 7 days, 738 left (607 drill + 131 reviews), 113 a day, Behind, Est. 97 min; Lecture 3 finish Sat Oct 24, 10 days, 258 left, 26 a day, Behind, Est. 46 min.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
