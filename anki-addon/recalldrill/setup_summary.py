@@ -33,12 +33,33 @@ def classes_text(enabled: Collection[str]) -> str:
     return " + ".join(ticked) if ticked else "no card types"
 
 
-def cards_summary(tag: str, enabled: Collection[str], order_label: str, max_cards: int) -> str:
-    """ "Layer 3 · new + suspended new · Deck order" ("all cards" without a tag)."""
+def cards_summary(
+    tag: str, enabled: Collection[str], order_label: str, max_cards: int, math_cards: int = 0
+) -> str:
+    """ "Layer 3 · new + suspended new · Deck order" ("all cards" without a tag); with math
+    cards in the pick (v0.6) a last part counts them: "... · 12 math"."""
     parts = [tag_text(tag) if tag.strip() else "all cards", classes_text(enabled), order_label]
     if max_cards:
         parts.append(f"max {max_cards:,}")
+    if math_cards:
+        parts.append(f"{math_cards:,} math")
     return SEP.join(parts)
+
+
+def math_gap_line(gaps: int) -> str:
+    """The amber line for ``rd::math`` cards that have no usable ``MathAnswer`` (v0.6): they
+    are drilled as normal cards. "" when there are none."""
+    if not gaps:
+        return ""
+    if gaps == 1:
+        return (
+            "1 card tagged rd::math has no usable MathAnswer field, so it is drilled as a "
+            "normal card."
+        )
+    return (
+        f"{gaps:,} cards tagged rd::math have no usable MathAnswer field, so they are drilled "
+        "as normal cards."
+    )
 
 
 def settings_summary(batch_size: int, encode_reps: int, hold_back: bool | None) -> str:

@@ -4,7 +4,8 @@ Behavior lives in the controller (``controller.py``) and HTML in
 ``drill_view.py``. This module only:
 
 - shows the view (an ``AnkiWebView`` for the card area, native widgets for the
-  answer box, buttons, progress and stats);
+  answer box, buttons, progress and stats; on a math card (v0.6) the answer box is a
+  second ``AnkiWebView`` holding a MathLive field and a click palette, ``math_input``);
 - forwards keys and clicks: Enter submits or continues, Esc reveals,
   Ctrl+Enter counts as correct, Ctrl+E edits in Anki, Ctrl+R replays audio,
   Ctrl+I shows a hidden Extra;
@@ -47,7 +48,7 @@ from aqt.theme import theme_manager
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, showWarning, tooltip
 from aqt.webview import AnkiWebView
 
-from .. import drill_view, launch, sessions
+from .. import drill_view, launch, math_input, sessions, web_exports
 from ..anki_io.build import rebuild_card
 from ..anki_io.notetypes import MappingTable, load_overrides
 from ..anki_io.resume import ResumeCheck, check_resume
@@ -65,6 +66,7 @@ from ..controller import (
     ViewModel,
 )
 from ..layers import section_label
+from ..math_answer import keyboard_from_palette
 from ..sessions import SessionStore
 from . import exam_tracker, style
 from .context import AddonContext
@@ -73,6 +75,8 @@ from .handoff_dialog import confirm_finish_early, offer_handoff
 log = logging.getLogger(__name__)
 
 GEOM_KEY = "recalldrill_drill"
+MATH_MIN_HEIGHT = 300
+"""A math card's answer area: the field (one big line) and the palette's three rows."""
 FINISH_TOOLTIP = (
     "Give the cards that aren't mastered back to the pool and finish with the mastered ones: "
     "they get the Final check now, then you can hand them off"
@@ -136,6 +140,8 @@ class DrillWindow(QDialog):
         self._last_mode: str | None = None
         self._handed_off = False
         self._finishing = False  # a "Finish with N cards" check is running
+        self.math_web: Any = None  # the math field's web view, made on the first math card
+        self._math_latex = ""  # the field's value, as the page last sent it
 
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -204,6 +210,7 @@ class DrillWindow(QDialog):
         middle.setContentsMargins(16, 12, 16, 10)
         middle.setSpacing(10)
         outer.addLayout(middle, 1)
+        self._middle = middle
 
         # The card keeps the note type's own styling; only the frame around it is ours.
         frame, fl = style.card_frame()
@@ -230,6 +237,8 @@ class DrillWindow(QDialog):
         self.continue_btn = _button("Continue →", "Enter", "primary")
         answer = QHBoxLayout()
         answer.setSpacing(10)
+        answer.addStretch(0)  # grows on a math card, where the text box is hidden
+        self._answer_row = answer
         answer.addWidget(self.input, 1)
         answer.addWidget(self.check_btn)
         answer.addWidget(self.continue_btn)
@@ -340,6 +349,7 @@ class DrillWindow(QDialog):
         self.ctrl = ctrl
         self.store = store
         self.input.clear()
+        self._clear_math()
         self._update_title()
         self._run(ctrl.start())
 
@@ -351,6 +361,7 @@ class DrillWindow(QDialog):
                 self._dwell.start(e.ms)
             elif isinstance(e, ClearInput):
                 self.input.clear()
+                self._clear_math()
             elif isinstance(e, StopAudio):
                 av_player.stop_and_clear_queue()
             elif isinstance(e, PlayAnswerAudio):
@@ -388,6 +399,54 @@ class DrillWindow(QDialog):
         self._render_widgets(v, on_card)
         self._last_mode = v.mode
 
+    # -- the math field (v0.6) ---------------------------------------------------
+
+    def _ensure_math_web(self) -> Any:
+        """The math field's web view, built the first time a math card comes up."""
+        if self.math_web is not None:
+            return self.math_web
+        module = self.ctx.module
+        manager = getattr(mw, "addonManager", None)
+        if manager is not None:
+            manager.setWebExports(module, web_exports.PATTERN)
+        web = AnkiWebView(self, title="recall drill math")
+        web.set_bridge_command(self._on_math_bridge, self)
+        web.setMinimumHeight(MATH_MIN_HEIGHT)
+        web.stdHtml(
+            math_input.shell_body(style.derived("light"), style.derived("dark")),
+            js=math_input.script_urls(module.split(".")[0]),
+            context=self,
+        )
+        self._middle.insertWidget(1, web)
+        self.math_web = web
+        return web
+
+    def _clear_math(self) -> None:
+        self._math_latex = ""
+        if self.math_web is not None:
+            self.math_web.eval(math_input.CLEAR_CALL)
+
+    def _focus_math(self) -> None:
+        if self.math_web is not None:
+            self.math_web.setFocus()
+            self.math_web.eval(math_input.FOCUS_CALL)
+
+    def _on_math_bridge(self, cmd: str) -> Any:
+        latex = math_input.value_from(cmd)
+        if latex is not None:
+            self._math_latex = latex
+            return None
+        if cmd == "rd:reveal":
+            self._reveal()
+            return None
+        return self._on_bridge(cmd)
+
+    def _typed(self, v: ViewModel) -> str:
+        """What the learner typed: the math field's value (as keyboard form) or the text box."""
+        if v.math is not None:
+            return keyboard_from_palette(self._math_latex)
+        return self.input.text()
+
     def _render_widgets(self, v: ViewModel, on_card: bool) -> None:
         p = v.progress
         stage, position = stage_and_position(v.detail)
@@ -405,12 +464,21 @@ class DrillWindow(QDialog):
         self.deck_bar.setVisible(p.is_batched)
 
         b = v.buttons
-        self.input.setVisible(on_card)
-        if on_card:
+        is_math = v.math is not None
+        self._answer_row.setStretch(0, 1 if is_math else 0)
+        self.input.setVisible(on_card and not is_math)
+        if on_card and not is_math:
             if v.input_read_only:
                 self.input.clear()
             self.input.setReadOnly(v.input_read_only or v.processing or v.editing or b.continue_)
             self.input.setPlaceholderText(v.placeholder)
+        if on_card and is_math:
+            web = self._ensure_math_web()
+            locked = v.input_read_only or v.processing or v.editing or b.continue_
+            night = bool(theme_manager.night_mode)
+            web.eval(math_input.configure_call(locked, v.placeholder, night))
+        if self.math_web is not None:
+            self.math_web.setVisible(on_card and is_math)
         self.check_btn.setText(v.check_label)
         self.check_btn.setVisible(on_card and not b.continue_)
         self.check_btn.setEnabled(b.check)
@@ -462,7 +530,9 @@ class DrillWindow(QDialog):
         self.dots_label.setText(dots)
         # Keys go to the answer box (read-only on a presentation beat, where
         # Enter still continues) or, between screens, to the window itself.
-        if on_card:
+        if on_card and is_math:
+            self._focus_math()
+        elif on_card:
             self.input.setFocus()
         else:
             self.setFocus()
@@ -525,6 +595,8 @@ class DrillWindow(QDialog):
             self._reveal()
         if self.input.isVisible():
             self.input.setFocus()
+        elif self.math_web is not None and self.math_web.isVisible():
+            self._focus_math()
         return None
 
     def _enter(self) -> None:
@@ -534,7 +606,7 @@ class DrillWindow(QDialog):
         elif v.buttons.continue_:
             self._run(self.ctrl.continue_())
         elif v.buttons.check:
-            self._run(self.ctrl.submit(self.input.text()))
+            self._run(self.ctrl.submit(self._typed(v)))
 
     def _override(self) -> None:
         if self.ctrl.view().buttons.override:
@@ -800,6 +872,8 @@ class DrillWindow(QDialog):
         if mw.pm.profile is not None:
             saveGeom(self, GEOM_KEY)
         self.web.cleanup()
+        if self.math_web is not None:
+            self.math_web.cleanup()
         if self in self.ctx.windows:
             self.ctx.windows.remove(self)
 

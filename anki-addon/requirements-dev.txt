@@ -9,4 +9,7 @@ ruff==0.16.10
 # checks these pins match). pytest runs against the vendored ones.
 sympy==1.14.0
 mpmath==1.3.0
+# tests/ui/test_math_palette.py drives the real MathLive page in Chromium. It skips itself when
+# the browser is missing: run `playwright install chromium` once to include it.
+playwright==1.56.0
 pyright==1.1.414

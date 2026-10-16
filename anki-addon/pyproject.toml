@@ -53,6 +53,8 @@ strict = [
     "recalldrill/math_vendor.py",
     "recalldrill/math_parse.py",
     "recalldrill/math_answer.py",
+    "recalldrill/math_input.py",
+    "recalldrill/web_exports.py",
 ]
 
 [tool.pytest.ini_options]
