@@ -1,15 +1,18 @@
 """Tools → "Recall Drill: sections" (v0.3), titled "Recall Drill: progress" (v0.3.1).
 
-A read-only table. With ``Layer::N`` tags in the chosen deck the rows are layers
-("Layer 1", "Layer 2", …) with one done/total column per chapter (direct
-subdeck); otherwise the rows are the subdecks, in the order their cards were
-made. Columns: cards, drilled, released undrilled, held, not yet in Anki, %
-drilled, status, can't drill. The first row not done is marked **Next** and
-**Drill next** opens the setup panel with Order = Deck order, only the new and
-suspended new card types ticked, and, by layer, Only with tag = ``Layer::N``
-(v0.3.2), so it picks the cards the table counts as to go. Clicking a row
-opens the setup panel on its deck. Read in a ``QueryOp``; nothing is written.
-The rules are in ``sections.py``, the reading in ``anki_io/sections.py``.
+A read-only list of rounded rows (v0.5; it was a table). With ``Layer::N`` tags in the chosen
+deck the rows are layers ("Layer 1", "Layer 2", …) with one done/total cell per chapter
+(direct subdeck); otherwise the rows are the subdecks, in the order their cards were made. A row
+shows its name, a thin bar of done vs to go with "47 of 47", the to-go count, the chapter
+cells, and "✓ Done" or, on the first row not done (marked **NEXT**, accent border and tint), the
+**Drill next** button. The other counts the table used to show (released undrilled, held /
+waiting, not in Anki not held, % drilled, can't drill) are in the row's tooltip.
+
+**Drill next** opens the setup panel with Order = Deck order, only the new and suspended new
+card types ticked, and, by layer, Only with tag = ``Layer::N`` (v0.3.2), so it picks the cards
+the row counts as to go. Clicking a row opens the setup panel on its deck. Read in a
+``QueryOp``; nothing is written. The rules are in ``sections.py``, the reading in
+``anki_io/sections.py``.
 """
 
 from __future__ import annotations
@@ -21,26 +24,145 @@ from aqt import mw
 from aqt.operations import QueryOp
 from aqt.qt import (
     QDialog,
-    QDialogButtonBox,
+    QFrame,
     QHBoxLayout,
+    QKeyEvent,
     QLabel,
-    QPushButton,
+    QMouseEvent,
+    QProgressBar,
+    QScrollArea,
     Qt,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
     qconnect,
 )
 from aqt.utils import disable_help_button, restoreGeom, saveGeom
 
 from ..anki_io.sections import read_progress
 from ..anki_io.select import PACE_CLASSES
-from ..sections import Progress, SectionRow, progress_cells, progress_columns
+from ..sections import COLUMNS, Progress, SectionRow, cells
+from . import style
 from .context import AddonContext
 from .widgets import ComboBox
 
 TITLE = "Recall Drill: progress"
 GEOM_KEY = "recalldrill_sections"
+LEGEND = (
+    "The bar is done of the cards the drill can take; a chapter shows done/total. Hover a row "
+    "for every count. Click a row to open its setup panel."
+)
+
+
+def summary_text(progress: Progress) -> str:
+    """ "2 of 4 layers done · Next: Layer 3, 504 to go" ("sections" for subdeck rows)."""
+    rows = progress.rows
+    if not rows:
+        return "This deck has no subdecks and no cards."
+    finished = sum(1 for r in rows if r.done)
+    noun = "layers" if progress.by_layer else "sections"
+    nxt = progress.next_row
+    text = f"{finished} of {len(rows)} {noun} done"
+    if nxt is not None:
+        text += f" · Next: {nxt.label}, {nxt.to_go:,} to go"
+    return text
+
+
+def row_tooltip(r: SectionRow) -> str:
+    """The numbers the old table had in its other columns."""
+    lines = [f"{r.new} new + {r.introduced} introduced"]
+    lines += [f"{name}: {value}" for name, value in zip(COLUMNS[1:7], cells(r)[1:7], strict=True)]
+    lines.append(f"Can't drill: {r.cant_drill}")
+    return "\n".join(lines)
+
+
+class RowCard(QFrame):
+    """One layer (or subdeck): a rounded row that opens its setup panel when clicked."""
+
+    def __init__(
+        self,
+        index: int,
+        row: SectionRow,
+        progress: Progress,
+        on_click: Callable[[int], None],
+    ) -> None:
+        super().__init__()
+        self.index = index
+        self._on_click = on_click
+        is_next = progress.next_index == index
+        self.setProperty("rdRow", "next" if is_next else "true")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setToolTip(row_tooltip(row))
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(18)
+
+        name = QVBoxLayout()
+        name.setSpacing(3)
+        self.name_label = style.text_label(row.label, "strong", wrap=False)
+        self.name_label.setMinimumWidth(150)
+        name.addWidget(self.name_label)
+        self.next_marker: QLabel | None = None
+        if is_next:
+            self.next_marker = style.chip_label("NEXT", "accent")
+            name.addWidget(self.next_marker, 0, Qt.AlignmentFlag.AlignLeft)
+        lay.addLayout(name, 0)
+
+        total = row.cards - row.cant_drill
+        done = total - row.to_go
+        bar = QVBoxLayout()
+        bar.setSpacing(4)
+        self.bar = QProgressBar()
+        self.bar.setTextVisible(False)
+        self.bar.setRange(0, max(total, 1))
+        self.bar.setValue(done if total else 1)
+        self.bar.setFixedWidth(150)
+        self.bar_label = style.text_label(f"{done} of {total}", "muted", wrap=False)
+        bar.addWidget(self.bar)
+        bar.addWidget(self.bar_label)
+        lay.addLayout(bar, 0)
+
+        togo = QVBoxLayout()
+        togo.setSpacing(0)
+        self.count_label = style.text_label(f"{row.to_go:,}", "strong", wrap=False)
+        self.count_label.setMinimumWidth(56)
+        togo.addWidget(self.count_label)
+        togo.addWidget(style.text_label("to go", "muted", wrap=False))
+        lay.addLayout(togo, 0)
+
+        self.chapter_cells: list[QLabel] = []
+        self.chapter_captions: list[QLabel] = []
+        if progress.by_layer:
+            for chapter, (d, t) in zip(progress.chapters, row.chapters, strict=False):
+                cell = QVBoxLayout()
+                cell.setSpacing(0)
+                num = style.text_label(f"{d}/{t}", "ok" if t and d == t else "strong", wrap=False)
+                caption = style.text_label(chapter.label, "muted", wrap=False)
+                num.setMinimumWidth(64)
+                caption.setMinimumWidth(64)
+                self.chapter_captions.append(caption)
+                self.chapter_cells.append(num)
+                cell.addWidget(num)
+                cell.addWidget(caption)
+                lay.addLayout(cell, 0)
+        lay.addStretch(1)
+        self.right = QHBoxLayout()
+        self.done_label: QLabel | None = None
+        if row.done:
+            self.done_label = style.text_label("✓ Done", "ok", wrap=False)
+            self.right.addWidget(self.done_label)
+        lay.addLayout(self.right, 0)
+
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:  # noqa: N802 (Qt override)
+        if a0 is not None and a0.button() == Qt.MouseButton.LeftButton:
+            self._on_click(self.index)
+        super().mousePressEvent(a0)
+
+    def keyPressEvent(self, a0: QKeyEvent | None) -> None:  # noqa: N802 (Qt override)
+        if a0 is not None and a0.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self._on_click(self.index)
+            return
+        super().keyPressEvent(a0)
 
 
 class SectionsDialog(QDialog):
@@ -60,41 +182,43 @@ class SectionsDialog(QDialog):
         self.progress: Progress | None = None
         self.setWindowTitle(TITLE)
         disable_help_button(self)
-        layout = QVBoxLayout(self)
+        root = style.install(self)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(20, 16, 20, 14)
+        layout.setSpacing(12)
         top = QHBoxLayout()
-        top.addWidget(QLabel("Deck"))
+        heading = QVBoxLayout()
+        heading.setSpacing(2)
+        heading.addWidget(style.text_label("Sections", "title", wrap=False))
+        self.summary = style.text_label("Reading cards…", "muted")
+        heading.addWidget(self.summary)
+        top.addLayout(heading, 1)
+        top.addWidget(style.text_label("Deck", "muted", wrap=False), 0, Qt.AlignmentFlag.AlignTop)
         self.deck_combo = ComboBox()
         decks = mw.col.decks.all_names_and_ids(include_filtered=False) if mw.col else []
         for d in decks:
             self.deck_combo.addItem(d.name, int(d.id))
         index = self.deck_combo.findData(deck_id) if deck_id is not None else -1
         self.deck_combo.setCurrentIndex(max(0, index))
+        self.deck_combo.setMinimumWidth(220)
         qconnect(self.deck_combo.currentIndexChanged, self.refresh)
-        top.addWidget(self.deck_combo, 1)
+        top.addWidget(self.deck_combo, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(top)
-        self.summary = QLabel("Reading cards…")
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
-        self.table = QTableWidget(0, 0)
-        self.table.verticalHeader().setVisible(False)  # type: ignore[union-attr]
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        qconnect(self.table.cellClicked, self._clicked)
-        layout.addWidget(self.table, 1)
-        note = QLabel(
-            "Drilled: handed off by the add-on. Released undrilled: sent to Anki without a "
-            "drill (rd::undrilled). Held / waiting: new and suspended (rd::drill or rd::held). "
-            "Not in Anki, not held: new cards never drilled. Can't drill: new cards the drill "
-            "can never take (e.g. image occlusion); they never block a row. A layer shows "
-            "done/total per chapter (drilled + released + introduced). A row is done when "
-            "every new card is drilled or released; the first row not done is Next. Click a "
-            "row to open its setup panel."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: gray; font-size: small;")
-        layout.addWidget(note)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        self.next_btn = QPushButton("Drill next")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)  # type: ignore[union-attr]
+        holder = QWidget()
+        holder.setObjectName("rdScrollBody")
+        self.rows_layout = QVBoxLayout(holder)
+        self.rows_layout.setContentsMargins(0, 0, 4, 0)
+        self.rows_layout.setSpacing(8)
+        self.rows_layout.addStretch(1)
+        scroll.setWidget(holder)
+        holder.setAutoFillBackground(False)
+        layout.addWidget(scroll, 1)
+        self.row_cards: list[RowCard] = []
+        self.next_btn = style.button("Drill next", "primary")
         self.next_btn.setAutoDefault(False)
         self.next_btn.setToolTip(
             "Opens the setup panel with Order = Deck order and only new cards ticked, "
@@ -102,11 +226,18 @@ class SectionsDialog(QDialog):
             "subdecks, on the next subdeck."
         )
         self.next_btn.setEnabled(False)
+        self.next_btn.setParent(root)
+        self.next_btn.hide()
         qconnect(self.next_btn.clicked, self._go_next)
-        buttons.addButton(self.next_btn, QDialogButtonBox.ButtonRole.ActionRole)
-        qconnect(buttons.rejected, self.close)
-        layout.addWidget(buttons)
-        self.resize(900, 420)
+        layout.addWidget(style.text_label(LEGEND, "muted"))
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        close = style.button("Close", "ghost")
+        close.setAutoDefault(False)
+        qconnect(close.clicked, self.close)
+        bottom.addWidget(close)
+        layout.addLayout(bottom)
+        self.resize(900, 460)
         restoreGeom(self, GEOM_KEY)
         ctx.dialogs.append(self)
         self.refresh()
@@ -145,36 +276,24 @@ class SectionsDialog(QDialog):
 
     def _show(self, progress: Progress) -> None:
         self.progress = progress
-        rows = progress.rows
-        finished = sum(1 for r in rows if r.done)
-        noun = "layers" if progress.by_layer else "sections"
-        nxt = progress.next_row
-        self.summary.setText(
-            f"{finished} of {len(rows)} {noun} done."
-            + (f" Next: {nxt.label}." if nxt is not None else "")
-            if rows
-            else "This deck has no subdecks and no cards."
-        )
-        columns = progress_columns(progress)
-        self.table.setColumnCount(len(columns))
-        self.table.setHorizontalHeaderLabels(columns)
-        self.table.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            is_next = progress.next_index == i
-            for j, text in enumerate(progress_cells(progress, i)):
-                item = QTableWidgetItem(text)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if j == 0:
-                    item.setToolTip(f"{r.new} new + {r.introduced} introduced")
-                if is_next:
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
-                self.table.setItem(i, j, item)
-        self.table.resizeColumnsToContents()
+        self.summary.setText(summary_text(progress))
+        # The persistent Drill next button leaves its row before the rows are rebuilt.
+        self.next_btn.hide()
+        self.next_btn.setParent(self)
+        for card in self.row_cards:
+            self.rows_layout.removeWidget(card)
+            card.deleteLater()
+        self.row_cards = []
+        for i, r in enumerate(progress.rows):
+            card = RowCard(i, r, progress, self._clicked)
+            self.row_cards.append(card)
+            self.rows_layout.insertWidget(i, card)
+            if progress.next_index == i:
+                card.right.addWidget(self.next_btn)
+                self.next_btn.show()
         self.next_btn.setEnabled(progress.next_target is not None)
 
-    def _clicked(self, row: int, _column: int) -> None:
+    def _clicked(self, row: int, _column: int = 0) -> None:
         rows = self.rows
         if 0 <= row < len(rows):
             self._open_setup(rows[row].did)
