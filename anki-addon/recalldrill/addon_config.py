@@ -81,7 +81,7 @@ class AddonConfig:
     their first Anki rating and their primary window is still open (v0.3)."""
     export_on_open: bool = True
     """Write ``exports/outcomes.csv`` once when the profile opens (it is also written after
-    every handoff, and by Tools → Recall Drill: export outcomes now) (v0.3)."""
+    every handoff, and by Tools → Recall Drill → More → Export outcomes now) (v0.3)."""
     exam_tracker: bool = True
     """The deck-screen exam tracker: a status tag, progress bar and hover card on each exam deck,
     from real numbers (v0.4 step 2). An old ``exam_tracker_test`` key is ignored."""

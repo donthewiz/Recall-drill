@@ -165,7 +165,7 @@ def notice_text(stale: int, oldest: date) -> str:
     card = "drill card is" if stale == 1 else "drill cards are"
     return (
         f"Recall Drill: {stale} {card} still suspended and waiting "
-        f"(oldest added {short_date(oldest)}). Tools → Recall Drill: waiting cards."
+        f"(oldest added {short_date(oldest)}). Tools → Recall Drill → More → Waiting cards."
     )
 
 
@@ -174,7 +174,7 @@ def panel_line(stale: int) -> str:
     card = "card has" if stale == 1 else "cards have"
     return (
         f"{stale} drill {card} waited too long, still suspended. "
-        "Drill them, or send them to Anki undrilled (Tools → Recall Drill: waiting cards)."
+        "Drill them, or send them to Anki undrilled (Tools → Recall Drill → More → Waiting cards)."
     )
 
 

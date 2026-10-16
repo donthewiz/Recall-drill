@@ -439,7 +439,7 @@ class SetupDialog(QDialog):
         self.hold_back.setToolTip(
             "For this deck and its subdecks. Turning it on offers to suspend the new "
             "cards that are out of Anki undrilled (tagged rd::held; one undo step). The "
-            "handoff unsuspends drilled cards; Tools → Recall Drill: waiting cards sends "
+            "handoff unsuspends drilled cards; Tools → Recall Drill → More → Waiting cards sends "
             "the rest undrilled. Turning it off offers to release the held cards."
         )
         self.hold_back_btn = style.button(button_label(0))

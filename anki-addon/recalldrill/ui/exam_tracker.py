@@ -2,7 +2,8 @@
 
 A status pill, a thin progress bar and a hover card on each exam deck's row, from real numbers
 (``anki_io/exam_tracker.py`` reads them; ``exam_tracker.py`` holds the rules). On by default
-(config ``exam_tracker``; Tools → "Recall Drill: exam tracker"). It only reads the collection.
+(config ``exam_tracker``; Tools → Recall Drill → More → "Exam tracker on deck screen").
+It only reads the collection.
 
 How it is injected (checked against Anki 26.08.1's ``aqt.deckbrowser``):
 
@@ -47,7 +48,7 @@ from ..tracker_cache import NumbersCache, Refresher
 log = logging.getLogger(__name__)
 
 CONFIG_KEY = "exam_tracker"
-LABEL = "Recall Drill: exam tracker"
+LABEL = "Exam tracker on deck screen"
 DATA_ID = "rd-exam-tracker-data"
 PIN_PREFIX = "rdet:pin:"
 UNPIN_CMD = "rdet:unpin"
@@ -400,8 +401,9 @@ def start_reader(storage: Storage, finish: Any) -> None:
     ).run_in_background()
 
 
-def register(ctx: Any) -> None:
-    """Hooks (called from ``entry.register``). Every hook does nothing while the flag is off."""
+def register(ctx: Any, menu: Any = None) -> None:
+    """Hooks (called from ``entry.register``). Every hook does nothing while the flag is off.
+    ``menu`` is the Tools → Recall Drill → More submenu that gets the toggle (default: Tools)."""
     global _refresher
     from aqt import gui_hooks, mw
     from aqt.deckbrowser import DeckBrowser
@@ -478,7 +480,7 @@ def register(ctx: Any) -> None:
         action.setChecked(toggle(manager, module, redraw, ctx.storage()))
 
     qconnect(action.triggered, flip)
-    mw.form.menuTools.addAction(action)
+    (menu if menu is not None else mw.form.menuTools).addAction(action)
     gui_hooks.deck_browser_will_render_content.append(on_content)
     gui_hooks.webview_will_set_content.append(on_web_content)
     gui_hooks.webview_did_receive_js_message.append(on_message)

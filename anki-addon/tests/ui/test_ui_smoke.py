@@ -690,6 +690,71 @@ def test_handoff_dialog_builds_offscreen(qt_app: object, monkeypatch: pytest.Mon
     assert d2.choice == "handoff"
 
 
+def test_tools_menu_is_one_recall_drill_submenu(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aqt.qt import QMenu, QWidget
+
+    from recalldrill.ui import entry
+
+    parent = QWidget()
+    tools = QMenu("Tools", parent)
+    more = entry.build_menu(tools, parent)
+    (top,) = tools.actions()
+    assert top.text() == entry.MENU_LABEL == "Recall Drill"
+    main = top.menu()
+    assert main is not None
+
+    def shape(menu: Any) -> list[Any]:
+        return [
+            "-" if a.isSeparator() else (a.text(), shape(a.menu()) if a.menu() else None)
+            for a in menu.actions()
+        ]
+
+    assert shape(main) == [
+        ("Drill this deck…", None),
+        ("Sections · Drill next…", None),
+        "-",
+        (
+            "More",
+            [
+                ("Waiting cards…", None),
+                ("My rd::hard cards", None),
+                ("Filtered deck for rd::hard", None),
+                "-",
+                ("Tuning report…", None),
+                ("Export outcomes now", None),
+                "-",
+            ],
+        ),
+    ]
+    assert main.actions()[3].menu() is more  # the exam tracker's toggle is added to this one
+
+    calls: list[str] = []
+    for name in (
+        "open_sections",
+        "open_waiting_cards",
+        "open_hard_cards",
+        "open_hard_filtered_deck",
+        "open_tuning",
+        "export_outcomes_now",
+        "open_setup_for",
+    ):
+        monkeypatch.setattr(entry, name, lambda *a, _n=name: calls.append(_n))
+    monkeypatch.setattr(entry, "_current_deck", lambda: 7)
+    for menu in (main, more):
+        for action in menu.actions():
+            if not action.isSeparator() and action.menu() is None:
+                action.trigger()
+    assert calls == [
+        "open_setup_for",
+        "open_sections",
+        "open_waiting_cards",
+        "open_hard_cards",
+        "open_hard_filtered_deck",
+        "open_tuning",
+        "export_outcomes_now",
+    ]
+
+
 def test_hard_cards_menu_actions(
     panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1960,7 +2025,7 @@ def test_outcomes_export_after_a_handoff_at_open_and_from_tools(
     assert len(shown) == 1
     assert "Wrote 3 rows" in shown[0] and str(target) in shown[0]
     assert f"Folder: {target.parent}" in shown[0]
-    assert entry.EXPORT_LABEL == "Recall Drill: export outcomes now"
+    assert entry.EXPORT_LABEL == "Export outcomes now"
 
 
 def test_a_failing_automatic_export_is_quiet(

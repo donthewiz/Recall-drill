@@ -46,7 +46,7 @@ def ask_release_held(parent: QWidget, n: int) -> bool:
     box.setText(release_question(n))
     box.setInformativeText(
         "Yes unsuspends them as plain new cards, keeping their place in the new queue. "
-        "No leaves them suspended; they stay listed in Tools → Recall Drill: waiting cards."
+        "No leaves them suspended; they stay listed in Tools → Recall Drill → More → Waiting cards."
     )
     box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     box.setDefaultButton(QMessageBox.StandardButton.No)

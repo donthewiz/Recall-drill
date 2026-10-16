@@ -672,7 +672,7 @@ def test_pin_is_restored_on_render_and_dropped_when_no_longer_an_exam_deck(hooke
 @needs_aqt
 def test_menu_item_toggles_and_redraws_without_a_restart(hooked: Any) -> None:
     (action,) = hooked.actions
-    assert action.text() == et.LABEL == "Recall Drill: exam tracker"
+    assert action.text() == et.LABEL == "Exam tracker on deck screen"
     assert action.isCheckable() and action.isChecked()
     action.trigger()
     assert hooked.conf["exam_tracker"] is False and hooked.refreshed == 1

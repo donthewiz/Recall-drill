@@ -25,19 +25,22 @@ from collections.abc import Callable
 
 import aqt
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QMenu, qconnect
+from aqt.qt import QAction, QMenu, QWidget, qconnect
 
 from ..anki_io.cards import CardClass
 from ..anki_io.handoff import HARD_SEARCH
 from .context import AddonContext
 
-TOOLS_LABEL = "Recall Drill…"
-HARD_LABEL = "Recall Drill: my rd::hard cards"
-HARD_FILTERED_LABEL = "Recall Drill: filtered deck for rd::hard"
-TUNING_LABEL = "Recall Drill: tuning report"
-WAITING_LABEL = "Recall Drill: waiting cards"
-SECTIONS_LABEL = "Recall Drill: sections"
-EXPORT_LABEL = "Recall Drill: export outcomes now"
+MENU_LABEL = "Recall Drill"
+"""The one Tools entry: a submenu (v0.5.1)."""
+DRILL_DECK_LABEL = "Drill this deck…"
+SECTIONS_LABEL = "Sections · Drill next…"
+MORE_LABEL = "More"
+WAITING_LABEL = "Waiting cards…"
+HARD_LABEL = "My rd::hard cards"
+HARD_FILTERED_LABEL = "Filtered deck for rd::hard"
+TUNING_LABEL = "Tuning report…"
+EXPORT_LABEL = "Export outcomes now"
 GEAR_LABEL = "Recall Drill this deck"
 OVERVIEW_LABEL = "Recall Drill"
 OVERVIEW_CMD = "recalldrill:setup"
@@ -167,6 +170,38 @@ def on_profile_will_close() -> None:
         d.close()
 
 
+def drill_this_deck() -> None:
+    """Tools → Recall Drill → Drill this deck…: the setup panel on the current deck."""
+    open_setup_for(_current_deck())
+
+
+def build_menu(tools: QMenu, parent: QWidget) -> QMenu:
+    """The one "Recall Drill" submenu in Tools (v0.5.1); returns its "More" submenu, where the
+    exam tracker's toggle goes. Each item calls the function its old top-level entry called
+    (looked up when clicked)."""
+
+    def add(menu: QMenu, label: str, fn: Callable[[], None]) -> None:
+        action = QAction(label, parent)
+        qconnect(action.triggered, lambda _checked=False: fn())
+        menu.addAction(action)
+
+    main = QMenu(MENU_LABEL, parent)
+    tools.addMenu(main)
+    add(main, DRILL_DECK_LABEL, lambda: drill_this_deck())
+    add(main, SECTIONS_LABEL, lambda: open_sections())
+    main.addSeparator()
+    more = QMenu(MORE_LABEL, parent)
+    main.addMenu(more)
+    add(more, WAITING_LABEL, lambda: open_waiting_cards())
+    add(more, HARD_LABEL, lambda: open_hard_cards())
+    add(more, HARD_FILTERED_LABEL, lambda: open_hard_filtered_deck())
+    more.addSeparator()
+    add(more, TUNING_LABEL, lambda: open_tuning())
+    add(more, EXPORT_LABEL, lambda: export_outcomes_now())
+    more.addSeparator()
+    return more
+
+
 def register(module: str, user_files: str) -> None:
     """Called once from the add-on's ``__init__``."""
     global _ctx
@@ -175,21 +210,10 @@ def register(module: str, user_files: str) -> None:
     if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
         return
     _ctx = AddonContext(module, user_files)
-    for label, fn in (
-        (TOOLS_LABEL, lambda: open_setup_for(_current_deck())),
-        (HARD_LABEL, open_hard_cards),
-        (HARD_FILTERED_LABEL, open_hard_filtered_deck),
-        (TUNING_LABEL, open_tuning),
-        (WAITING_LABEL, open_waiting_cards),
-        (SECTIONS_LABEL, open_sections),
-        (EXPORT_LABEL, export_outcomes_now),
-    ):
-        action = QAction(label, mw)
-        qconnect(action.triggered, fn)
-        mw.form.menuTools.addAction(action)
     from . import exam_tracker
 
-    exam_tracker.register(_ctx)
+    more = build_menu(mw.form.menuTools, mw)
+    exam_tracker.register(_ctx, more)
     gui_hooks.deck_browser_will_show_options_menu.append(on_gear_menu)
     gui_hooks.overview_will_render_bottom.append(on_overview_bottom)
     gui_hooks.profile_will_close.append(on_profile_will_close)
