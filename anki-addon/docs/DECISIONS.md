@@ -996,6 +996,15 @@ Don asked whether "left" counts down to the exam or to the date he wants to be d
 - **Display** (previewed with Don's real numbers and approved, 2026-10-15 21:33): the row reads "7 days to finish · exam Fri Oct 23" (the exam date in muted text, `.rd-exam-on`); the card keeps "Exam · Fri Oct 23" at the top right and adds "Finish by Wed Oct 21" (or "Finish date Wed Oct 21 passed") under the estimate.
 - On Don's collection (copy at 21:18): Lab 2 7 days, 738 left (607 drill + 131 reviews), 113 a day, Behind, Est. 97 min; Lecture 3 finish Sat Oct 24, 10 days, 258 left, 26 a day, Behind, Est. 46 min.
 
+
+### Suspended cards without a drill tag (Don, 2026-10-16)
+
+Don set Medical Terminology's exam date (Tue Dec 8, finish 2 days early). Its 3,936 notes were all suspended new cards from an older routine, with neither `rd::held` nor `rd::drill`. The setup panel's pacing counted them (3,936 to drill, 76 a day over 52 days) and the sections table counted them as "to go", but the tracker showed **0 left, On pace**: Drill to go was only the `held` bucket, and a suspended untagged card falls in the `open` bucket, which the tracker counted as New only when unsuspended.
+
+- **Drill to go** is now every **suspended new card** the drill can take that hasn't been drilled or sent undrilled (`rd::undrilled`), tagged or not: the sections `held` bucket plus suspended cards in its `open` bucket. A suspended card the drill can't take counts as New (it goes to Anki undrilled), tagged or not.
+- So Drill to go + New equals the sections table's "to go" for a deck with no drilled cards waiting in Anki (`test_suspended_new_cards_without_a_drill_tag_are_still_to_drill`, which fails on the old code with 0 to drill).
+- Considered and not used: tagging Med Term's notes `rd::held` with a Debug Console script (a one-deck workaround); Don chose the code fix.
+- Not changed (deferred by Don, visual): in a narrow window the row's "· exam …" wraps to the start of line 2; the planned fix moves it to the end of the second line.
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
