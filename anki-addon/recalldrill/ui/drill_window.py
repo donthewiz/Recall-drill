@@ -64,7 +64,7 @@ from ..controller import (
     StopAudio,
     ViewModel,
 )
-from ..layers import layer_of
+from ..layers import section_label
 from ..sessions import SessionStore
 from . import exam_tracker, style
 from .context import AddonContext
@@ -108,13 +108,6 @@ def stage_and_position(detail: str) -> tuple[str, str]:
         return "", detail
     stage = {"Spaced Retrieval": "Cycle", "Final check": "Final"}.get(head, head)
     return stage, tail
-
-
-def section_text(extra_tag: str) -> str:
-    """The session's section under the deck name: "Layer 2" for a ``Layer::2`` tag, else the tag."""
-    tag = extra_tag.strip()
-    layer = layer_of([tag]) if tag else None
-    return f"Layer {layer}" if layer is not None else tag
 
 
 def _button(text: str, tip: str = "", role: style.Role = "secondary") -> QPushButton:
@@ -187,9 +180,9 @@ class DrillWindow(QDialog):
         names = QVBoxLayout()
         names.setSpacing(0)
         self.deck_label = style.text_label("", "heading", wrap=False)
-        self.section_label = style.text_label("", "muted", wrap=False)
+        self.where_label = style.text_label("", "muted", wrap=False)
         names.addWidget(self.deck_label)
-        names.addWidget(self.section_label)
+        names.addWidget(self.where_label)
         top.addLayout(names)
         self.stage_chip = style.chip_label("", "accent")
         self.detail_label = style.text_label(wrap=False)
@@ -330,9 +323,9 @@ class DrillWindow(QDialog):
         *parents, leaf = name.split("::")
         self.deck_label.setText(leaf)
         tag = str(self.store.meta.select_options.get("extra_tag") or "")
-        where = [" › ".join(parents), section_text(tag)]
-        self.section_label.setText(" · ".join(w for w in where if w))
-        self.section_label.setVisible(any(where))
+        where = [" › ".join(parents), section_label(tag)]
+        self.where_label.setText(" · ".join(w for w in where if w))
+        self.where_label.setVisible(any(where))
 
     # -- session ------------------------------------------------------------
 

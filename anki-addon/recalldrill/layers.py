@@ -27,6 +27,14 @@ def layer_of(tags: Iterable[str]) -> int | None:
     return min(found) if found else None
 
 
+def section_label(tag: str) -> str:
+    """A session's "Only with tag" as the windows name its section: "Layer 2" for ``Layer::2``,
+    else the tag itself ("" for none)."""
+    tag = tag.strip()
+    layer = layer_of([tag]) if tag else None
+    return f"Layer {layer}" if layer is not None else tag
+
+
 def layer_rank(tags: Iterable[str]) -> int:
     """:func:`layer_of` as a sort key: no layer sorts last."""
     layer = layer_of(tags)

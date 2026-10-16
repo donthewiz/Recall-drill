@@ -861,10 +861,18 @@ def test_tuning_report_dialog(
     (d,) = ctx.dialogs
     assert isinstance(d, tuning_dialog.TuningDialog)
     assert d.report is not None and d.report.sessions == 2
-    assert CONFOUND_WARNING.split(".")[0] in d.body.toPlainText()
+    # v0.5: the caution is an info note and the top facts are tiles, no longer in the body.
+    assert CONFOUND_WARNING.split(".")[0] in d.caution.text()
+    assert CONFOUND_WARNING.split(".")[0] not in d.body.toPlainText()
+    assert d.sessions_value.text() == "2" and d.report.counts("drilled")[0] > 0
+    assert "Next-day Again" in d.body.toPlainText()
     assert [d.deck.itemText(i) for i in range(d.deck.count())] == ["All decks", "Med Term"]
     buttons = [b.text() for b in d.findChildren(type(d.csv_btn)) if b.text().startswith("Apply")]
     assert buttons == ["Apply 3 → 2…"]
+    from recalldrill.ui import style as _style
+
+    (apply_btn,) = [b for b in d.findChildren(type(d.csv_btn)) if b.text().startswith("Apply")]
+    assert _style.role_of(apply_btn) == "primary" and _style.role_of(d.csv_btn) == "secondary"
 
     d.csv_btn.click()
     clip = QApplication.clipboard()
@@ -1281,10 +1289,11 @@ def test_waiting_cards_dialog_and_notice(
 
     entry.open_waiting_cards()
     (w,) = [d for d in ctx.dialogs if isinstance(d, waiting_dialog.WaitingDialog)]
-    cell: Any = w.table.item
-    assert w.table.rowCount() == 1 and cell(0, 1).text() == "6"
-    assert cell(0, 2).text() == "0"
-    w._drill(did)
+    # v0.5: one rounded row per deck (it was a table), with its two buttons.
+    assert len(w.row_cards) == 1 and w.row_cards[0].waiting_label.text() == "6"
+    assert w.row_cards[0].stale_label.text() == "0 stale"
+    assert w.summary.text() == "6 cards suspended and waiting in 1 deck · 0 stale"
+    w.row_cards[0].drill_btn.click()
     assert opened == [did]
 
     # A passed pacing target makes them stale: the notice shows, once a day.
@@ -1302,15 +1311,18 @@ def test_waiting_cards_dialog_and_notice(
 
     # Send them to Anki undrilled.
     w.refresh()
-    assert cell(0, 2).text() == "6"
-    w._send(w.rows[0])
+    assert w.row_cards[0].stale_label.text() == "6 stale"
+    assert w.row_cards[0].stale_label.property("rdChip") == "warn"  # an amber pill when above 0
+    assert w.summary.text() == "6 cards suspended and waiting in 1 deck · 6 stale"
+    assert w.row_cards[0].send_btn.text() == "Send undrilled…"
+    w.row_cards[0].send_btn.click()
     # All six are stale, so both choices show, "Stale only" first (the default).
     assert asked == [["Stale only (6)", "All waiting (6)"]]
     assert all(col.get_card(c).queue == 0 for c in col.find_cards(f"did:{did}"))
     (line,) = history_store.read_all(st, str(did))
     assert line["type"] == "release" and len(line["groups"]["released"]) == 6
     assert line["scope"] == "stale"
-    assert w.table.rowCount() == 0
+    assert w.row_cards == [] and w.summary.text() == "No drill cards are waiting."
     w.close()
 
 
@@ -2217,9 +2229,7 @@ def _visible_primaries(w: Any) -> list[Any]:
     from recalldrill.ui import style
 
     return [
-        b
-        for b in w.findChildren(QPushButton)
-        if b.isVisibleTo(w) and style.role_of(b) == "primary"
+        b for b in w.findChildren(QPushButton) if b.isVisibleTo(w) and style.role_of(b) == "primary"
     ]
 
 
@@ -2303,7 +2313,7 @@ def test_every_window_builds_in_dark_and_light(
     assert w.count_chips["New"].text() == "New (2)" and w.count_chips["Encoding"].text() == (
         "Encoding (1)"
     )
-    assert w.deck_label.text() == "Ch 3" and not w.section_label.isVisibleTo(w)
+    assert w.deck_label.text() == "Ch 3" and not w.where_label.isVisibleTo(w)
     w.save_and_close()
 
 
@@ -2340,7 +2350,8 @@ def test_drill_window_primary_follows_the_screen_and_keys_still_work(window_env:
 
 
 def test_stage_chip_position_text_and_section() -> None:
-    from recalldrill.ui.drill_window import section_text, stage_and_position
+    from recalldrill.layers import section_label as section_text
+    from recalldrill.ui.drill_window import stage_and_position
 
     assert stage_and_position("Encoding • Part 1 of 3") == ("Encoding", "Part 1 of 3")
     assert stage_and_position("Spaced Retrieval • Cycling review") == (
@@ -2351,3 +2362,141 @@ def test_stage_chip_position_text_and_section() -> None:
     assert stage_and_position("Batch 1 of 3 complete") == ("", "Batch 1 of 3 complete")
     assert section_text("Layer::2") == "Layer 2" and section_text("layer::10") == "Layer 10"
     assert section_text(" rd::drill::A1 ") == "rd::drill::A1" and section_text("") == ""
+
+
+@pytest.mark.parametrize("night", [True, False])
+def test_hand_off_and_mapping_windows_in_dark_and_light(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, night: bool
+) -> None:
+    from aqt.qt import QPushButton, QWidget
+
+    from recalldrill.anki_io.handoff import HandoffText
+    from recalldrill.anki_io.notetypes import NoteMapping, load_overrides
+    from recalldrill.anki_io.panel import NoteTypeTemplates
+    from recalldrill.storage import Storage
+    from recalldrill.ui import style
+    from recalldrill.ui.handoff_dialog import HandoffDialog
+    from recalldrill.ui.mapping_dialog import MappingDialog
+
+    monkeypatch.setattr(style, "is_night", lambda: night)
+    text = HandoffText(
+        headline="Hand off 6 cards: tag, unsuspend, stay new, available from Sat Oct 3, 4:00 AM.",
+        lines=("Siblings: 6.", "Tags: +7 / −0.", "2 cards already scheduled keep their schedule."),
+        forecast=("Tomorrow in Med Term:", "• New cards: 6."),
+        warnings=("12 new cards tomorrow: 2 spill.",),
+        where="Medical Terminology › 3 - Skeletal System · Layer 2",
+    )
+    d: Any = HandoffDialog(None, text)
+    assert d.styleSheet() == style.stylesheet(night)
+    assert d.headline.text() == "Hand off 6 cards to Anki"
+    assert d.where.text() == "Medical Terminology › 3 - Skeletal System · Layer 2"
+    # Buttons: Hand off is the primary and the default; Not now secondary; Don't hand off ghost.
+    assert style.role_of(d.handoff_btn) == "primary" and d.handoff_btn.isDefault()
+    assert style.role_of(d.later_btn) == "secondary" and style.role_of(d.decline_btn) == "ghost"
+    assert [b for b in d.findChildren(QPushButton) if style.role_of(b) == "primary"] == [
+        d.handoff_btn
+    ]
+    assert d.warnings.property("rdNote") == "warn" and "⚠" in d.warnings.text()
+    assert d.forecast_card.isVisibleTo(d) and d.facts_card.isVisibleTo(d)
+    from recalldrill.ui.handoff_dialog import fact_rows, title_for
+
+    assert title_for(text)[1].startswith("Tag, unsuspend, stay new")
+    assert fact_rows(text)[1:] == [
+        ("Siblings", "6."),
+        ("Tags", "+7 / −0."),
+        ("", "2 cards already scheduled keep their schedule."),
+    ]
+    d2: Any = HandoffDialog(None, HandoffText("h", (), (), ()))
+    assert d2.forecast_card.isHidden() and d2.warnings.isHidden() and d2.where.isHidden()
+    assert d2.headline.text() == "h"
+    for choice, button in (("decline", d.decline_btn), ("later", d.later_btn)):
+        button.click()
+        assert d.choice == choice
+
+    st = Storage(tmp_path, "p")
+    m = NoteMapping(
+        5, 1, "standard", "Basic Quizlet Extended", "Reverse", None, None, False, False, "x"
+    )
+    nt = NoteTypeTemplates(
+        5, "Basic Quizlet Extended", "standard", ((0, "Normal"), (1, "Reverse")), ("A", "B", "C")
+    )
+    parent = QWidget()
+    md: Any = MappingDialog(parent, st, [m], [nt], (5, 1))
+    assert md.styleSheet() == style.stylesheet(night)
+    assert style.role_of(md.save_btn) == "primary" and md.save_btn.isDefault()
+    assert style.role_of(md.close_btn) == "ghost" and not md.close_btn.isDefault()
+    # "Not drillable" is a real switch: checkable, and it greys the field pickers as before.
+    assert md.ineligible.property("rdKind") == "switch" and md.answer.isEnabled()
+    md.ineligible.setChecked(True)
+    assert not md.answer.isEnabled() and not md.extra.isEnabled()
+    md.ineligible.setChecked(False)
+    md.answer.setCurrentText("A")
+    md.save_btn.click()
+    assert md.saved and load_overrides(st)[(5, 1)].answer_field == "A"
+
+
+@pytest.mark.parametrize("night", [True, False])
+def test_waiting_and_tuning_windows_in_dark_and_light(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, night: bool
+) -> None:
+    from datetime import date
+
+    import aqt
+    from aqt.qt import QPushButton
+
+    from recalldrill.addon_config import DEFAULT_CONFIG
+    from recalldrill.anki_io.revlog import ReportInputs
+    from recalldrill.storage import Storage
+    from recalldrill.ui import context, style, tuning_dialog, waiting_dialog
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.waiting import WaitingRow
+
+    monkeypatch.setattr(style, "is_night", lambda: night)
+    aqt.mw.col = object()  # type: ignore[attr-defined]
+    for module in (waiting_dialog, tuning_dialog, context):
+        monkeypatch.setattr(module, "mw", aqt.mw)
+    monkeypatch.setattr(waiting_dialog, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(tuning_dialog, "QueryOp", _SyncQueryOp)
+    monkeypatch.setattr(waiting_dialog, "read_waiting", lambda col, st, cfg: [])
+    monkeypatch.setattr(
+        tuning_dialog, "read_report_inputs", lambda col, st: ReportInputs([], {}, [], 4)
+    )
+    ctx = AddonContext("recall_drill", str(window_env))
+    ctx.storage = lambda: Storage(window_env, "p")  # type: ignore[method-assign]
+    ctx.config = lambda: DEFAULT_CONFIG  # type: ignore[method-assign]
+    aqt.mw.addonManager = type("AM", (), {"getConfig": lambda self, m: None})()  # type: ignore[attr-defined]
+
+    opened: list[int] = []
+    w: Any = waiting_dialog.WaitingDialog(ctx, opened.append)
+    assert w.styleSheet() == style.stylesheet(night)
+    assert w.summary.text() == "No drill cards are waiting." and w.row_cards == []
+    rows = [
+        WaitingRow(
+            1, "Med Term::3 - Skeletal", (1, 2, 3), (1,), date(2026, 10, 1), date(2026, 10, 23)
+        ),
+        WaitingRow(2, "Lab 2", (4,), (), date(2026, 10, 10), None),
+    ]
+    w._show(rows)
+    first, second = w.row_cards
+    assert (first.name_label.text(), first.path_label.text()) == ("3 - Skeletal", "Med Term")
+    assert first.stale_label.text() == "1 stale" and second.stale_label.text() == "0 stale"
+    assert first.target_label.text() == "target Fri Oct 23" and second.target_label.text() == ""
+    assert not second.path_label.isVisibleTo(w)
+    assert w.summary.text() == "4 cards suspended and waiting in 2 decks · 1 stale"
+    assert "Oldest added: Thu Oct 1" in first.toolTip()
+    assert [style.role_of(b) for b in (first.drill_btn, first.send_btn)] == ["secondary", "ghost"]
+    # No primary button here: the row buttons are secondary and ghost, Close is ghost.
+    assert not [b for b in w.findChildren(QPushButton) if style.role_of(b) == "primary"]
+    second.drill_btn.click()
+    assert opened == [2]  # the deck of the row, not the click's checked flag
+    w.close()
+
+    t: Any = tuning_dialog.TuningDialog(ctx)
+    assert t.styleSheet() == style.stylesheet(night)
+    assert t.report is not None and t.sessions_value.text() == "0"
+    assert t.caution.property("rdNote") == "info"
+    assert style.role_of(t.csv_btn) == "secondary"
+    assert [b.text() for b in t.findChildren(QPushButton) if style.role_of(b) == "ghost"] == [
+        "Close"
+    ]
+    t.close()

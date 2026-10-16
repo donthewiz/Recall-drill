@@ -754,6 +754,9 @@ class HandoffText:
     lines: tuple[str, ...]
     forecast: tuple[str, ...]
     warnings: tuple[str, ...]
+    where: str = ""
+    """The deck and section the session was about, for the dialog's muted line under its title
+    (set by the window, not by ``describe``; v0.5)."""
 
     def plain(self) -> str:
         parts = [self.headline, "", *self.lines]

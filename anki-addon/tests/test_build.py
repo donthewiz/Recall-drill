@@ -50,7 +50,7 @@ def test_manifest(built: Path) -> None:
     assert meta["package"] == "recall_drill"
     assert meta["name"] == "Recall Drill"
     assert meta["min_point_version"] == 260801
-    assert meta["human_version"] == recalldrill.VERSION == "0.4.0"
+    assert meta["human_version"] == recalldrill.VERSION == "0.5.0"
     assert isinstance(meta["mod"], int) and meta["mod"] > 1_700_000_000
     assert set(meta) == {"package", "name", "min_point_version", "human_version", "mod"}
 

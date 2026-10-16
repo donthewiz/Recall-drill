@@ -141,7 +141,7 @@ def stylesheet(night: bool) -> str:
     spin = ", ".join(f"{root} {c}" for c in ("QSpinBox", "QDoubleSpinBox"))
     pill_rules = "\n".join(
         f'{root} QLabel[rdPill="{k}"] {{ color: {t[v]}; border: 1px solid {t[v]}; '
-        f"background: {mix(t[v], t['card'], 0.12)}; }}"
+        f"border-radius: 11px; background: {mix(t[v], t['card'], 0.12)}; }}"
         for k, v in PILL_COLOR.items()
     )
     return f"""
@@ -178,18 +178,22 @@ QDialog[rdWindow="true"], {root} {{ background: {t["window"]}; }}
   color: {t["text"]}; background: {t["info_bg"]}; border: 1px solid {t["info_border"]};
   border-radius: 8px; padding: 7px 10px; }}
 {root} QLabel[rdPill] {{
-  border-radius: 11px; padding: 1px 9px; font-size: 12px; font-weight: 600; }}
+  border-radius: 11px; padding: 3px 10px; font-size: 12px; font-weight: 600; }}
 {pill_rules}
 {root} QLabel[rdChip] {{
-  border-radius: 10px; padding: 1px 9px; font-size: 12px; font-weight: 600; }}
+  border-radius: 10px; padding: 3px 10px; font-size: 12px; font-weight: 600; }}
 {root} QLabel[rdChip="accent"] {{
-  color: {t["accent"]}; background: {t["accent_bg"]}; border: 1px solid {t["info_border"]}; }}
+  color: {t["accent"]}; background: {t["accent_bg"]};
+  border: 1px solid {t["info_border"]}; border-radius: 10px; }}
 {root} QLabel[rdChip="plain"] {{
-  color: {t["text"]}; background: {t["card"]}; border: 1px solid {t["border"]}; }}
+  color: {t["text"]}; background: {t["card"]};
+  border: 1px solid {t["border"]}; border-radius: 10px; }}
 {root} QLabel[rdChip="warn"] {{
-  color: {t["warn"]}; background: {t["warn_bg"]}; border: 1px solid {t["warn_border"]}; }}
+  color: {t["warn"]}; background: {t["warn_bg"]};
+  border: 1px solid {t["warn_border"]}; border-radius: 10px; }}
 {root} QLabel[rdChip="ok"] {{
-  color: {t["ok"]}; background: {t["ok_bg"]}; border: 1px solid {t["ok"]}; }}
+  color: {t["ok"]}; background: {t["ok_bg"]};
+  border: 1px solid {t["ok"]}; border-radius: 10px; }}
 
 {root} QPushButton {{
   min-height: 30px; padding: 0 14px; border-radius: 7px; font-size: 13px;
