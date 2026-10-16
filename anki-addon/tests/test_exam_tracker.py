@@ -53,6 +53,56 @@ def test_days_left_counts_today_up_to_the_day_before_the_exam(
     assert et.reviews_horizon(exam, TODAY) == horizon
 
 
+@pytest.mark.parametrize(
+    ("today", "before", "last", "passed", "days"),
+    [
+        (date(2026, 10, 15), 1, date(2026, 10, 22), False, 8),  # default: the day before
+        (date(2026, 10, 15), 2, date(2026, 10, 21), False, 7),  # Lab 2: Oct 15-21
+        (date(2026, 10, 15), 0, date(2026, 10, 22), False, 8),  # 0 is treated as 1
+        (date(2026, 10, 21), 2, date(2026, 10, 21), False, 1),  # the finish date itself
+        (date(2026, 10, 22), 2, date(2026, 10, 22), True, 1),  # passed: to the day before
+    ],
+)
+def test_the_window_ends_on_the_finish_date(
+    today: date, before: int, last: date, passed: bool, days: int
+) -> None:
+    exam = date(2026, 10, 23)
+    assert et.study_window(exam, today, before) == (last, passed)
+    assert et.reviews_horizon(exam, today, before) == (last - today).days
+    n = et.compute(
+        exam=exam,
+        today=today,
+        drill=10,
+        new=0,
+        reviews=0,
+        done_today=0,
+        pace_total=70,
+        pace_days=7,
+        rates=ALL_RATES,
+        finish_days_before=before,
+    )
+    assert n is not None
+    assert (n.days_left, n.finish_passed) == (days, passed)
+    assert n.finish_date == exam - timedelta(days=max(1, before))
+    assert n.needed == -(-10 // days)
+
+
+def test_the_exam_day_is_unchanged_by_the_finish_setting() -> None:
+    n = et.compute(
+        exam=EXAM,
+        today=EXAM,
+        drill=1,
+        new=0,
+        reviews=0,
+        done_today=0,
+        pace_total=0,
+        pace_days=7,
+        rates=ALL_RATES,
+        finish_days_before=3,
+    )
+    assert n is not None and n.status == "exam" and n.days_left == 0 and n.needed is None
+
+
 def test_a_passed_exam_has_no_numbers() -> None:
     assert (
         et.compute(

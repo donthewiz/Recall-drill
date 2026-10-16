@@ -70,6 +70,12 @@ class TrackerNumbers:
     """Average cards a day over the pace window."""
     est_seconds: float | None
     """Seconds of work left today, or None (exam day, or a rate is missing)."""
+    finish_date: date | None = None
+    """The day Don wants to be done: the exam date minus the deck's "finish N days before"
+    (``pacing.json``, at least 1). None in older callers."""
+    finish_passed: bool = False
+    """The finish date has passed (the exam hasn't): the numbers count to the day before
+    the exam instead."""
 
     @property
     def cards_left(self) -> int:
@@ -86,10 +92,32 @@ def days_left(exam: date, today: date) -> int:
     return (exam - today).days
 
 
-def reviews_horizon(exam: date, today: date) -> int:
-    """N in ``prop:due<=N``: days from today to the day before the exam (overdue
-    cards are included because the search is "<=")."""
-    return (exam - timedelta(days=1) - today).days
+def finish_date(exam: date, finish_days_before: int) -> date:
+    """The day Don wants to be done (Don, 2026-10-15): the exam date minus the deck's
+    "finish N days before" setting from the setup panel's Pacing box (``pacing.json``
+    ``finish_days_before``, the same number the drill pacing uses). At least 1 day before
+    the exam: the exam day itself is never a study day here."""
+    return exam - timedelta(days=max(1, finish_days_before))
+
+
+def study_window(exam: date, today: date, finish_days_before: int = 1) -> tuple[date, bool]:
+    """(the last day the numbers count to, whether the finish date has passed).
+
+    The tracker counts down to the **finish date**. Once that has passed (and the exam
+    hasn't), it counts to the day before the exam instead, so the work left still has days
+    to spread over."""
+    finish = finish_date(exam, finish_days_before)
+    if today <= finish:
+        return finish, False
+    return exam - timedelta(days=1), True
+
+
+def reviews_horizon(exam: date, today: date, finish_days_before: int = 1) -> int:
+    """N in ``prop:due<=N``: days from today to the last day of the study window (the
+    finish date, or the day before the exam once it has passed). Overdue cards are included
+    because the search is "<="."""
+    last, _passed = study_window(exam, today, finish_days_before)
+    return (last - today).days
 
 
 def needed_a_day(cards_left: int, done_today: int, days: int) -> int:
@@ -176,16 +204,26 @@ def compute(
     pace_total: int,
     pace_days: int,
     rates: Rates,
+    finish_days_before: int = 1,
 ) -> TrackerNumbers | None:
     """The numbers for one exam deck, or None when the exam has passed (a passed exam shows
-    nothing). ``pace_total``: cards done over the pace window; ``pace_days``: its length."""
-    left_days = days_left(exam, today)
-    if left_days < 0:
+    nothing). ``pace_total``: cards done over the pace window; ``pace_days``: its length.
+
+    *Days left* counts today up to the **finish date** (``study_window``): with "finish 2
+    days before" and the exam on Fri Oct 23, Thu Oct 15 has 7 days (Oct 15-21). With the
+    default 1 day before, that is the day before the exam, as in v0.4.0."""
+    exam_in = days_left(exam, today)
+    if exam_in < 0:
         return None
     pace = pace_total / pace_days
     cards_left = drill + new + reviews
-    if left_days == 0:
-        return TrackerNumbers(exam, 0, "exam", drill, new, reviews, done_today, None, pace, None)
+    finish = finish_date(exam, finish_days_before)
+    if exam_in == 0:
+        return TrackerNumbers(
+            exam, 0, "exam", drill, new, reviews, done_today, None, pace, None, finish, True
+        )
+    last, passed = study_window(exam, today, finish_days_before)
+    left_days = (last - today).days + 1
     needed = needed_a_day(cards_left, done_today, left_days)
     return TrackerNumbers(
         exam,
@@ -198,6 +236,8 @@ def compute(
         needed,
         pace,
         estimate_seconds(needed, done_today, drill, new, reviews, rates),
+        finish,
+        passed,
     )
 
 
