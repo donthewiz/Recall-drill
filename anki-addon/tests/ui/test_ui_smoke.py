@@ -1724,8 +1724,10 @@ class _DrillNext:
         monkeypatch.setattr(
             setup_dialog,
             "open_setup",
-            lambda c, did, search=None, order=None, tag=None, classes=None: (
-                self.panels.append(setup_dialog.SetupDialog(c, did, search, order, tag, classes))
+            lambda c, did, search=None, order=None, tag=None, classes=None, auto_start=False: (
+                self.panels.append(
+                    setup_dialog.SetupDialog(c, did, search, order, tag, classes, auto_start)
+                )
                 and self.panels[-1]
             ),
         )
@@ -2741,3 +2743,161 @@ def test_setup_panel_fits_640_wide_with_every_fold_open(
     assert d.body_widget.minimumSizeHint().width() <= 640
     assert d.pacing_box.isVisibleTo(d)
     d.close()
+
+
+# --- v0.5.1: Drill next starts the session -------------------------------------------------
+
+
+def _open_panels(env: Any) -> list[Any]:
+    return [d for d in env.ctx.dialogs if isinstance(d, env.setup_dialog.SetupDialog)]
+
+
+def _setup(window: Any) -> tuple[Any, ...]:
+    m = window.store.meta
+    return (window.ctrl.state["config"], m.select_options, m.deck_settings, m.scope, m.hints)
+
+
+def _items(window: Any) -> list[tuple[int, str]]:
+    """The session's cards in order: (card id, front)."""
+    return [(window.ctrl.sources[i["id"]].cid, i["front"]) for i in window.ctrl.state["items"]]
+
+
+def test_drill_next_starts_with_exactly_the_cards_the_panel_would_have_started(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    """Lab 2 shape (layers, held cards, a drilled and rated card, a lapsed card, a flagged
+    card): Sections → Drill next picks what opening the panel by Drill next and pressing
+    Start picks, and opens no setup panel."""
+    from anki.collection import Collection
+
+    from recalldrill import sessions
+    from recalldrill.anki_io.select import PACE_CLASSES
+
+    col = Collection(str(tmp_path / "direct.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        env.review("L1-Muscles-0", rated=True)
+        env.review("L1-Joints-0", lapses=1)
+        env.review("L1-Nerves-0", flag=1)
+        env.hold(["L1-Muscles-1", "L1-Bones-1", "L1-Joints-1", "L1-Nerves-1"])
+
+        # The panel path: Drill next opens the panel, Start.
+        w, panel = env.click()
+        assert not env.ctx.windows
+        panel._start()
+        (via_panel,) = env.ctx.windows
+        panel_items, panel_key = _items(via_panel), via_panel.store.meta.key
+        panel_setup = _setup(via_panel)
+        assert len(panel_items) == 4 and not _open_panels(env)
+        via_panel.save_and_close()
+        env.ctx.windows.clear()
+        sessions.discard(env.storage, panel_key)
+
+        # The direct path: the same call the Drill next button makes in Tools → Sections.
+        shown = len(env.panels)
+        driven: list[Any] = []
+        real = env.entry.drill_next
+        monkeypatch.setattr(
+            env.entry, "drill_next", lambda *a: (driven.append(a), real(*a))[1]
+        )
+        w2: Any = env.sections_dialog.open_sections(
+            env.ctx, env.entry.open_setup_for, env.scene.lab, env.entry.drill_next
+        )
+        w2.next_btn.click()
+        assert driven == [(env.scene.lab, "deck_order", "Layer::1", PACE_CLASSES)]
+        (direct,) = env.ctx.windows
+        assert _items(direct) == panel_items and direct.store.meta.key == panel_key
+        assert _setup(direct) == panel_setup  # settings, selection options, scope, hints
+        # The hidden panel closed itself: nothing is left open.
+        assert len(env.panels) == shown + 1 and env.panels[-1]._closed and not _open_panels(env)
+        assert not env.panels[-1].isVisible()
+        direct.save_and_close()
+        w.close()
+        w2.close()
+    finally:
+        col.close()
+
+
+def test_drill_next_opens_the_panel_with_a_reason_when_it_cannot_start(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    from anki.collection import Collection
+
+    from recalldrill.anki_io.select import PACE_CLASSES
+
+    col = Collection(str(tmp_path / "fallback.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        env.hold(["L1-Muscles-1", "L1-Bones-1", "L1-Joints-1", "L1-Nerves-1"])
+        lab = env.scene.lab
+
+        def drill_next(tag: str = "Layer::1") -> Any:
+            env.entry.drill_next(lab, "deck_order", tag, PACE_CLASSES)
+            return env.panels[-1]
+
+        # Nothing to pick: the panel opens, prefilled as Drill next prefills it.
+        empty = drill_next("Layer::99")
+        assert empty.isVisible() and not env.ctx.windows
+        assert empty.reason_label.text() == "Drill next would pick 0 cards, so it opened the panel."
+        assert empty.tag_edit.text() == "Layer::99" and empty.order.currentData() == "deck_order"
+        assert {c for c, b in empty.class_boxes.items() if b.isChecked()} == PACE_CLASSES
+        empty.close()
+
+        # A saved session is mine to resume, restart or hand off: never replaced.
+        first = drill_next()
+        assert not first.isVisible() and len(env.ctx.windows) == 1  # it started
+        env.ctx.windows[0].save_and_close()
+        env.ctx.windows.clear()
+        saved = drill_next()
+        assert saved.isVisible() and not env.ctx.windows
+        assert saved.reason_label.text() == (
+            "This deck has a saved session: choose Resume, Start fresh or Hand off."
+        )
+        assert saved.resume_btn.isVisibleTo(saved) and saved.tag_edit.text() == "Layer::1"
+        saved.close()
+
+        # A drill window for the deck is already open: raised, no second window, no panel.
+        saved_again: Any = env.setup_dialog.SetupDialog(env.ctx, lab)
+        saved_again._resume()
+        (running,) = env.ctx.windows
+        saved_again.close()
+        count = len(env.panels)
+        raised: list[str] = []
+        monkeypatch.setattr(running, "raise_", lambda: raised.append("raised"))
+        env.entry.drill_next(lab, "deck_order", "Layer::1", PACE_CLASSES)
+        assert raised == ["raised"] and env.ctx.windows == [running]
+        assert len(env.panels) == count
+        running.save_and_close()
+        env.ctx.windows.clear()
+
+        # Reading the selection fails: the panel opens and says so.
+        def boom(*_a: Any, **_k: Any) -> Any:
+            raise RuntimeError("no collection")
+
+        monkeypatch.setattr(env.setup_dialog, "read_panel", boom)
+        failed = drill_next()
+        assert failed.isVisible() and not env.ctx.windows
+        assert failed.reason_label.text() == (
+            "Couldn't read the selection, so Drill next opened the panel."
+        )
+        failed.close()
+    finally:
+        col.close()
+
+
+def test_tools_sections_entry_hands_drill_next_the_direct_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recalldrill.ui import entry, sections_dialog
+
+    class _Mw:
+        col = object()
+
+    monkeypatch.setattr(entry, "mw", _Mw())
+    monkeypatch.setattr(entry, "_ctx", object())
+    monkeypatch.setattr(entry, "_current_deck", lambda: 5)
+    got: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(sections_dialog, "open_sections", lambda *a: got.append(a))
+    entry.open_sections()
+    ((_ctx, open_setup, did, drill_next),) = got
+    assert did == 5 and open_setup is entry.open_setup_for and drill_next is entry.drill_next
