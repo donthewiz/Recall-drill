@@ -21,10 +21,17 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 
 | Part | Turn it off |
 |---|---|
-| Tuning report (Tools → Recall Drill: tuning report) | Don't open it. It only reads. Nothing changes unless you press Apply on a suggestion and confirm. |
+| Tuning report (Tools → Recall Drill → More → Tuning report…) | Don't open it. It only reads. Nothing changes unless you press Apply on a suggestion and confirm. |
 | Holdout (a control group that skips the drill) | **Holdout %** = 0 in the panel. **0 is the default.** |
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
+
+## What's new in 0.5.1
+
+- **One Recall Drill entry in Tools.** The eight "Recall Drill…" lines are now one **Recall Drill** submenu: **Drill this deck…** and **Sections · Drill next…** at the top, then **More** with Waiting cards…, My rd::hard cards, Filtered deck for rd::hard, Tuning report…, Export outcomes now and the Exam tracker on deck screen switch. Nothing was removed; the deck gear's "Recall Drill this deck" and the overview's "Recall Drill" button are as before.
+- **The setup panel opens short.** Cards, Settings, Pacing and Scope are folded into one line each that says what they are set to now ("Layer 3 · new + suspended new · Deck order", "5 per batch · 2 blind typings · hold back on", "finish Tue Oct 20 · 111 today · every day", "Lab 2 · whole deck"), so Start is in reach without scrolling. Click a line (or press Enter or Space on it) to open the section; its controls are the same as before. The line updates as you change them. Anki remembers which sections you left open. Warnings that need you (siblings, waiting or unrated cards, the terminology suggestion) stay visible above the lines, and a section that holds one shows a small dot. The panel is a little narrower and taller by default.
+- **Drill next starts the session.** In Sections, **Drill next** now starts the drill right away with what the panel would have had (the Next layer, Deck order, new and suspended new cards, the deck's saved settings) instead of opening the setup panel first. If the deck has a saved session, or Drill next would pick no cards, or the cards can't be read, the setup panel opens as before with one line saying why; if a drill window for the deck is already open, it comes to the front.
+- Nothing about which cards are picked, how they are drilled, handed off, held back or paced changed, and no saved data changed.
 
 ## What's new in 0.5.0
 
@@ -55,7 +62,7 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 
 ## What's new in 0.3.0
 
-- **Drill a whole section, then hand it to Anki.** Each deck has a switch, **Keep new cards out of Anki until drilled** (the setup panel, for the deck and its subdecks). Turn it on and the add-on asks, then suspends the deck's new cards that Anki would otherwise show you undrilled (tagging their notes `rd::held`), so a section is drilled whole and in order, tagged and untagged cards together. The handoff brings the drilled ones into Anki; **Send to Anki undrilled** (Tools → Recall Drill: waiting cards) releases the rest. A deck that holds cards back drills in **Deck order** by default. It is one undo step, and nothing is suspended without your click.
+- **Drill a whole section, then hand it to Anki.** Each deck has a switch, **Keep new cards out of Anki until drilled** (the setup panel, for the deck and its subdecks). Turn it on and the add-on asks, then suspends the deck's new cards that Anki would otherwise show you undrilled (tagging their notes `rd::held`), so a section is drilled whole and in order, tagged and untagged cards together. The handoff brings the drilled ones into Anki; **Send to Anki undrilled** (Tools → Recall Drill → More → Waiting cards) releases the rest. A deck that holds cards back drills in **Deck order** by default. It is one undo step, and nothing is suspended without your click.
 - **See which sections are done.** Tools → **Recall Drill: sections** (or **Sections…** in the setup panel) lists a deck's subdecks in order: cards, drilled, sent undrilled, held, not yet in Anki, % drilled, and "done". Click a row to open that subdeck.
 - **Exam dates.** Each deck can have an **Exam date** next to the pacing target. A deck without one uses its parent's. The panel shows "Exam: Fri Oct 23 (10 days)".
 - **A warning before the rating window closes.** If drilled cards have been handed off but Anki hasn't had its first rating from you yet, the panel says how many, and the day (and hour) by which to rate them to keep them in the comparison.
@@ -67,7 +74,7 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 **Needs Anki 26.08.1 or newer** (the package's `min_point_version` is 260801). Desktop only.
 
 1. Tools → Add-ons → **Install from file…** → pick `recall_drill-<version>.ankiaddon`.
-2. Restart Anki. Tools → **Recall Drill…**, the deck gear menu's **Recall Drill this deck**, and the **Recall Drill** button on the deck overview all open the setup panel.
+2. Restart Anki. Tools → **Recall Drill → Drill this deck…**, the deck gear menu's **Recall Drill this deck**, and the **Recall Drill** button on the deck overview all open the setup panel.
 
 Build the package yourself: `python anki-addon/build.py` (clean git tree required; runs the engine tests first). It writes `anki-addon/dist/recall_drill-<version>.ankiaddon`.
 
@@ -96,7 +103,7 @@ Open the setup panel on a deck. It reads the collection but writes nothing until
 
 **Fewer clicks** (v0.2). A correct answer in the review cycle and the Final check moves on by itself after a short pause, as encoding does; wrong answers and reveals still wait for Enter (`auto_advance_correct`). A card's Extra shows, and waits for Enter, the first time you see the card's full answer in a session and after a miss or a reveal; otherwise it stays hidden, and **Show Extra** (Ctrl+I) brings it up (`extra_display`; "always" restores the old behavior).
 
-**Waiting drill cards** (v0.2). The `anki-cards` skill suspends the cards it tags `rd::drill` until they are drilled. When a deck is never drilled, they wait forever. Tools → **Recall Drill: waiting cards** lists, per deck, the drill cards still suspended and new, how many are **stale** (added more than `stale_drill_days`, 7, days ago, or in a deck whose pacing target has passed or has no drill days left), the oldest, and the pacing target. Each row has **Drill…** (the setup panel on that deck) and **Send to Anki undrilled…**, which asks whether to send **Stale only (N)** (the default) or **All waiting (M)**, so a deck whose exam is still ahead can release just its old cards (v0.2.1; with nothing stale, only All waiting is offered). Sending unsuspends the cards and their notes' suspended new siblings as plain new cards, in their current place in the new queue (nothing moved or buried), tags the notes `rd::undrilled`, and is one undo step (Edit → Undo "Recall Drill: send undrilled"). Those cards then wait for Anki like handed-off ones. Once a day after the profile opens, a tooltip says when stale cards are waiting (`waiting_notice`), and the setup panel shows an amber line on a deck that has them.
+**Waiting drill cards** (v0.2). The `anki-cards` skill suspends the cards it tags `rd::drill` until they are drilled. When a deck is never drilled, they wait forever. Tools → **Recall Drill → More → Waiting cards…** lists, per deck, the drill cards still suspended and new, how many are **stale** (added more than `stale_drill_days`, 7, days ago, or in a deck whose pacing target has passed or has no drill days left), the oldest, and the pacing target. Each row has **Drill…** (the setup panel on that deck) and **Send to Anki undrilled…**, which asks whether to send **Stale only (N)** (the default) or **All waiting (M)**, so a deck whose exam is still ahead can release just its old cards (v0.2.1; with nothing stale, only All waiting is offered). Sending unsuspends the cards and their notes' suspended new siblings as plain new cards, in their current place in the new queue (nothing moved or buried), tags the notes `rd::undrilled`, and is one undo step (Edit → Undo "Recall Drill: send undrilled"). Those cards then wait for Anki like handed-off ones. Once a day after the profile opens, a tooltip says when stale cards are waiting (`waiting_notice`), and the setup panel shows an amber line on a deck that has them.
 
 **The review cycle.** After a batch is encoded, each card comes back in a shuffled review cycle. A card you have never missed or revealed in this session is **mastered by one correct answer**; a card you missed or revealed needs **two correct answers in a row**, with other cards in between (a near miss counts as correct and doesn't make a card need two). This holds whatever "Blind typings" is set to. The Final check at the end is unchanged: one correct answer per card.
 
@@ -138,10 +145,10 @@ Cards that already have a schedule keep it either way.
 | `rd::final-miss` | A card missed in the Final check. Replaced the same way. |
 | `rd::holdout` | The note was a held-out control (only exists when Holdout % is on). |
 | `rd::long` | The note's answer was drilled in chunks. **Off by default** (`tag_long`). |
-| `rd::undrilled` | The note's drill cards were sent to Anki without the drill (Tools → Recall Drill: waiting cards). |
+| `rd::undrilled` | The note's drill cards were sent to Anki without the drill (Tools → Recall Drill → More → Waiting cards). |
 | `rd::held` | The note has cards held back from Anki until drilled (**Keep new cards out of Anki until drilled**). Removed by the handoff and by sending the cards to Anki undrilled. |
 
-Tools → **Recall Drill: my rd::hard cards** opens the panel on `tag:rd::hard`; **Recall Drill: filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*` (it would also match `rd::drilled`, `rd::undrilled` and `rd::held`).
+Tools → **Recall Drill → More → My rd::hard cards** opens the panel on `tag:rd::hard`; **Filtered deck for rd::hard** opens Anki's own filtered-deck dialog with that search filled in. The `anki-cards` skill's `rd::drill::*` tags are a different family: always search an exact tag, never `tag:rd::*` (it would also match `rd::drilled`, `rd::undrilled` and `rd::held`).
 
 ## Time figures
 
@@ -172,7 +179,7 @@ A file the add-on can't read is renamed `<name>.corrupt-<timestamp>` and the def
 
 ## Tuning report
 
-Tools → **Recall Drill: tuning report**. Its metric is the **next-day Again rate**: for each drilled card, whether the first rating Anki recorded after the handoff (on a later Anki day, within 2 days) was Again. Holdout and baseline cards get the same measure from their first rating to their next-day rating, and so do cards sent to Anki undrilled (a "Released undrilled" row: the cards that waited longest, not a random control). A "cycle rule" breakdown splits sessions before and after v0.2's one-answer rule for clean cards. Trials per card are always shown beside it, because fewer trials is still the priority. Groups under 30 cards show "n too small" and produce no suggestion. It can suggest a new chunk threshold or a number of blind typings; nothing changes without your confirmation.
+Tools → **Recall Drill → More → Tuning report…**. Its metric is the **next-day Again rate**: for each drilled card, whether the first rating Anki recorded after the handoff (on a later Anki day, within 2 days) was Again. Holdout and baseline cards get the same measure from their first rating to their next-day rating, and so do cards sent to Anki undrilled (a "Released undrilled" row: the cards that waited longest, not a random control). A "cycle rule" breakdown splits sessions before and after v0.2's one-answer rule for clean cards. Trials per card are always shown beside it, because fewer trials is still the priority. Groups under 30 cards show "n too small" and produce no suggestion. It can suggest a new chunk threshold or a number of blind typings; nothing changes without your confirmation.
 
 The warning it shows, verbatim:
 
