@@ -813,6 +813,8 @@ def test_setup_panel_holdout_percent_per_deck(panel_env: Any, window_env: Path) 
     ctx.storage().write_json(HOLDOUT, {"salt": salt})
 
     d: Any = SetupDialog(ctx, did)
+    for fold in d.folds.values():  # the controls below sit in the folds
+        fold.set_open(True)
     # 0% (the default): no holdout cards, and the line says so.
     assert d.holdout_pct.value() == 0 and d.holdout_row.isVisibleTo(d)
     assert d.holdout_label.text() == "Holdout: off" and d.data.selection.holdout == []
@@ -1486,6 +1488,8 @@ def test_setup_panel_hold_back_switch_button_and_order(hold_env: Any, window_env
     col, did = hold_env.col, hold_env.did
     ctx = AddonContext("recall_drill", str(window_env))
     d: Any = SetupDialog(ctx, did)
+    for fold in d.folds.values():  # the controls below sit in the folds
+        fold.set_open(True)
     assert d.hold_back_box.isVisibleTo(d) and not d.hold_back.isChecked()
     assert d.hold_back.text() == "Keep new cards out of Anki until drilled"
     assert d.order.currentData() == "priority_first" and not d.hold_back_btn.isVisibleTo(d)
@@ -1950,6 +1954,8 @@ def test_hold_back_button_offers_to_release_held_undrillable_cards(
     ctx = AddonContext("recall_drill", str(window_env))
     deck_settings.set_hold_back(ctx.storage(), did, True)
     d: Any = SetupDialog(ctx, did)
+    for fold in d.folds.values():  # the controls below sit in the folds
+        fold.set_open(True)
     d.hold_back_btn.click()  # holds the six cards back
     assert len(_suspended(col, did)) == 6 and not d.hold_back_btn.isVisibleTo(d)
     # v0.3.0 also held an image-occlusion card; a new card arrived too.
@@ -2565,3 +2571,173 @@ def test_waiting_and_tuning_windows_in_dark_and_light(
         "Close"
     ]
     t.close()
+
+
+# --- v0.5.1: the setup panel's folds -------------------------------------------------------
+
+
+def _lab_panel(env: Any, **kw: Any) -> Any:
+    """The setup panel on the Lab 2 test deck, prefilled as Drill next prefills it."""
+    from recalldrill.anki_io.select import PACE_CLASSES
+
+    return env.setup_dialog.SetupDialog(
+        env.ctx, env.scene.lab, None, "deck_order", "Layer::1", PACE_CLASSES, **kw
+    )
+
+
+def test_setup_folds_start_closed_with_live_one_line_summaries(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    from anki.collection import Collection
+    from aqt.qt import QDate
+
+    col = Collection(str(tmp_path / "folds.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        d = _lab_panel(env)
+        assert list(d.folds) == ["cards", "settings", "pacing", "scope"]
+        assert [f.title for f in d.folds.values()] == ["Cards", "Settings", "Pacing", "Scope"]
+        # Closed on first open: the controls are not shown, the one-line rows are.
+        assert all(not f.is_open() for f in d.folds.values())
+        assert all(not f.body.isVisibleTo(d) for f in d.folds.values())
+        assert not d.tag_edit.isVisibleTo(d) and d.folds["cards"].header.isVisibleTo(d)
+        s = {k: f.summary for k, f in d.folds.items()}
+        assert s["cards"] == "Layer 1 · new + suspended new · Deck order"
+        assert s["settings"] == "5 per batch · 3 blind typings · hold back off"
+        assert s["pacing"] == "off"
+        assert s["scope"] == "AP Lab::Lab 2 · tag Layer 1"
+        # The row is a real, focusable button with an accessible name.
+        head = d.folds["cards"].header
+        assert head.focusPolicy() == head.focusPolicy().StrongFocus
+        # The scene's two drilled cards wait for Anki's first rating: that line is outside
+        # the folds and Cards wears the dot.
+        assert d.unrated_label.isVisibleTo(d) and d.folds["cards"].warning
+        assert head.accessibleName() == f"Cards: {s['cards']} (needs a look)"
+
+        # The summaries follow the controls.
+        d.tag_edit.setText("")
+        d.order.setCurrentIndex(d.order.findData("priority_first"))
+        d.class_boxes["young"].setChecked(True)
+        d.max_cards.setValue(12)
+        assert d.folds["cards"].summary == (
+            "all cards · new + suspended new + young · Priority first · max 12"
+        )
+        assert d.folds["scope"].summary == "AP Lab::Lab 2 · whole deck"
+        d.batch_size.setValue(0)
+        d.encode_reps.setValue(1)
+        d.hold_back.setChecked(True)
+        assert d.folds["settings"].summary == (
+            "whole deck in one batch · 1 blind typing · hold back on"
+        )
+        d.batch_size.setValue(4)
+        assert d.folds["settings"].summary.startswith("4 per batch · 1 blind typing")
+
+        d.pace_on.setChecked(True)
+        today = QDate.currentDate()
+        d.pace_early.setValue(1)
+        d.pace_date.setDate(today.addDays(5))
+        for box in d.pace_days:
+            box.setChecked(True)
+        pace = d.folds["pacing"].summary
+        last = today.addDays(4)
+        want = f"finish {last.toString('ddd')} {last.toString('MMM')} {last.day()}"
+        assert pace.startswith(want) and pace.endswith("every day") and " today" in pace
+        d.pace_days[5].setChecked(False)
+        d.pace_days[6].setChecked(False)
+        assert d.folds["pacing"].summary.endswith("Mon, Tue, Wed, Thu, Fri")
+        d.pace_on.setChecked(False)
+        assert d.folds["pacing"].summary == "off"
+        d.close()
+    finally:
+        col.close()
+
+
+def test_setup_folds_open_in_place_and_are_remembered_per_profile(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    from anki.collection import Collection
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    from recalldrill.storage import UI_STATE
+
+    col = Collection(str(tmp_path / "foldsopen.anki2"))
+    try:
+        env = _DrillNext(monkeypatch, window_env, col)
+        d = _lab_panel(env)
+        d.show()
+        tag_edit, batch = d.tag_edit, d.batch_size  # the original widgets, not copies
+        cards = d.folds["cards"]
+        QTest.mouseClick(cards.header, Qt.MouseButton.LeftButton)  # pyright: ignore[reportCallIssue]
+        assert cards.is_open() and tag_edit.isVisibleTo(d) and cards.body.isAncestorOf(tag_edit)
+        assert d.tag_edit is tag_edit and tag_edit.text() == "Layer::1"
+        # Keyboard: the row takes the focus and Space / Enter toggle it.
+        settings = d.folds["settings"]
+        settings.header.setFocus()
+        QTest.keyClick(settings.header, Qt.Key.Key_Space)  # pyright: ignore[reportCallIssue]
+        assert settings.is_open() and batch.isVisibleTo(d)
+        QTest.keyClick(settings.header, Qt.Key.Key_Return)  # pyright: ignore[reportCallIssue]
+        assert not settings.is_open() and not batch.isVisibleTo(d)
+        QTest.keyClick(settings.header, Qt.Key.Key_Enter)  # pyright: ignore[reportCallIssue]
+        assert settings.is_open()
+        # The open set is saved in the add-on's own storage, not the collection.
+        assert env.storage.read_json(UI_STATE, {}) == {"setup_folds_open": ["cards", "settings"]}
+        d.close()
+        again = _lab_panel(env)
+        assert [k for k, f in again.folds.items() if f.is_open()] == ["cards", "settings"]
+        assert again.folds["scope"].is_open() is False
+        again.folds["cards"].set_open(False)
+        assert env.storage.read_json(UI_STATE, {}) == {"setup_folds_open": ["settings"]}
+        again.close()
+    finally:
+        col.close()
+
+
+def test_setup_warnings_stay_outside_the_folds_and_put_a_dot_on_their_fold(
+    panel_env: Any, window_env: Path
+) -> None:
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import SetupDialog
+
+    col, did = panel_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    assert all(not f.is_open() for f in d.folds.values())
+    # The sibling warning and the terminology proposal are visible with every fold closed.
+    assert d.sibling_label.isVisibleTo(d) and "share a note" in d.sibling_label.text()
+    assert d.proposal_row.isVisibleTo(d) and d.proposal_btn.isVisibleTo(d)
+    for warn in (d.sibling_label, d.proposal_row):
+        assert not any(f.body.isAncestorOf(warn) for f in d.folds.values())
+    # A fold whose section holds a warning shows its dot; the others don't.
+    assert not d.folds["cards"].dot.isHidden() and d.folds["cards"].warning
+    assert not d.folds["settings"].dot.isHidden()
+    assert d.folds["pacing"].dot.isHidden() and d.folds["scope"].dot.isHidden()
+    assert d.folds["cards"].header.accessibleName().endswith("(needs a look)")
+    d.proposal_btn.click()  # the proposal is used: its dot goes
+    assert d.folds["settings"].dot.isHidden() and not d.proposal_row.isVisibleTo(d)
+    # The waiting and unrated lines are outside the folds too.
+    for line in (d.waiting_label, d.unrated_label):
+        assert not any(f.body.isAncestorOf(line) for f in d.folds.values())
+    # A failed read puts the dot on Scope.
+    d._failed(RuntimeError("boom"))
+    assert not d.folds["scope"].dot.isHidden()
+    d.close()
+
+
+def test_setup_panel_fits_640_wide_with_every_fold_open(
+    panel_env: Any, window_env: Path
+) -> None:
+    from recalldrill.ui.context import AddonContext
+    from recalldrill.ui.setup_dialog import DEFAULT_SIZE, SetupDialog
+
+    assert DEFAULT_SIZE == (640, 900)
+    col, did = panel_env
+    ctx = AddonContext("recall_drill", str(window_env))
+    d: Any = SetupDialog(ctx, did)
+    d.pace_on.setChecked(True)
+    for fold in d.folds.values():
+        fold.set_open(True)
+    d.show()
+    assert d.body_widget.minimumSizeHint().width() <= 640
+    assert d.pacing_box.isVisibleTo(d)
+    d.close()

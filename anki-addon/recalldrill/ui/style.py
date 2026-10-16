@@ -164,6 +164,16 @@ QDialog[rdWindow="true"], {root} {{ background: {t["window"]}; }}
 {root} QFrame[rdRow="true"]:hover {{ border-color: {t["control_border"]}; }}
 {root} QFrame[rdRow="next"] {{
   background: {t["accent_bg"]}; border: 1px solid {t["accent"]}; border-radius: 10px; }}
+{root} QFrame[rdFold="true"] {{
+  background: {t["card"]}; border: 1px solid {t["border"]}; border-radius: 10px; }}
+{root} QFrame[rdFold="true"]:hover {{ border-color: {t["control_border"]}; }}
+{root} QPushButton[rdFoldHeader="true"] {{
+  min-height: 46px; padding: 0; border: 1px solid transparent; border-radius: 9px;
+  background: transparent; text-align: left; }}
+{root} QPushButton[rdFoldHeader="true"]:hover {{ background: {t["ghost_hover"]}; }}
+{root} QPushButton[rdFoldHeader="true"]:focus {{ border-color: {t["accent"]}; }}
+{root} QLabel[rdText="foldSummary"] {{ color: {t["strong"]}; font-size: 13px; }}
+{root} QLabel[rdText="warnDot"] {{ color: {t["warn"]}; font-size: 11px; }}
 {root} QFrame[rdBanner="true"] {{
   background: {t["info_bg"]}; border: 1px solid {t["info_border"]}; border-radius: 10px; }}
 {root} QFrame[rdBar="footer"] {{
@@ -428,18 +438,18 @@ def mark_note(lab: QLabel, kind: Literal["warn", "info"]) -> QLabel:
 def chip(box: Any) -> Any:
     """A check box that renders as a pill (same widget, same signals, same text)."""
     box.setProperty("rdKind", "chip")
-    box.setCursor(_pointing_hand())
+    box.setCursor(pointing_hand())
     return box
 
 
 def switch(box: Any) -> Any:
     """A check box that renders as a 34 x 20 track-and-knob switch."""
     box.setProperty("rdKind", "switch")
-    box.setCursor(_pointing_hand())
+    box.setCursor(pointing_hand())
     return box
 
 
-def _pointing_hand() -> Any:
+def pointing_hand() -> Any:
     from aqt.qt import QCursor
 
     return QCursor(Qt.CursorShape.PointingHandCursor)
