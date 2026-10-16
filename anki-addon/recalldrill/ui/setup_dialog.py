@@ -1,5 +1,12 @@
 """The setup panel: what to drill, the deck's settings, drill time, pacing, Start.
 
+**Folds (v0.5.1).** Below the header and the saved-session banner, the sections are folds
+(``ui/fold.py``): Cards (drill time is a line in it), Settings, Pacing, Scope, each a one-line
+summary of its current values (``setup_summary.py``, live as the controls change) that opens the
+section's own controls in place. All start closed; the open ones are remembered per profile
+(``ui_state.json``). The warnings that need a look (siblings, waiting and unrated cards, the
+terminology proposal) stay outside the folds, under the banner; a fold holding one shows a dot.
+
 Reads with ``anki_io.panel`` off the main thread (``QueryOp``), shows the
 result, and starts or resumes through ``launch``. Saves only:
 
@@ -69,7 +76,7 @@ from aqt.qt import (
 )
 from aqt.utils import disable_help_button, restoreGeom, saveGeom, showWarning, tooltip
 
-from .. import deck_settings, holdout, launch, pacing, sessions
+from .. import deck_settings, holdout, launch, pacing, sessions, setup_summary
 from ..anki_io.cards import CARD_CLASSES, DEFAULT_ENABLED, CardClass
 from ..anki_io.holdback import hold_back_state
 from ..anki_io.panel import (
@@ -90,14 +97,20 @@ from ..anki_io.select import INELIGIBLE_REASONS, OrderMode, Scope, scope_to_json
 from ..anki_io.workload import read_pacing
 from ..deck_settings import DeckSettings
 from ..holdback import button_label, default_order
+from ..storage import UI_STATE
 from . import exam_tracker, holdback_ui, style
 from .context import AddonContext
 from .drill_window import HANDOFF_TOOLTIP, open_drill_window
+from .fold import Fold
 from .handoff_dialog import confirm_finish_early, offer_handoff
 from .mapping_dialog import MappingDialog
 from .widgets import ComboBox, DateEdit, SpinBox
 
 GEOM_KEY = "recalldrill_setup"
+DEFAULT_SIZE = (640, 900)
+FOLDS_KEY = "setup_folds_open"
+"""Key in ``ui_state.json`` (per profile, not the collection): the folds left open."""
+FOLD_KEYS = ("cards", "settings", "pacing", "scope")
 REFRESH_MS = 300
 
 _REASON_LABELS = {
@@ -181,12 +194,17 @@ class SetupDialog(QDialog):
         self.hard_exclude: frozenset[int] = frozenset()
         """For the ``tag:rd::hard`` scope: cards not hard in their last handoff."""
 
+        self.folds: dict[str, Fold] = {}
+        self._restoring = False
+        self._pace_failed = False
+        self._scope_failed = False
+
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         qconnect(self._timer.timeout, self._refresh)
 
         self._build_ui()
-        restoreGeom(self, GEOM_KEY, default_size=(760, 860))
+        restoreGeom(self, GEOM_KEY, default_size=DEFAULT_SIZE)
         ctx.dialogs.append(self)
         self._load_scope()
 
@@ -207,34 +225,12 @@ class SetupDialog(QDialog):
         self.body = QVBoxLayout(body)
         self.body.setContentsMargins(20, 16, 20, 16)
         self.body.setSpacing(14)
+        self.body_widget = body
         scroll.setWidget(body)
         body.setAutoFillBackground(
             False
         )  # QScrollArea.setWidget turns it on: keep the window's colour
         outer.addWidget(scroll, 1)
-
-        # Scope
-        scope_box, sl = style.section("Scope")
-        self.scope_label = QLabel()
-        self.scope_label.setWordWrap(True)
-        sl.addWidget(self.scope_label)
-        row = QHBoxLayout()
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText(
-            "Search… e.g. tag:MedTerm_Ch03::Day05 (whole collection)"
-        )
-        self.search_btn = style.button("Use search")
-        self.deck_btn = style.button("Use this deck")
-        for b in (self.search_btn, self.deck_btn):
-            b.setAutoDefault(False)
-        row.addWidget(self.search_edit, 1)
-        row.addWidget(self.search_btn)
-        row.addWidget(self.deck_btn)
-        sl.addLayout(row)
-        qconnect(self.search_edit.returnPressed, self._use_search)
-        qconnect(self.search_btn.clicked, self._use_search)
-        qconnect(self.deck_btn.clicked, self._use_deck)
-        self.body.addWidget(scope_box)
 
         # Saved-session banner: the text on the left, the buttons on the right
         self.banner = style.frame("rdBanner")
@@ -276,9 +272,13 @@ class SetupDialog(QDialog):
             bl.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)
         self.banner.hide()
         self.body.addWidget(self.banner)
+        # Warnings that need a look stay outside the folds, right under the banner.
+        self.warnings = QVBoxLayout()
+        self.warnings.setSpacing(8)
+        self.body.addLayout(self.warnings)
 
         # Cards
-        cards_box, cl = style.section("Cards")
+        cards_box, cl = self._fold("cards", "Cards")
         grid = QGridLayout()
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(8)
@@ -333,15 +333,16 @@ class SetupDialog(QDialog):
         cl.addWidget(self.templates_box)
         self.sibling_label = QLabel()
         self.sibling_label.setWordWrap(True)
-        cl.addWidget(self.sibling_label)
+        self.sibling_label.hide()
+        self.warnings.addWidget(self.sibling_label)
         # 2026-10-12: stale drill cards still suspended and waiting in this deck.
         self.waiting_label = style.note(kind="warn")
         self.waiting_label.setVisible(False)
-        cl.addWidget(self.waiting_label)
+        self.warnings.addWidget(self.waiting_label)
         # v0.3: handed-off cards that still need their first Anki rating.
         self.unrated_label = style.note(kind="warn")
         self.unrated_label.setVisible(False)
-        cl.addWidget(self.unrated_label)
+        self.warnings.addWidget(self.unrated_label)
         self.difficulty_label = style.text_label(kind="muted")
         cl.addWidget(self.difficulty_label)
         srow = QHBoxLayout()
@@ -376,7 +377,7 @@ class SetupDialog(QDialog):
         self.body.addWidget(cards_box)
 
         # Settings
-        settings_box, stl = style.section("Settings for this deck")
+        settings_box, stl = self._fold("settings", "Settings")
         prow = QHBoxLayout()
         self.proposal_label = style.note(
             "Most answers here are 3 words or fewer: terminology settings fit "
@@ -391,7 +392,8 @@ class SetupDialog(QDialog):
         self.proposal_row = QWidget()
         self.proposal_row.setLayout(prow)
         prow.setContentsMargins(0, 0, 0, 0)
-        stl.addWidget(self.proposal_row)
+        self.proposal_row.hide()
+        self.warnings.addWidget(self.proposal_row)
         self.batch_size = SpinBox()
         self.batch_size.setRange(0, 50)
         self.batch_size.setSpecialValueText("Whole deck")
@@ -411,25 +413,21 @@ class SetupDialog(QDialog):
             "one more blind typing and chunk earlier; easy ones (difficulty ≤ 3) one fewer. "
             "New cards have no FSRS data and keep the deck's settings."
         )
-        numbers = QGridLayout()  # the number fields, two columns of label + field
+        numbers = QGridLayout()  # the number fields: label + field, one column (fits 640 px)
         numbers.setHorizontalSpacing(12)
         numbers.setVerticalSpacing(8)
         numbers.addWidget(QLabel("Cards per batch"), 0, 0)
         numbers.addWidget(self.batch_size, 0, 1)
-        numbers.addWidget(QLabel("Blind typings required"), 0, 2)
-        numbers.addWidget(self.encode_reps, 0, 3)
-        numbers.addWidget(QLabel("Cycle review order"), 1, 0)
-        numbers.addWidget(self.cycle_order, 1, 1)
-        numbers.setColumnStretch(1, 1)
-        numbers.setColumnStretch(3, 1)
+        numbers.addWidget(QLabel("Blind typings required"), 1, 0)
+        numbers.addWidget(self.encode_reps, 1, 1)
+        numbers.addWidget(QLabel("Cycle review order"), 2, 0)
+        numbers.addWidget(self.cycle_order, 2, 1)
+        numbers.setColumnStretch(2, 1)
         stl.addLayout(numbers)
-        switches = QGridLayout()  # the on/off options, two columns
-        switches.setHorizontalSpacing(16)
-        switches.setVerticalSpacing(6)
-        switches.addWidget(self.strict, 0, 0)
-        switches.addWidget(self.stem, 0, 1)
-        switches.addWidget(self.hints, 1, 0)
-        switches.addWidget(self.difficulty_adjust, 1, 1)
+        switches = QVBoxLayout()  # the on/off options, one column (fits 640 px)
+        switches.setSpacing(6)
+        for switch_box in (self.strict, self.stem, self.hints, self.difficulty_adjust):
+            switches.addWidget(switch_box)
         stl.addLayout(switches)
         # v0.3: keep a deck's new cards out of Anki until they are drilled.
         self.hold_back_box = QWidget()
@@ -492,19 +490,18 @@ class SetupDialog(QDialog):
             header.setStretchLastSection(True)
         qconnect(self.hints_table.itemChanged, self._on_hint_edited)
         hl.addWidget(self.hints_table)
-        self.body.addWidget(self.hints_box)
+        self.hints_box.hide()
+        cl.addWidget(self.hints_box)
 
-        # Drill time (measured)
-        est, el = style.section("Drill time")
+        # Drill time (measured): a line in the Cards fold
         self.estimate_label = QLabel()
         self.estimate_label.setWordWrap(True)
         self.estimate_source = style.text_label(kind="muted")
-        el.addWidget(self.estimate_label)
-        el.addWidget(self.estimate_source)
-        self.body.addWidget(est)
+        cl.addWidget(self.estimate_label)
+        cl.addWidget(self.estimate_source)
 
         # Pacing (deck scopes)
-        self.pacing_box, pl = style.section("Pacing")
+        self.pacing_box, pl = self._fold("pacing", "Pacing")
         prow1 = QHBoxLayout()
         self.pace_on = style.switch(QCheckBox("Pace to a target date"))
         self.pace_date = DateEdit()
@@ -561,6 +558,30 @@ class SetupDialog(QDialog):
             qconnect(box.toggled, self._on_pacing_edited)
         self.pacing_box.hide()
         self.body.addWidget(self.pacing_box)
+
+        # Scope
+        scope_box, sl = self._fold("scope", "Scope")
+        self.scope_label = QLabel()
+        self.scope_label.setWordWrap(True)
+        sl.addWidget(self.scope_label)
+        row = QHBoxLayout()
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText(
+            "Search… e.g. tag:MedTerm_Ch03::Day05 (whole collection)"
+        )
+        self.search_btn = style.button("Use search")
+        self.deck_btn = style.button("Use this deck")
+        for b in (self.search_btn, self.deck_btn):
+            b.setAutoDefault(False)
+        row.addWidget(self.search_edit, 1)
+        row.addWidget(self.search_btn)
+        row.addWidget(self.deck_btn)
+        sl.addLayout(row)
+        qconnect(self.search_edit.returnPressed, self._use_search)
+        qconnect(self.search_btn.clicked, self._use_search)
+        qconnect(self.deck_btn.clicked, self._use_deck)
+        self.body.addWidget(scope_box)
+
         self.body.addStretch(1)
 
         # Footer bar: the count on the left, Sections…, Close and Start on the right
@@ -585,6 +606,98 @@ class SetupDialog(QDialog):
         bottom.addWidget(close)
         bottom.addWidget(self.start_btn)
         outer.addWidget(footer)
+        self._connect_summaries()
+        self._sync_folds()
+
+    # -- folds --------------------------------------------------------------
+
+    def _fold(self, key: str, title: str) -> tuple[Fold, QVBoxLayout]:
+        """A closed fold (open, if it was left open last time) for one section."""
+        fold = Fold(key, title, self._fold_toggled)
+        self._restoring = True
+        try:
+            fold.set_open(key in self._open_folds())
+        finally:
+            self._restoring = False
+        self.folds[key] = fold
+        return fold, fold.body_layout
+
+    def _open_folds(self) -> set[str]:
+        state = self.ctx.storage().read_json(UI_STATE, {})
+        keys = state.get(FOLDS_KEY) if isinstance(state, dict) else None
+        return {k for k in keys if k in FOLD_KEYS} if isinstance(keys, list) else set()
+
+    def _fold_toggled(self, key: str, opened: bool) -> None:
+        if self._restoring:
+            return
+        storage = self.ctx.storage()
+        state = storage.read_json(UI_STATE, {})
+        state = dict(state) if isinstance(state, dict) else {}
+        keys = self._open_folds() - {key}
+        if opened:
+            keys.add(key)
+        state[FOLDS_KEY] = [k for k in FOLD_KEYS if k in keys]
+        storage.write_json(UI_STATE, state)
+
+    def _connect_summaries(self) -> None:
+        """The fold summaries follow their controls as they change."""
+        for box in self.class_boxes.values():
+            qconnect(box.toggled, self._sync_folds)
+        for signal in (
+            self.tag_edit.textChanged,
+            self.order.currentIndexChanged,
+            self.max_cards.valueChanged,
+            self.batch_size.valueChanged,
+            self.encode_reps.valueChanged,
+            self.hold_back.toggled,
+            self.pace_on.toggled,
+            self.pace_date.dateChanged,
+            self.pace_early.valueChanged,
+        ):
+            qconnect(signal, self._sync_folds)
+        for box in self.pace_days:
+            qconnect(box.toggled, self._sync_folds)
+
+    def _sync_folds(self, *_args: Any) -> None:
+        """Each fold's summary and warning dot, from the controls as they are now."""
+        if not self.folds:
+            return
+        ticked = [c for c, box in self.class_boxes.items() if box.isChecked()]
+        tag = self.tag_edit.text()
+        is_deck = self.scope.deck_id is not None
+        cards, settings, pace, scope = (self.folds[k] for k in FOLD_KEYS)
+        cards.set_summary(
+            setup_summary.cards_summary(
+                tag, ticked, self.order.currentText(), self.max_cards.value()
+            )
+        )
+        settings.set_summary(
+            setup_summary.settings_summary(
+                self.batch_size.value(),
+                self.encode_reps.value(),
+                self.hold_back.isChecked() if is_deck else None,
+            )
+        )
+        pace.set_summary(
+            setup_summary.pacing_summary(
+                self.pace_on.isChecked(),
+                self._pacing_from_inputs().last_drill_day,
+                self.pacing_view,
+                [i for i, box in enumerate(self.pace_days) if box.isChecked()],
+            )
+        )
+        scope.set_summary(setup_summary.scope_summary(is_deck, self._scope_text, tag.strip()))
+        data = self.data
+        cards.set_warning(
+            any(
+                not w.isHidden()
+                for w in (self.sibling_label, self.waiting_label, self.unrated_label)
+            )
+            or (data is not None and not data.drillable)
+        )
+        settings.set_warning(not self.proposal_row.isHidden())
+        pace.set_warning(not self.pace_warning.isHidden() or self._pace_failed)
+        scope.set_warning(self._scope_failed)
 
     def _build_header(self) -> QWidget:
         """The strip above the scroll area: the deck's name and path, the exam tracker's pill
@@ -651,6 +764,7 @@ class SetupDialog(QDialog):
         show_pace = self.scope.deck_id is not None and self.pace_on.isChecked() and pace_n > 0
         self.tile_pace_value.setText(f"{pace_n:,}")
         self.tile_pace.setVisible(show_pace)
+        self._sync_folds()
 
     # -- scope --------------------------------------------------------------
 
@@ -670,6 +784,7 @@ class SetupDialog(QDialog):
 
     def _load_scope(self) -> None:
         """A new scope: its settings deck, the saved draft and the saved session."""
+        self._scope_failed = False
         self._set_loading(True)
         self.banner.hide()
         scope = self.scope
@@ -738,6 +853,8 @@ class SetupDialog(QDialog):
         self._set_loading(False)
         self.status_label.setText(f"Couldn't read the cards: {exc}")
         self.start_btn.setEnabled(False)
+        self._scope_failed = True
+        self._sync_folds()
 
     # -- refresh --------------------------------------------------------------
 
@@ -844,6 +961,7 @@ class SetupDialog(QDialog):
         if sel.sibling_cards:
             style.set_prop(self.sibling_label, "rdNote", "warn")
             style.set_prop(self.sibling_label, "rdText", None)
+            self.sibling_label.show()
             self.sibling_label.setText(
                 f"⚠ Siblings: {sel.sibling_cards} picked cards share a note with another "
                 f"picked card ({_plural(sel.sibling_notes, 'note')}). Drilling both directions "
@@ -853,6 +971,7 @@ class SetupDialog(QDialog):
             style.set_prop(self.sibling_label, "rdNote", None)
             style.set_prop(self.sibling_label, "rdText", "muted")
             self.sibling_label.setText("Siblings: 0 picked cards share a note.")
+            self.sibling_label.hide()  # nothing to look at: only the warning is shown
         self.waiting_label.setText(f"⚠ {data.waiting_line}" if data.waiting_line else "")
         self.waiting_label.setVisible(bool(data.waiting_line))
         self.unrated_label.setText(f"⚠ {data.unrated_line}" if data.unrated_line else "")
@@ -1038,6 +1157,7 @@ class SetupDialog(QDialog):
             self.use_n_btn.setEnabled(False)
             self._show_header()
             return
+        self._pace_failed = False
         self.pace_line.setText("Working out the pace…")
         self.use_n_btn.setEnabled(False)
         storage, cfg, draft = self.ctx.storage(), self.ctx.config(), dict(self.draft)
@@ -1056,6 +1176,8 @@ class SetupDialog(QDialog):
             if self._closed or gen != self._pacing_generation:
                 return
             self.pace_line.setText(f"Couldn't work out the pace: {exc}")
+            self._pace_failed = True
+            self._sync_folds()
 
         QueryOp(parent=self, op=op, success=done).failure(failed).run_in_background()
 
