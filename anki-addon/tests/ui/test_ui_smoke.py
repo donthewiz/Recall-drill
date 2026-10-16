@@ -1526,14 +1526,22 @@ def test_the_sections_dialog_lists_subdecks_and_opens_the_setup_panel(
         assert w.deck_combo.currentText() == "Lab 2"
         # Subdecks come in the order their cards were made (Muscles first), v0.3.1.
         assert [r.label for r in w.rows] == ["Muscles", "Bones"]
-        assert w.summary.text() == "0 of 2 sections done. Next: Muscles."
-        cell: Any = w.table.item
-        assert cell(0, 0).text() == "Muscles" and cell(0, 5).text() == "1"
-        assert cell(0, 7).text() == "1 to go"
-        # Read-only: no cell is editable. Clicking a row opens that subdeck's setup panel.
-        assert not (cell(0, 1).flags() & sections_dialog.Qt.ItemFlag.ItemIsEditable)
-        w._clicked(1, 0)
+        assert w.summary.text() == "0 of 2 sections done · Next: Muscles, 1 to go"
+        # v0.5: one rounded row per subdeck (it was a table); the counts the other columns
+        # showed are in the row's tooltip.
+        first = w.row_cards[0]
+        assert first.name_label.text() == "Muscles" and first.count_label.text() == "1"
+        assert "Not in Anki, not held: 1" in first.toolTip()
+        assert "1 new + 0 introduced" in first.toolTip()
+        # Clicking a row opens that subdeck's setup panel.
+        from PyQt6.QtTest import QTest
+
+        QTest.mouseClick(  # pyright: ignore[reportCallIssue]
+            w.row_cards[1], sections_dialog.Qt.MouseButton.LeftButton
+        )
         assert opened == [w.rows[1].did]
+        w._clicked(1, 0)
+        assert opened == [w.rows[1].did] * 2
         w.close()
     finally:
         col.close()
@@ -1576,18 +1584,20 @@ def test_the_progress_dialog_shows_layers_marks_next_and_drills_next(
         )
         assert w.windowTitle() == "Recall Drill: progress"
         assert [r.label for r in w.rows] == ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
-        assert w.summary.text() == "0 of 4 layers done. Next: Layer 1."
-        headers = [w.table.horizontalHeaderItem(i).text() for i in range(w.table.columnCount())]
-        assert headers[-1 - len(CHAPTERS) : -1] == list(CHAPTERS)
-        assert headers[-1] == "Next" and "Can't drill" in headers
-        cell: Any = w.table.item
-        last = w.table.columnCount() - 1
-        assert cell(0, last).text() == "Next" and cell(1, last).text() == ""
-        assert cell(0, 0).font().bold() and not cell(1, 0).font().bold()
-        assert cell(0, headers.index("Can't drill")).text() == "2"
-        assert cell(0, headers.index("Muscles")).text() == "1/2"
-        # Drill next: the chosen deck, Order = Deck order.
+        assert w.summary.text() == "0 of 4 layers done · Next: Layer 1, 6 to go"
+        # v0.5: rows instead of a table. One cell per chapter, the Next row has its marker,
+        # accent look and the Drill next button, and the numbers the old columns held
+        # (can't drill, ...) are in the tooltip.
+        cards = w.row_cards
+        assert [c.text() for c in cards[0].chapter_captions] == list(CHAPTERS)
+        assert cards[0].chapter_cells[CHAPTERS.index("Muscles")].text() == "1/2"
+        assert cards[0].next_marker is not None and cards[0].next_marker.text() == "NEXT"
+        assert all(c.next_marker is None for c in cards[1:])
+        assert [c.property("rdRow") for c in cards] == ["next", "true", "true", "true"]
+        assert "Can't drill: 2" in cards[0].toolTip()
+        # Drill next: the chosen deck, Order = Deck order. It sits in the Next row.
         assert w.next_btn.text() == "Drill next" and w.next_btn.isEnabled()
+        assert cards[0].isAncestorOf(w.next_btn) and w.next_btn.property("rdRole") == "primary"
         w.next_btn.click()
         assert driven == [(scene.lab, "deck_order", "Layer::1", {"new", "suspended_new"})]
         assert opened == []
@@ -2196,3 +2206,148 @@ def test_building_the_panel_reads_the_collection_no_more_than_before(
     d._show_header()  # pyright: ignore[reportPrivateUsage]
     assert len(ops) == 2
     d.close()
+
+
+# -- v0.5: the sections rows and the drill window in the new style --------------------------
+
+
+def _visible_primaries(w: Any) -> list[Any]:
+    from aqt.qt import QPushButton
+
+    from recalldrill.ui import style
+
+    return [
+        b
+        for b in w.findChildren(QPushButton)
+        if b.isVisibleTo(w) and style.role_of(b) == "primary"
+    ]
+
+
+def test_sections_rows_done_next_and_the_drill_next_button_survives_a_rebuild(
+    qt_app: object, monkeypatch: pytest.MonkeyPatch, window_env: Path, tmp_path: Path
+) -> None:
+    import aqt
+    from anki.collection import Collection
+
+    from recalldrill.sections import Chapter, Progress, SectionRow
+    from recalldrill.storage import Storage
+    from recalldrill.ui import context, sections_dialog
+    from recalldrill.ui.context import AddonContext
+
+    col = Collection(str(tmp_path / "rows.anki2"))
+    try:
+        stub = aqt.mw
+        stub.col = col  # type: ignore[attr-defined]
+        for module in (sections_dialog, context):
+            monkeypatch.setattr(module, "mw", stub)
+        monkeypatch.setattr(sections_dialog, "QueryOp", _SyncQueryOp)
+        monkeypatch.setattr(_SyncQueryOp, "col", col)
+        ctx = AddonContext("recall_drill", str(window_env))
+        ctx.storage = lambda: Storage(window_env, "p")  # type: ignore[method-assign]
+        w: Any = sections_dialog.SectionsDialog(ctx, lambda _d: None, None)
+        chapters = (Chapter(11, "Lab::A", "A"), Chapter(12, "Lab::B", "B"))
+        rows = (
+            SectionRow(5, "Lab", "Layer 1", 4, 4, 0, 4, 0, 0, 0, 0, 1, ((2, 2), (2, 2))),
+            SectionRow(5, "Lab", "Layer 2", 5, 5, 0, 1, 0, 2, 2, 0, 2, ((1, 2), (0, 3))),
+            SectionRow(5, "Lab", "Layer 3", 3, 3, 0, 0, 0, 1, 2, 0, 3, ((0, 1), (0, 2))),
+        )
+        w._show(Progress(5, True, chapters, rows))
+        done, nxt, later = w.row_cards
+        # Done row: the tick, no marker, no button. Complete chapters are green (kind "ok").
+        assert done.done_label is not None and done.done_label.text() == "✓ Done"
+        assert done.next_marker is None and not done.isAncestorOf(w.next_btn)
+        assert [c.property("rdText") for c in done.chapter_cells] == ["ok", "ok"]
+        assert nxt.chapter_cells[0].property("rdText") == "strong"
+        # Next row: marker, accent look, count, bar numbers and the primary Drill next button.
+        assert nxt.next_marker is not None and nxt.property("rdRow") == "next"
+        assert nxt.count_label.text() == "4" and nxt.bar_label.text() == "1 of 5"
+        assert nxt.isAncestorOf(w.next_btn) and w.next_btn.isVisibleTo(w)
+        assert later.next_marker is None and later.done_label is None
+        assert "Held / waiting: 2" in nxt.toolTip() and "Can't drill: 0" in nxt.toolTip()
+        assert w.summary.text() == "1 of 3 layers done · Next: Layer 2, 4 to go"
+        # A rebuild keeps the same button (its row was deleted around it) and moves it.
+        button = w.next_btn
+        w._show(Progress(5, True, chapters, (rows[1], rows[0], rows[2])))
+        assert w.next_btn is button and w.row_cards[0].isAncestorOf(button)
+        # Nothing left to drill: no Next row, no button, a plain summary.
+        w._show(Progress(5, True, chapters, (rows[0],)))
+        assert not w.next_btn.isVisibleTo(w) and not w.next_btn.isEnabled()
+        assert w.summary.text() == "1 of 1 layers done"
+        w._show(Progress(5, False, (), ()))
+        assert w.summary.text() == "This deck has no subdecks and no cards."
+        w.close()
+    finally:
+        col.close()
+
+
+@pytest.mark.parametrize("night", [True, False])
+def test_every_window_builds_in_dark_and_light(
+    panel_env: Any, window_env: Path, monkeypatch: pytest.MonkeyPatch, night: bool
+) -> None:
+    from recalldrill.ui import style
+
+    monkeypatch.setattr(style, "is_night", lambda: night)
+    w: Any = _window(window_env)
+    assert w.styleSheet() == style.stylesheet(night)
+    # On a card the one primary button is Check; nothing is the default button (Enter is a key).
+    assert _visible_primaries(w) == [w.check_btn]
+    assert not any(b.isDefault() for b in w.findChildren(type(w.check_btn)))
+    assert [style.role_of(b) for b in (w.reveal_btn, w.replay_btn, w.edit_btn, w.end_btn)] == [
+        "secondary",
+        "ghost",
+        "ghost",
+        "ghost",
+    ]
+    assert w.stage_chip.text() == "Encoding" and w.detail_label.text() == "Full item"
+    assert w.mastered_label.text() == "0 of 3 mastered"
+    assert w.count_chips["New"].text() == "New (2)" and w.count_chips["Encoding"].text() == (
+        "Encoding (1)"
+    )
+    assert w.deck_label.text() == "Ch 3" and not w.section_label.isVisibleTo(w)
+    w.save_and_close()
+
+
+def test_drill_window_primary_follows_the_screen_and_keys_still_work(window_env: Path) -> None:
+    from aqt.qt import Qt
+
+    deck = [{"front": "heart", "back": "cardi"}, {"front": "liver", "back": "hepat"}]
+    w: Any = _window(window_env, deck, encodeReps=1, batchSize=1)
+    # A wrong answer shows feedback: Continue becomes the primary button.
+    w.input.setText("nope")
+    _key(w, Qt.Key.Key_Return)
+    assert w.ctrl.view().buttons.continue_
+    assert _visible_primaries(w) == [w.continue_btn]
+    _key(w, Qt.Key.Key_Return)
+    # Walk to the batch interstitial: Next batch is the primary button.
+    from recalldrill.engine.session import select_trial
+
+    for _ in range(100):
+        v = w.ctrl.view()
+        if v.mode == "batch_done":
+            break
+        if v.buttons.continue_:
+            _key(w, Qt.Key.Key_Return)
+            continue
+        trial = select_trial(w.ctrl.state)
+        assert trial is not None
+        w.input.setText(trial["target"])
+        _key(w, Qt.Key.Key_Return)
+        w._flush_dwell()
+    assert w.ctrl.view().mode == "batch_done"
+    assert _visible_primaries(w) == [w.next_batch_btn]
+    assert not w.stage_chip.isVisibleTo(w)  # "Batch 1 of 2 complete" has no stage
+    w.save_and_close()
+
+
+def test_stage_chip_position_text_and_section() -> None:
+    from recalldrill.ui.drill_window import section_text, stage_and_position
+
+    assert stage_and_position("Encoding • Part 1 of 3") == ("Encoding", "Part 1 of 3")
+    assert stage_and_position("Spaced Retrieval • Cycling review") == (
+        "Cycle",
+        "Cycling review",
+    )
+    assert stage_and_position("Final check • 2 of 9") == ("Final", "2 of 9")
+    assert stage_and_position("Batch 1 of 3 complete") == ("", "Batch 1 of 3 complete")
+    assert section_text("Layer::2") == "Layer 2" and section_text("layer::10") == "Layer 10"
+    assert section_text(" rd::drill::A1 ") == "rd::drill::A1" and section_text("") == ""

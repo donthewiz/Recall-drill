@@ -64,8 +64,9 @@ from ..controller import (
     StopAudio,
     ViewModel,
 )
+from ..layers import layer_of
 from ..sessions import SessionStore
-from . import exam_tracker
+from . import exam_tracker, style
 from .context import AddonContext
 from .handoff_dialog import confirm_finish_early, offer_handoff
 
@@ -98,8 +99,27 @@ def _finish_screen(
     return "trial"
 
 
-def _button(text: str, tip: str = "") -> QPushButton:
+def stage_and_position(detail: str) -> tuple[str, str]:
+    """The top bar's stage chip and the position text from the controller's ``detail``
+    ("Encoding • Part 1 of 3" -> ("Encoding", "Part 1 of 3"); the cycle is "Spaced Retrieval",
+    shown as "Cycle"). A detail with no stage ("Batch 1 of 3 complete") has no chip."""
+    head, sep, tail = detail.partition(" \u2022 ")
+    if not sep:
+        return "", detail
+    stage = {"Spaced Retrieval": "Cycle", "Final check": "Final"}.get(head, head)
+    return stage, tail
+
+
+def section_text(extra_tag: str) -> str:
+    """The session's section under the deck name: "Layer 2" for a ``Layer::2`` tag, else the tag."""
+    tag = extra_tag.strip()
+    layer = layer_of([tag]) if tag else None
+    return f"Layer {layer}" if layer is not None else tag
+
+
+def _button(text: str, tip: str = "", role: style.Role = "secondary") -> QPushButton:
     b = QPushButton(text)
+    style.set_role(b, role)
     b.setAutoDefault(False)
     b.setDefault(False)
     b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -132,6 +152,7 @@ class DrillWindow(QDialog):
         qconnect(self._dwell.timeout, self._on_dwell)
 
         self._build_ui()
+        style.apply(self, self._restyle)  # also redraws the dots' colours on a theme change
         for keys, fn in (
             ("Ctrl+E", self._edit),
             ("Ctrl+R", self._replay),
@@ -151,26 +172,49 @@ class DrillWindow(QDialog):
     # -- layout -------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 10, 12, 10)
+        root = style.install(self)
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
+        # Top strip: deck, section, stage chip, position, and "N of M mastered" on the right.
+        strip = style.frame("rdBar", "header")
+        col = QVBoxLayout(strip)
+        col.setContentsMargins(16, 10, 16, 10)
+        col.setSpacing(8)
         top = QHBoxLayout()
-        self.detail_label = QLabel()
-        self.mastered_label = QLabel()
+        top.setSpacing(12)
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        self.deck_label = style.text_label("", "heading", wrap=False)
+        self.section_label = style.text_label("", "muted", wrap=False)
+        names.addWidget(self.deck_label)
+        names.addWidget(self.section_label)
+        top.addLayout(names)
+        self.stage_chip = style.chip_label("", "accent")
+        self.detail_label = style.text_label(wrap=False)
+        self.mastered_label = style.text_label("", "strong", wrap=False)
         self.mastered_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        top.addWidget(self.detail_label, 1)
-        top.addWidget(self.mastered_label)
-        outer.addLayout(top)
-
+        top.addWidget(self.stage_chip, 0, Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(self.detail_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(self.mastered_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        col.addLayout(top)
         self.batch_bar = QProgressBar()
         self.batch_bar.setTextVisible(False)
-        self.batch_bar.setFixedHeight(8)
         self.deck_bar = QProgressBar()
         self.deck_bar.setTextVisible(False)
-        self.deck_bar.setFixedHeight(4)
-        outer.addWidget(self.batch_bar)
-        outer.addWidget(self.deck_bar)
+        col.addWidget(self.batch_bar)
+        col.addWidget(self.deck_bar)
+        outer.addWidget(strip)
 
+        middle = QVBoxLayout()
+        middle.setContentsMargins(16, 12, 16, 10)
+        middle.setSpacing(10)
+        outer.addLayout(middle, 1)
+
+        # The card keeps the note type's own styling; only the frame around it is ours.
+        frame, fl = style.card_frame()
+        fl.setContentsMargins(6, 6, 6, 6)
         self.web = AnkiWebView(self, title="recall drill")
         self.web.set_bridge_command(self._on_bridge, self)
         self.web.stdHtml(
@@ -179,34 +223,42 @@ class DrillWindow(QDialog):
             js=["js/mathjax.js", "js/vendor/mathjax/tex-chtml-full.js"],
             context=self,
         )
-        outer.addWidget(self.web, 1)
+        fl.addWidget(self.web, 1)
+        middle.addWidget(frame, 1)
 
         self.input = QLineEdit()
+        self.input.setProperty("rdInput", "answer")
         font = QFont("Consolas")
         font.setStyleHint(QFont.StyleHint.Monospace)
         font.setPointSize(13)
         self.input.setFont(font)
-        self.input.setMinimumHeight(36)
-        outer.addWidget(self.input)
+        self.input.setMinimumHeight(40)
+        self.check_btn = _button("Check answer", "Enter", "primary")
+        self.continue_btn = _button("Continue →", "Enter", "primary")
+        answer = QHBoxLayout()
+        answer.setSpacing(10)
+        answer.addWidget(self.input, 1)
+        answer.addWidget(self.check_btn)
+        answer.addWidget(self.continue_btn)
+        middle.addLayout(answer)
 
         row = QHBoxLayout()
-        self.check_btn = _button("Check answer", "Enter")
-        self.continue_btn = _button("Continue →", "Enter")
+        row.setSpacing(8)
         self.reveal_btn = _button("Show target", "Esc: reveal the target")
         self.override_btn = _button("Count as correct", "Ctrl+Enter: count this as correct anyway")
-        self.replay_btn = _button("▶ Replay", "Ctrl+R: replay the card's audio")
-        self.extra_btn = _button("Show Extra", "Ctrl+I: show this card's Extra (holds the screen)")
-        self.edit_btn = _button("Edit in Anki", "Ctrl+E: open this card in Anki's Browser")
-        self.done_edit_btn = _button("Done editing", "Read the card back from Anki now")
-        self.end_btn = _button("End session", "Save and stop")
-        self.next_batch_btn = _button("Next batch →", "Enter")
-        self.save_stop_btn = _button("Save and stop")
-        self.finish_btn = _button(
-            "Finish with these cards", FINISH_TOOLTIP
+        self.replay_btn = _button("▶ Replay", "Ctrl+R: replay the card's audio", "ghost")
+        self.extra_btn = _button(
+            "Show Extra", "Ctrl+I: show this card's Extra (holds the screen)", "ghost"
         )
+        self.edit_btn = _button("Edit in Anki", "Ctrl+E: open this card in Anki's Browser", "ghost")
+        self.done_edit_btn = _button("Done editing", "Read the card back from Anki now", "ghost")
+        self.end_btn = _button("End session", "Save and stop", "ghost")
+        self.next_batch_btn = _button("Next batch →", "Enter", "primary")
+        self.save_stop_btn = _button("Save and stop")
+        self.finish_btn = _button("Finish with these cards", FINISH_TOOLTIP)
         self.again_btn = _button("Drill these cards again")
-        self.handoff_btn = _button("Hand off", HANDOFF_TOOLTIP)
-        self.close_btn = _button("Close")
+        self.handoff_btn = _button("Hand off", HANDOFF_TOOLTIP, "primary")
+        self.close_btn = _button("Close", "", "ghost")
         for b, fn in (
             (self.check_btn, self._enter),
             (self.continue_btn, self._enter),
@@ -226,8 +278,6 @@ class DrillWindow(QDialog):
         ):
             qconnect(b.clicked, fn)
         for b in (
-            self.check_btn,
-            self.continue_btn,
             self.reveal_btn,
             self.override_btn,
             self.next_batch_btn,
@@ -247,20 +297,42 @@ class DrillWindow(QDialog):
             self.close_btn,
         ):
             row.addWidget(b)
-        outer.addLayout(row)
+        middle.addLayout(row)
 
-        self.status_label = QLabel()
-        self.status_label.setWordWrap(True)
-        outer.addWidget(self.status_label)
+        # Bottom strip: the counts as chips, attempts and misses muted, the batch dots right.
+        foot = style.frame("rdBar", "footer")
+        fl2 = QHBoxLayout(foot)
+        fl2.setContentsMargins(16, 8, 16, 8)
+        fl2.setSpacing(8)
+        self.count_chips: dict[str, QLabel] = {}
+        for name in ("New", "Encoding", "Ready", "Mastered"):
+            chip = style.chip_label(f"{name} (0)", "ok" if name == "Mastered" else "plain")
+            self.count_chips[name] = chip
+            fl2.addWidget(chip)
+        self.status_label = style.text_label("", "muted", wrap=False)
+        fl2.addWidget(self.status_label, 1)
         self.dots_label = QLabel()
         self.dots_label.setWordWrap(True)
         self.dots_label.setTextFormat(Qt.TextFormat.RichText)
-        outer.addWidget(self.dots_label)
+        self.dots_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        fl2.addWidget(self.dots_label, 2)
+        outer.addWidget(foot)
+
+    def _restyle(self) -> None:
+        """Anki's theme changed: the dots carry their colours in the text, so redraw."""
+        if not self._closing:
+            self._render()
 
     def _update_title(self) -> None:
         name = self.ctrl.settings.deck_name
         again = " (drill again)" if self.store.meta.is_drill_again else ""
         self.setWindowTitle(f"Recall Drill: {name}{again}")
+        *parents, leaf = name.split("::")
+        self.deck_label.setText(leaf)
+        tag = str(self.store.meta.select_options.get("extra_tag") or "")
+        where = [" › ".join(parents), section_text(tag)]
+        self.section_label.setText(" · ".join(w for w in where if w))
+        self.section_label.setVisible(any(where))
 
     # -- session ------------------------------------------------------------
 
@@ -325,12 +397,16 @@ class DrillWindow(QDialog):
 
     def _render_widgets(self, v: ViewModel, on_card: bool) -> None:
         p = v.progress
-        detail = v.detail + (f" • {v.batch_label}" if v.batch_label else "")
-        self.detail_label.setText(detail)
-        mastered = f"{p.mastered} / {p.total} Mastered ({p.mastered_percent}%)"
+        stage, position = stage_and_position(v.detail)
+        self.stage_chip.setText(stage)
+        self.stage_chip.setVisible(bool(stage))
+        self.detail_label.setText(position + (f" • {v.batch_label}" if v.batch_label else ""))
+        self.mastered_label.setText(f"{p.mastered} of {p.total} mastered")
+        tip = f"{p.mastered_percent}% mastered"
         if p.is_batched:
-            mastered += f" • Batch encoded {p.batch_encoded_percent}%"
-        self.mastered_label.setText(mastered)
+            tip += f" • Batch encoded {p.batch_encoded_percent}%"
+        self.mastered_label.setToolTip(tip)
+        self.batch_bar.setToolTip(tip)
         self.batch_bar.setValue(p.batch_encoded_percent)
         self.deck_bar.setValue(p.deck_encoded_percent)
         self.deck_bar.setVisible(p.is_batched)
@@ -375,10 +451,14 @@ class DrillWindow(QDialog):
         self.close_btn.setVisible(done)
 
         s = v.stats
-        self.status_label.setText(
-            f"New ({p.new})   Encoding ({p.encoding})   Ready ({p.ready})   "
-            f"Mastered ({p.mastered})        {s.text}"
-        )
+        for name, n in (
+            ("New", p.new),
+            ("Encoding", p.encoding),
+            ("Ready", p.ready),
+            ("Mastered", p.mastered),
+        ):
+            self.count_chips[name].setText(f"{name} ({n})")
+        self.status_label.setText(s.text)
         night = 1 if theme_manager.night_mode else 0
         dots = "".join(
             f'<span style="color:{_DOT_COLORS.get(d.status, _DOT_COLORS["new"])[night]};'
@@ -593,7 +673,7 @@ class DrillWindow(QDialog):
         self._set_session(ctrl, store)
 
     def _finish_early(self) -> None:
-        """"Finish with K cards": from the interstitial, stop first (flush the
+        """ "Finish with K cards": from the interstitial, stop first (flush the
         dwell, save), then check the cards against Anki, confirm and cut."""
         if self._finishing or self.store.meta.is_drill_again:
             return
