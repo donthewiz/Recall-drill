@@ -14,6 +14,7 @@ from .context import AddonContext
 MENU_LABEL = "Math Path"
 IMPORT_LABEL = "Import recipes…"
 LEARN_NEXT_LABEL = "Learn next"
+PROGRESS_LABEL = "Progress…"
 ABOUT_LABEL = "About Math Path"
 DEV_FOLDER = "math_path_dev"
 
@@ -50,7 +51,9 @@ def build_menu(tools: QMenu, parent: object) -> QMenu:
         menu.addAction(action)
 
     from .launch import learn_next
+    from .progress_window import open_progress
 
+    add(PROGRESS_LABEL, lambda: _ctx is not None and open_progress(_ctx))
     add(LEARN_NEXT_LABEL, lambda: _ctx is not None and learn_next(_ctx))
     add(IMPORT_LABEL, lambda: _ctx is not None and open_import_dialog(_ctx))
     menu.addSeparator()
@@ -65,6 +68,9 @@ def register(module: str, user_files: str) -> None:
     if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
         return
     _ctx = AddonContext(module, user_files)
+    from .progress_window import open_progress
+
+    _ctx.progress_opener = lambda: open_progress(_ctx) if _ctx is not None else None
     mw.addonManager.setWebExports(module, pages.web_pattern())
     build_menu(mw.form.menuTools, mw)
     gui_hooks.profile_will_close.append(on_profile_will_close)

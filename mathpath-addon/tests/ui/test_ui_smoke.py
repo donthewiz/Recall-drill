@@ -42,6 +42,7 @@ def test_every_ui_module_is_listed() -> None:
         "math_path.ui.launch",
         "math_path.ui.learn_window",
         "math_path.ui.page_window",
+        "math_path.ui.progress_window",
         "math_path.ui.review_bridge",
         "math_path.ui.review_window",
     } <= set(UI_MODULES)
@@ -52,12 +53,19 @@ def env(qt_app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iter
     import aqt
     from stubs import FakeWeb, StubMw, SyncCollectionOp, SyncQueryOp
 
-    from math_path.ui import context, import_dialog, launch, learn_window, page_window
+    from math_path.ui import (
+        context,
+        import_dialog,
+        launch,
+        learn_window,
+        page_window,
+        progress_window,
+    )
 
     c = Collection(str(tmp_path / "collection.anki2"))
     stub = StubMw(c)
     monkeypatch.setattr(aqt, "mw", stub)
-    for mod in (context, import_dialog, page_window, launch, learn_window):
+    for mod in (context, import_dialog, page_window, launch, learn_window, progress_window):
         monkeypatch.setattr(mod, "mw", stub, raising=False)
     monkeypatch.setattr(page_window, "AnkiWebView", FakeWeb)
     monkeypatch.setattr(import_dialog, "QueryOp", SyncQueryOp)
@@ -66,6 +74,7 @@ def env(qt_app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iter
     tips: list[str] = []
     monkeypatch.setattr(launch, "tooltip", tips.append)
     monkeypatch.setattr(learn_window, "tooltip", tips.append)
+    monkeypatch.setattr(progress_window, "tooltip", tips.append)
     stub.tips = tips  # type: ignore[attr-defined]
     SyncQueryOp.col = c
     SyncCollectionOp.col = c
@@ -167,7 +176,9 @@ def test_registration_wires_the_menu_and_the_web_exports(
     submenu = [a for a in Form.menuTools.actions() if a.text() == "Math Path"][0].menu()
     assert submenu is not None
     shown = [a.text() for a in submenu.actions() if a.text()]
-    assert shown == ["Learn next", "Import recipes…", "About Math Path"]
+    assert shown == ["Progress…", "Learn next", "Import recipes…", "About Math Path"]
+    ctx = entry.context()
+    assert ctx is not None and ctx.progress_opener is not None
     from aqt import gui_hooks
 
     assert entry.on_show_question in gui_hooks.reviewer_did_show_question._hooks  # type: ignore[attr-defined]
@@ -451,3 +462,114 @@ def test_the_handoff_question_has_three_answers_and_hand_off_is_the_default(
     )
     assert w._ask_handoff() is answer
     assert seen["text"] == "Hand off the 1 learned problem now?" and seen["default"] == "Hand off"
+
+
+# -- the progress window ---------------------------------------------------------------------------
+
+
+def _tag_recall(env: Any, number: str, total: int, drilled: int) -> None:
+    """``total`` Recall Drill cards in section ``number``'s deck, ``drilled`` of them drilled."""
+    from anki.decks import DeckId
+
+    from math_path.anki_io.courses import SECTION_NUMBER  # noqa: F401
+
+    deck = next(
+        int(d["id"])
+        for d in env.col.decks.all()
+        if str(d["name"]).split("::")[-1].startswith(number + " ")
+    )
+    model = env.col.models.by_name("Basic")
+    assert model is not None
+    for i in range(total):
+        note = env.col.new_note(model)
+        note["Front"], note["Back"] = f"q{number}-{i}", "a"
+        note.tags = ["rd::drilled"] if i < drilled else ["rd::drill"]
+        env.col.add_note(note, DeckId(deck))
+
+
+def _open_progress(env: Any, ctx: Any) -> Any:
+    from math_path.ui.progress_window import ProgressWindow, open_progress
+
+    w = open_progress(ctx)
+    assert isinstance(w, ProgressWindow)
+    return w
+
+
+def test_the_progress_window_shows_the_map_and_learns_a_section(
+    env: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from math_path.ui import launch
+
+    _course(env, tmp_path)
+    _tag_recall(env, "3.3", 52, 12)
+    ctx = _learn_ctx(tmp_path)
+    ctx.progress_opener = lambda: None
+    w = _open_progress(env, ctx)
+    html = w.web.last_render()["html"]
+    assert w.windowTitle() == "Math Path: progress"
+    assert "3.1 The Complex Numbers" in html and "NEXT" in html
+    assert "12 / 52" in html  # the Recall cell; the amber line waits for a click on Learn
+    assert "needs " in html  # a later recipe waits on an earlier one
+    assert open_progress_again(ctx) is w  # one window
+    # Learn on the NEXT section opens a learn session
+    w.web.bridge("mp:act:learn_next")
+    learn = [x for x in ctx.windows if type(x).__name__ == "LearnWindow"]
+    assert len(learn) == 1
+    # a second Learn does not open another session
+    w.web.bridge("mp:act:learn_next")
+    assert len([x for x in ctx.windows if type(x).__name__ == "LearnWindow"]) == 1
+    assert "Finish or close" in env.tips[-1]
+    assert launch.remembered_course(ctx, [c for c in w.ctl.courses]) is not None
+    w.web.bridge("mp:act:close")
+    assert w not in ctx.windows
+
+
+def open_progress_again(ctx: Any) -> Any:
+    from math_path.ui.progress_window import open_progress
+
+    return open_progress(ctx)
+
+
+def test_learn_on_a_section_with_undrilled_recall_asks_first(env: Any, tmp_path: Path) -> None:
+    _course(env, tmp_path)
+    _tag_recall(env, "3.1", 5, 1)
+    ctx = _learn_ctx(tmp_path)
+    w = _open_progress(env, ctx)
+    row = w.ctl.model().rows[0]  # type: ignore[union-attr]
+    w.web.bridge(f"mp:act:learn:{row.section.did}")
+    assert not [x for x in ctx.windows if type(x).__name__ == "LearnWindow"]
+    assert "Learn anyway" in w.web.last_render()["html"]
+    w.web.bridge("mp:act:cancel")
+    assert "Learn anyway" not in w.web.last_render()["html"]
+    w.web.bridge(f"mp:act:learn:{row.section.did}")
+    w.web.bridge(f"mp:act:learn_anyway:{row.section.did}")
+    assert [x for x in ctx.windows if type(x).__name__ == "LearnWindow"]
+
+
+def test_the_progress_window_follows_changes_in_anki(env: Any, tmp_path: Path) -> None:
+    from aqt import gui_hooks
+
+    from math_path.progress import LEARNED, NoteProgress, ProgressStore
+
+    (course,) = _course(env, tmp_path)
+    ctx = _learn_ctx(tmp_path)
+    w = _open_progress(env, ctx)
+    before = w.web.last_render()["html"]
+    assert "In Anki" not in before
+    store = ProgressStore(ctx.storage())
+    for n in course.notes:
+        store.put(n.nid, NoteProgress(stage=LEARNED, handed_off=True))
+    gui_hooks.operation_did_execute(object(), None)  # type: ignore[arg-type]
+    assert "In Anki" in w.web.last_render()["html"]
+    w.close()
+    n = len(w.web.evals)
+    gui_hooks.operation_did_execute(object(), None)  # type: ignore[arg-type]
+    assert len(w.web.evals) == n  # a closed window no longer listens
+
+
+def test_the_progress_window_with_no_notes_offers_the_import(env: Any, tmp_path: Path) -> None:
+    ctx = _learn_ctx(tmp_path)
+    w = _open_progress(env, ctx)
+    assert "No Math Path notes yet" in w.web.last_render()["html"]
+    w.web.bridge("mp:act:refresh")
+    w.close()
