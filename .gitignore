@@ -11,7 +11,7 @@ coverage/
 !.claude/hooks/
 
 # Anki add-on (anki-addon/)
-anki-addon/.venv/
+anki-addon/.venv
 anki-addon/**/__pycache__/
 anki-addon/meta.json
 anki-addon/user_files/*
@@ -23,7 +23,7 @@ anki-addon/tests/golden/_debug/
 .coverage
 
 # Math Path add-on (mathpath-addon/)
-mathpath-addon/.venv/
+mathpath-addon/.venv
 mathpath-addon/**/__pycache__/
 mathpath-addon/meta.json
 mathpath-addon/user_files/*
