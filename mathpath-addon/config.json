@@ -1,0 +1,5 @@
+{
+  "problems_per_session": 3,
+  "auto_open_in_review": true,
+  "prereq_lock": true
+}
