@@ -56,7 +56,7 @@ def encode_recipe(data: Mapping[str, Any]) -> str:
 def decode_recipe(field: str) -> Any:
     """The decoded recipe in a ``Recipe`` field (``json.JSONDecodeError`` if it isn't JSON).
     The JSON is ASCII, so a non-breaking space can only have come from the editor."""
-    return json.loads(decode_text(field).replace(" ", " "))
+    return json.loads(decode_text(field).replace("\xa0", " "))
 
 
 def section_text(recipe: Recipe) -> str:

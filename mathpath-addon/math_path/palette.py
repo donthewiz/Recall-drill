@@ -14,8 +14,8 @@ import re
 
 from . import loader
 
-_GROUP_OPEN = ""
-_GROUP_CLOSE = ""
+_GROUP_OPEN = "\ue200"
+_GROUP_CLOSE = "\ue201"
 _UNION = "∪"
 
 _ATOM = re.compile(r"(?<![A-Za-z0-9_])\(([A-Za-z]|\d+(?:\.\d+)?)\)")

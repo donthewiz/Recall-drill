@@ -171,7 +171,7 @@ def test_or_between_inequalities_reads_as_or() -> None:
 def test_the_private_use_group_marks_never_reach_the_checker() -> None:
     for latex in (r"\frac{1}{2}", r"\frac{x+1}{2}", r"\sqrt{x+1}", r"(1,2)\cup[3,4]"):
         out = palette_to_keyboard(latex)
-        assert "" not in out and "" not in out and "∪" not in out
+        assert "\ue200" not in out and "\ue201" not in out and "∪" not in out
 
 
 def test_redundant_parentheses_are_dropped_but_real_ones_stay() -> None:
