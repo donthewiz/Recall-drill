@@ -27,6 +27,8 @@ strict = [
     "math_path/recipe.py",
     "math_path/display.py",
     "math_path/problem.py",
+    "math_path/fastgen.py",
+    "math_path/grading.py",
     "math_path/recipe_note.py",
     "math_path/import_plan.py",
     "math_path/import_controller.py",

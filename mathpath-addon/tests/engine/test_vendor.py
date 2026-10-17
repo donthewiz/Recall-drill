@@ -52,7 +52,7 @@ def _run(code: str) -> str:
 
 def test_nothing_is_imported_until_the_first_problem_and_then_from_vendor() -> None:
     out = _run(
-        "from math_path import loader, problem, display, recipe; "
+        "from math_path import loader, palette, problem, grading, display, recipe; "
         "before = 'sympy' in sys.modules; "
         "core = loader.load(); "
         "print(before, loader.is_loaded(), core.sympy.__file__)"

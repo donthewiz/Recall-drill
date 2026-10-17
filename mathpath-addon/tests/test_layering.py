@@ -92,7 +92,7 @@ def _violations(paths: list[Path], rule: object) -> list[str]:
 
 def test_there_are_pure_modules_to_check() -> None:
     names = {p.name for p in _pure_paths()}
-    assert {"loader.py", "problem.py", "recipe.py", "display.py", "pages.py"} <= names
+    assert {"loader.py", "problem.py", "grading.py", "palette.py", "recipe.py"} <= names
 
 
 def test_pure_modules_are_pure() -> None:
