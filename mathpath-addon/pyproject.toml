@@ -1,0 +1,45 @@
+# Tool configuration only; the add-on is not a pip package.
+# Target is Anki 26.08.1's bundled Python (3.13.13).
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = [".venv", "dist", "user_files", "vendor", "core"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+include = ["__init__.py", "math_path", "tests", "build.py"]
+extraPaths = ["tests", "tests/anki_io", "tests/engine"]
+exclude = [".venv", "dist", "vendor", "core", "**/__pycache__"]
+typeCheckingMode = "standard"
+# The Qt-free layers are held to strict. ui/ stays at standard because PyQt6's stubs leave
+# signals partially Unknown, which strict rejects on every connect. Tests poke at private
+# parts and at Anki's backend on purpose.
+strict = [
+    "math_path/__init__.py",
+    "math_path/loader.py",
+    "math_path/palette.py",
+    "math_path/recipe.py",
+    "math_path/display.py",
+    "math_path/problem.py",
+    "math_path/recipe_note.py",
+    "math_path/import_plan.py",
+    "math_path/import_controller.py",
+    "math_path/pages.py",
+    "math_path/theme.py",
+    "math_path/storage.py",
+    "math_path/config.py",
+    "math_path/views",
+    "math_path/anki_io",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --import-mode=importlib"
+# SymPy 1.14's own parser trips its Tuple-in-Mul deprecation on some inputs: noise, not a defect.
+filterwarnings = ["ignore:(?s).*non-Expr arguments"]
