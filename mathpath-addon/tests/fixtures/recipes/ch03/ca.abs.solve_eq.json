@@ -1,0 +1,141 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.5",
+  "title": "Solving Equations and Inequalities with Absolute Value"
+ },
+ "id": "ca.abs.solve_eq",
+ "title": "Solve |ax + b| + d = e (two solutions)",
+ "sources": [
+  "Bittinger 7e §3.5 Examples 1-2 (Video Notebook p. 91)",
+  "Test Form A #11-12 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.6 p. 152 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.lin.solve_linear"
+ ],
+ "process_card": "Solving an absolute value equation",
+ "var": "x",
+ "domain": "real",
+ "params": {
+  "m": {
+   "choice": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ]
+  },
+  "sg": {
+   "choice": [
+    1,
+    1,
+    -1
+   ]
+  },
+  "c": {
+   "int": [
+    1,
+    13
+   ]
+  },
+  "d": {
+   "choice": [
+    1,
+    2,
+    3,
+    4,
+    6
+   ]
+  }
+ },
+ "let": {
+  "inner": "expand(sg (m x + b))",
+  "absx": "abs(inner)",
+  "lhs": "abs(inner) - d",
+  "cd": "c - d",
+  "cn": "-c",
+  "lo": "(-c - b)/m",
+  "hi": "(c - b)/m"
+ },
+ "problem": {
+  "prompt": "Solve: {tex:absx} - {d} = {tex:cd}",
+  "equation": "{lhs} = {cd}"
+ },
+ "steps": [
+  {
+   "name": "isolate the absolute value",
+   "result": "abs({inner}) = {c}",
+   "check": "equivalent"
+  },
+  {
+   "name": "write two equations (one positive and one negative)",
+   "result": "{inner} = {c}; {inner} = {cn}",
+   "check": "each"
+  },
+  {
+   "name": "solve each equation",
+   "result": "{lo}, {hi}",
+   "check": "solutions"
+  },
+  {
+   "name": "check",
+   "result": "",
+   "check": "substitution"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{lo}, {hi}",
+  "form": [
+   "exact",
+   "reduced_fraction"
+  ],
+  "say": "The solutions are {lo} and {hi}."
+ },
+ "mistakes": [
+  {
+   "id": "one_branch",
+   "name": "kept only the positive equation",
+   "rule": {
+    "answer_equals": "{hi}"
+   },
+   "message": "|X| = c has two solutions: X = c and X = -c."
+  }
+ ],
+ "hints": [
+  {
+   "step": "isolate the absolute value",
+   "hint": "Add the number subtracted outside the bars to both sides.",
+   "why": "The split rule works only on |X| = c."
+  },
+  {
+   "step": "write two equations (one positive and one negative)",
+   "hint": "X = c or X = -c.",
+   "why": "Both c and -c are c units from 0."
+  },
+  {
+   "step": "solve each equation",
+   "hint": "Solve each linear equation.",
+   "why": "Each gives one solution."
+  },
+  {
+   "step": "check",
+   "hint": "Put each answer into the original.",
+   "why": "It catches sign slips."
+  }
+ ]
+}

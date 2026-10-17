@@ -1,0 +1,170 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.solve_factoring",
+ "version": 1,
+ "title": "Solve a quadratic equation by factoring",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Bittinger 7e §3.2 Examples 1-2 (Video Notebook pp. 73-74)",
+  "Chapter 3 Test Form A #1, #4, #27",
+  "OpenStax College Algebra 2e §2.5 (CC BY 4.0, openstax.org)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.prereq.factor_trinomial"
+ ],
+ "process_card": "Solving a quadratic equation by factoring",
+ "var": "x",
+ "domain": "complex",
+ "params": {
+  "a": {
+   "choice": [
+    1,
+    1,
+    1,
+    2,
+    3
+   ]
+  },
+  "p": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "q": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "k": {
+   "int": [
+    -6,
+    6
+   ]
+  }
+ },
+ "let": {
+  "f1": "a x - p",
+  "f2": "x - q",
+  "std": "expand((a x - p)(x - q))",
+  "lhs": "std + k",
+  "fac": "(a x - p)(x - q)",
+  "r1": "p/a",
+  "r2": "q",
+  "r1n": "-p/a",
+  "r2n": "-q"
+ },
+ "constraints": [
+  "p/a != q",
+  "p/a != -q",
+  "gcd(a, p) == 1"
+ ],
+ "problem": {
+  "prompt": "Solve: {tex:lhs} = {tex:k}",
+  "equation": "{lhs} = {k}",
+  "also_asked_as": "Find the zeros of f(x) = {tex:std}"
+ },
+ "steps": [
+  {
+   "name": "write it in standard form (= 0)",
+   "result": "{std} = 0",
+   "check": "equivalent"
+  },
+  {
+   "name": "factor",
+   "result": "{fac} = 0",
+   "check": "factored"
+  },
+  {
+   "name": "set each factor equal to 0",
+   "result": "{f1} = 0; {f2} = 0",
+   "check": "each"
+  },
+  {
+   "name": "solve each equation",
+   "result": "{r1}, {r2}",
+   "check": "solutions"
+  },
+  {
+   "name": "check",
+   "result": "",
+   "check": "substitution"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{r1}, {r2}",
+  "form": [
+   "exact",
+   "reduced_fraction"
+  ],
+  "say": "The solutions are {r1} and {r2}."
+ },
+ "mistakes": [
+  {
+   "id": "sign_slip",
+   "name": "sign slip",
+   "rule": {
+    "answer_equals": "{r1n}, {r2n}"
+   },
+   "message": "Sign slip: the factor (x - 3) = 0 gives x = 3, not -3."
+  },
+  {
+   "id": "one_root",
+   "name": "only one solution",
+   "rule": {
+    "answer_equals": "{r2}"
+   },
+   "message": "Each factor gives its own solution; you have only one."
+  },
+  {
+   "id": "not_standard_form",
+   "name": "factored before getting 0 on one side",
+   "applies_if": "k != 0",
+   "rule": {
+    "answer_solves": "{lhs} = 0"
+   },
+   "message": "Get 0 on one side first: the principle of zero products only works for a product equal to 0."
+  }
+ ],
+ "hints": [
+  {
+   "step": "write it in standard form (= 0)",
+   "hint": "Move every term to the left side so the right side is 0.",
+   "why": "The principle of zero products only works when a product equals 0."
+  },
+  {
+   "step": "factor",
+   "hint": "Find two binomials whose product is the left side; check by multiplying back.",
+   "why": "A product of factors is what lets you split one equation into two small ones."
+  },
+  {
+   "step": "set each factor equal to 0",
+   "hint": "Write each factor = 0 on its own line.",
+   "why": "Principle of zero products: if ab = 0, then a = 0 or b = 0."
+  },
+  {
+   "step": "solve each equation",
+   "hint": "Solve each small linear equation for x.",
+   "why": "Each factor gives one solution."
+  },
+  {
+   "step": "check",
+   "hint": "Substitute each solution into the original equation.",
+   "why": "A check catches sign slips and arithmetic errors before you submit."
+  }
+ ]
+}

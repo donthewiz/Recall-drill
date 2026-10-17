@@ -1,0 +1,25 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.quadgraph.max_value", "version": 1,
+ "title": "Maximum value of a quadratic function that opens down",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.3", "title": "Analyzing Graphs of Quadratic Functions"},
+ "sources": ["Example recipe in the plugin's tests (format 2); Bittinger 7e §3.3"],
+ "priority": "medium", "prerequisites": ["ca.quadgraph.vertex"],
+ "var": "x",
+ "params": {"a": {"choice": [-1, -2, -3]}, "h": {"int": [-6, 6]}, "k": {"int": [-9, 9]}},
+ "let": {"fe": "expand(a (x - h)^2 + k)"},
+ "problem": {"task": "extreme", "prompt": "Find the maximum or minimum value of f(x) = {tex:fe}.", "function": "{fe}"},
+ "steps": [
+  {"name": "find the vertex", "result": "{k}", "show": "vertex ({h}, {k})", "check": "equal", "to": "{k}"},
+  {"name": "decide maximum or minimum from the sign of a", "result": "", "show": "a = {a} < 0: maximum", "check": "text"}
+ ],
+ "answer": {"kind": "expr", "type": "maximum", "value": "{k}", "form": ["exact"], "say": "The maximum value is {k}."},
+ "mistakes": [
+  {"id": "gave_x", "name": "gave the x-coordinate", "applies_if": "h != k", "rule": {"answer_equals": "{h}"},
+   "message": "The maximum VALUE is the y-coordinate of the vertex."}
+ ],
+ "hints": [
+  {"step": "find the vertex", "hint": "x = -b/(2a), then f of that.", "why": "The highest point is the vertex."},
+  {"step": "decide maximum or minimum from the sign of a", "hint": "a < 0 opens down.", "why": "Opening down makes the vertex the highest point."}
+ ]
+}

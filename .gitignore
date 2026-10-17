@@ -18,3 +18,11 @@ anki-addon/tests/golden/_debug/
 .pytest_cache/
 .ruff_cache/
 .coverage
+
+# Math Path add-on (mathpath-addon/)
+mathpath-addon/.venv/
+mathpath-addon/**/__pycache__/
+mathpath-addon/meta.json
+mathpath-addon/user_files/*
+!mathpath-addon/user_files/README.txt
+mathpath-addon/dist/

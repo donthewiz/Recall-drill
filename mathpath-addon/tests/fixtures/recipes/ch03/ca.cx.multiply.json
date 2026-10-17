@@ -1,0 +1,133 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.1",
+  "title": "The Complex Numbers"
+ },
+ "var": "x",
+ "id": "ca.cx.multiply",
+ "title": "Multiply complex numbers",
+ "sources": [
+  "Bittinger 7e §3.1 Examples 3, 5 (Video Notebook pp. 70-71)",
+  "Test Form A #24 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.4 pp. 123-129 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.prereq.foil"
+ ],
+ "process_card": "Multiplying complex numbers",
+ "params": {
+  "a": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "c": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "d": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  }
+ },
+ "let": {
+  "z1": "a + b i",
+  "z2": "c + d i",
+  "ac": "a c",
+  "ad": "a d",
+  "bc": "b c",
+  "bd": "b d",
+  "z": "expand((a + b i)(c + d i))",
+  "zbad": "a c + b d + (a d + b c) i"
+ },
+ "constraints": [
+  "b d != 0"
+ ],
+ "problem": {
+  "prompt": "Multiply and simplify: ({tex:z1})({tex:z2})",
+  "equation": "x = ({z1})({z2})"
+ },
+ "steps": [
+  {
+   "name": "multiply like binomials (FOIL)",
+   "result": "{ac} + {ad} i + {bc} i + {bd} i^2",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "replace i squared with negative one",
+   "result": "{ac} + {ad} i + {bc} i - {bd}",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "combine like parts (real with real, imaginary with imaginary)",
+   "result": "{z}",
+   "check": "equal",
+   "to": "{z}"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{z}",
+  "form": [
+   "a+bi"
+  ],
+  "say": "The product is {z}."
+ },
+ "mistakes": [
+  {
+   "id": "i_squared_plus",
+   "name": "used i^2 = 1",
+   "rule": {
+    "answer_equals": "{zbad}"
+   },
+   "message": "i^2 = -1, not 1."
+  }
+ ],
+ "hints": [
+  {
+   "step": "multiply like binomials (FOIL)",
+   "hint": "First, Outer, Inner, Last.",
+   "why": "Complex numbers multiply like binomials."
+  },
+  {
+   "step": "replace i squared with negative one",
+   "hint": "i^2 = -1.",
+   "why": "That is the definition of i."
+  },
+  {
+   "step": "combine like parts (real with real, imaginary with imaginary)",
+   "hint": "Collect the numbers, then the i terms.",
+   "why": "The answer goes in a + bi form."
+  }
+ ]
+}

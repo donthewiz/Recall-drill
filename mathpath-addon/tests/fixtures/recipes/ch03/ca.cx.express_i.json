@@ -1,0 +1,116 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.1",
+  "title": "The Complex Numbers"
+ },
+ "var": "x",
+ "id": "ca.cx.express_i",
+ "title": "Write the square root of a negative number in terms of i",
+ "sources": [
+  "Bittinger 7e §3.1 Example 1 (Video Notebook p. 69)",
+  "Test Form A #21 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.4 pp. 123-129 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.prereq.simplify_radical"
+ ],
+ "process_card": "Writing the square root of a negative number in terms of i",
+ "params": {
+  "k": {
+   "int": [
+    2,
+    9
+   ]
+  },
+  "m": {
+   "choice": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    10
+   ]
+  },
+  "s": {
+   "choice": [
+    1
+   ]
+  }
+ },
+ "let": {
+  "n": "k^2 m",
+  "z": "s k sqrt(m) i",
+  "r": "s sqrt(-1) sqrt(k^2 m)",
+  "zbad": "s k^2 sqrt(m) i"
+ },
+ "constraints": [
+  "n != 4",
+  "n != 9"
+ ],
+ "problem": {
+  "prompt": "Express in terms of i: \\sqrt{-{n}}",
+  "equation": "x = {s} sqrt(-{n})"
+ },
+ "steps": [
+  {
+   "name": "split off the square root of negative one",
+   "result": "{s} sqrt(-1) sqrt({n})",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "replace it with i",
+   "result": "{s} i sqrt({n})",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "simplify the remaining radical",
+   "result": "{z}",
+   "check": "equal",
+   "to": "{z}"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{z}",
+  "form": [
+   "simplified_radical"
+  ],
+  "say": "It is {z}."
+ },
+ "mistakes": [
+  {
+   "id": "no_i",
+   "name": "dropped the i",
+   "rule": {
+    "answer_equals": "{s} {k} sqrt({m})"
+   },
+   "message": "The square root of a negative number is imaginary: keep the i."
+  }
+ ],
+ "hints": [
+  {
+   "step": "split off the square root of negative one",
+   "hint": "sqrt(-n) = sqrt(-1) · sqrt(n).",
+   "why": "sqrt(-1) is i by definition."
+  },
+  {
+   "step": "replace it with i",
+   "hint": "sqrt(-1) = i.",
+   "why": "That is what i means."
+  },
+  {
+   "step": "simplify the remaining radical",
+   "hint": "Take out the biggest perfect square.",
+   "why": "Answers must be in simplest radical form."
+  }
+ ]
+}

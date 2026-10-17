@@ -1,0 +1,146 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.5",
+  "title": "Solving Equations and Inequalities with Absolute Value"
+ },
+ "id": "ca.abs.solve_ineq_less_eq",
+ "title": "Solve |ax + b| <= c (one interval)",
+ "sources": [
+  "Bittinger 7e §3.5 Examples 3a, 4 (Video Notebook p. 92)",
+  "Test Form A #13, #15 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.7 pp. 162-163 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.lin.solve_compound"
+ ],
+ "process_card": "Solving an absolute value inequality with less than",
+ "var": "x",
+ "domain": "real",
+ "params": {
+  "m": {
+   "choice": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ]
+  },
+  "sg": {
+   "choice": [
+    1,
+    1,
+    -1
+   ]
+  },
+  "c": {
+   "int": [
+    1,
+    13
+   ]
+  },
+  "d": {
+   "choice": [
+    0
+   ]
+  }
+ },
+ "let": {
+  "inner": "expand(sg (m x + b))",
+  "absx": "abs(inner)",
+  "lhs": "abs(inner) - d",
+  "cd": "c - d",
+  "cn": "-c",
+  "lo": "(-c - b)/m",
+  "hi": "(c - b)/m"
+ },
+ "problem": {
+  "prompt": "Solve and write the solution set in interval notation: {tex:absx} \\le {tex:cd}",
+  "equation": "{lhs} <= {cd}"
+ },
+ "steps": [
+  {
+   "name": "isolate the absolute value",
+   "result": "abs({inner}) <= {c}",
+   "check": "equivalent"
+  },
+  {
+   "name": "write it as a double inequality",
+   "result": "{cn} <= {inner} <= {c}",
+   "check": "equivalent"
+  },
+  {
+   "name": "solve the double inequality for x",
+   "result": "{lo} <= x <= {hi}",
+   "check": "equivalent"
+  },
+  {
+   "name": "write the answer in interval notation",
+   "result": "",
+   "show": "[{lo}, {hi}]",
+   "check": "text"
+  }
+ ],
+ "answer": {
+  "kind": "interval",
+  "value": "[{lo}, {hi}]",
+  "form": [
+   "interval",
+   "reduced_fraction"
+  ],
+  "say": "The solution set is [{lo}, {hi}]."
+ },
+ "mistakes": [
+  {
+   "id": "used_or",
+   "name": "wrote two pieces (that is for greater than)",
+   "rule": {
+    "answer_equals": "(-inf, {lo}] U [{hi}, inf)"
+   },
+   "message": "|X| < c means -c < X < c: one interval between the two numbers."
+  },
+  {
+   "id": "brackets",
+   "name": "wrong bracket type",
+   "rule": {
+    "answer_equals": "({lo}, {hi})"
+   },
+   "message": "< and > leave the endpoints out: ( ). ≤ and ≥ include them: [ ]."
+  }
+ ],
+ "hints": [
+  {
+   "step": "isolate the absolute value",
+   "hint": "Add the number subtracted outside the bars to both sides.",
+   "why": "The rule works only on |X| compared with c."
+  },
+  {
+   "step": "write it as a double inequality",
+   "hint": "-c, then X, then c.",
+   "why": "Less than c units from 0 means between -c and c."
+  },
+  {
+   "step": "solve the double inequality for x",
+   "hint": "Do the same thing to all three parts; dividing by a negative reverses both signs.",
+   "why": "That keeps all three parts true."
+  },
+  {
+   "step": "write the answer in interval notation",
+   "hint": "Smaller number first.",
+   "why": "Intervals go left to right."
+  }
+ ]
+}

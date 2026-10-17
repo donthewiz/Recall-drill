@@ -1,0 +1,131 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.solve_reducible_sqrt",
+ "version": 1,
+ "title": "Solve x + b sqrt(x) + c = 0 (u = sqrt(x))",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Chapter 3 Test Form A #7",
+  "Bittinger 7e §3.2 Example 11 (Video Notebook p. 78)",
+  "OpenStax College Algebra 2e §2.6 (CC BY 4.0, openstax.org)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.quad.solve_factoring",
+  "ca.rad.check_extraneous"
+ ],
+ "process_card": "Solving an equation reducible to quadratic",
+ "var": "x",
+ "domain": "real",
+ "solve_by_u": "sqrt(x)",
+ "params": {
+  "p": {
+   "int": [
+    2,
+    9
+   ]
+  },
+  "n": {
+   "int": [
+    -9,
+    -1
+   ]
+  }
+ },
+ "let": {
+  "B": "-(p + n)",
+  "C": "p n",
+  "eqx": "x + B sqrt(x) + C",
+  "ans": "p^2",
+  "extr": "n^2"
+ },
+ "constraints": [
+  "p + n != 0"
+ ],
+ "problem": {
+  "prompt": "Solve: {tex:eqx} = 0",
+  "equation": "{eqx} = 0"
+ },
+ "steps": [
+  {
+   "name": "choose u so the equation becomes quadratic in u",
+   "result": "u^2 + {B} u + {C} = 0",
+   "show": "Let u = sqrt(x): u^2 + {B} u + {C} = 0",
+   "check": "u_equation",
+   "u": "sqrt(x)"
+  },
+  {
+   "name": "solve for u",
+   "result": "{p}, {n}",
+   "check": "solutions",
+   "of_equation": "u^2 + {B} u + {C} = 0",
+   "var": "u"
+  },
+  {
+   "name": "replace u and solve for the original variable",
+   "result": "x = {ans}; x = {extr}",
+   "show": "sqrt(x) = {p} gives x = {ans}; sqrt(x) = {n} gives x = {extr}",
+   "check": "each",
+   "may_add": true
+  },
+  {
+   "name": "check",
+   "result": "{extr}",
+   "show": "{ans} checks; {extr} does not (sqrt(x) can't be negative)",
+   "check": "rejects"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{ans}",
+  "form": [
+   "exact"
+  ],
+  "say": "The solution is {ans}."
+ },
+ "mistakes": [
+  {
+   "id": "kept_extraneous",
+   "name": "kept the extraneous root",
+   "rule": {
+    "answer_equals": "{ans}, {extr}"
+   },
+   "message": "sqrt(x) can't be negative: check every answer in the original equation."
+  },
+  {
+   "id": "stopped_at_u",
+   "name": "stopped at u",
+   "rule": {
+    "answer_equals": "{p}, {n}"
+   },
+   "message": "u is sqrt(x), not x: square u to get x."
+  }
+ ],
+ "hints": [
+  {
+   "step": "choose u so the equation becomes quadratic in u",
+   "hint": "x = (sqrt(x))^2, so let u = sqrt(x).",
+   "why": "The equation becomes an ordinary quadratic in u."
+  },
+  {
+   "step": "solve for u",
+   "hint": "Factor the u-equation.",
+   "why": "It's a quadratic you already know how to solve."
+  },
+  {
+   "step": "replace u and solve for the original variable",
+   "hint": "Set sqrt(x) = each u value and square both sides.",
+   "why": "The question asks for x."
+  },
+  {
+   "step": "check",
+   "hint": "Substitute each x into the original equation.",
+   "why": "Squaring can add a solution that doesn't work (extraneous)."
+  }
+ ]
+}

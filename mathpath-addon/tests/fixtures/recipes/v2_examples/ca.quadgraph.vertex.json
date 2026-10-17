@@ -1,0 +1,30 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.quadgraph.vertex", "version": 1,
+ "title": "Find the vertex of a quadratic function (vertex formula)",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.3", "title": "Analyzing Graphs of Quadratic Functions"},
+ "sources": ["Example recipe in the plugin's tests (format 2); method: Bittinger 7e §3.3 Examples 1-3"],
+ "priority": "high", "prerequisites": ["ca.quad.solve_factoring"],
+ "process_card": "Finding the vertex with the vertex formula",
+ "var": "x",
+ "params": {"a": {"choice": [1, 1, 2, -1, -2, 3]}, "h": {"int": [-6, 6], "not": [0]}, "k": {"int": [-9, 9]}},
+ "let": {"b": "-2 a h", "c": "a h^2 + k", "f": "a x^2 + b x + c", "hn": "-h", "kn": "a h^2 + 2 a h^2 + a h^2 + k"},
+ "problem": {"task": "vertex", "prompt": "Find the vertex of f(x) = {tex:f}.", "function": "{f}"},
+ "steps": [
+  {"name": "identify a and b", "result": "a = {a}, b = {b}", "check": "values", "names": {"a": "a", "b": "b"}},
+  {"name": "compute the x-coordinate with the vertex formula", "result": "{h}", "show": "x = -({b})/(2({a})) = {h}", "check": "equal", "to": "{h}"},
+  {"name": "substitute to find the y-coordinate", "result": "{k}", "show": "f({h}) = {k}", "check": "equal", "to": "{k}"},
+  {"name": "write the vertex as a point", "result": "", "show": "({h}, {k})", "check": "text"}
+ ],
+ "answer": {"kind": "point", "value": "({h}, {k})", "form": ["exact"], "say": "The vertex is ({h}, {k})."},
+ "mistakes": [
+  {"id": "sign_of_b", "name": "dropped the minus in -b/(2a)", "rule": {"answer_equals": "({hn}, {kn})"},
+   "message": "The formula is x = -b/(2a): if b = -6, then -b = 6."}
+ ],
+ "hints": [
+  {"step": "identify a and b", "hint": "Read a and b with their signs.", "why": "The vertex formula uses a and b."},
+  {"step": "compute the x-coordinate with the vertex formula", "hint": "x = -b/(2a).", "why": "The vertex sits on the axis of symmetry, halfway between the zeros."},
+  {"step": "substitute to find the y-coordinate", "hint": "Put the x-coordinate into f.", "why": "The vertex is a point on the graph."},
+  {"step": "write the vertex as a point", "hint": "Write (x, y).", "why": "The question asks for a point."}
+ ]
+}

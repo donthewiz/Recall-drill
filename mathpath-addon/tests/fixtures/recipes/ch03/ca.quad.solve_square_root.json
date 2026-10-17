@@ -1,0 +1,146 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.solve_square_root",
+ "version": 1,
+ "title": "Solve ax^2 + c = 0 with the principle of square roots",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Bittinger 7e §3.2 Examples 3-4 (Video Notebook p. 74)",
+  "Chapter 3 Test Form A #2, #3",
+  "OpenStax College Algebra 2e §2.5 (CC BY 4.0, openstax.org)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.prereq.simplify_radicals",
+  "ca.cx.express_in_i"
+ ],
+ "process_card": "Solving with the principle of square roots",
+ "var": "x",
+ "domain": "complex",
+ "params": {
+  "a": {
+   "choice": [
+    1,
+    2,
+    3,
+    5
+   ]
+  },
+  "m": {
+   "choice": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    16,
+    18,
+    20,
+    25
+   ]
+  },
+  "s": {
+   "choice": [
+    1,
+    -1
+   ]
+  }
+ },
+ "let": {
+  "v": "s m",
+  "c": "-a s m",
+  "eq": "a x^2 + c",
+  "root": "sqrt(s m)",
+  "rm": "sqrt(m)"
+ },
+ "problem": {
+  "prompt": "Solve: {tex:eq} = 0",
+  "equation": "{eq} = 0"
+ },
+ "steps": [
+  {
+   "name": "isolate the squared term",
+   "result": "x^2 = {v}",
+   "check": "equivalent"
+  },
+  {
+   "name": "take the square root of both sides (plus or minus)",
+   "result": "+-sqrt({v})",
+   "show": "x = +-sqrt({v})",
+   "check": "solutions"
+  },
+  {
+   "name": "simplify the radical (use i if the number is negative)",
+   "result": "+-{root}",
+   "show": "x = +-{root}",
+   "check": "solutions"
+  },
+  {
+   "name": "check",
+   "result": "",
+   "check": "substitution"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "+-{root}",
+  "form": [
+   "exact",
+   "simplified_radical",
+   "a+bi"
+  ],
+  "say": "The solutions are ±{root}."
+ },
+ "mistakes": [
+  {
+   "id": "forgot_pm",
+   "name": "forgot ±",
+   "rule": {
+    "answer_equals": "{root}"
+   },
+   "message": "x^2 = k has two solutions: write ± in front of the root."
+  },
+  {
+   "id": "forgot_i",
+   "name": "forgot i",
+   "applies_if": "s < 0",
+   "rule": {
+    "answer_equals": "+-{rm}"
+   },
+   "message": "The square root of a negative number is imaginary: sqrt(-7) = sqrt(7) i."
+  }
+ ],
+ "hints": [
+  {
+   "step": "isolate the squared term",
+   "hint": "Undo the constant first, then divide by the coefficient of x^2.",
+   "why": "The principle of square roots needs x^2 alone: x^2 = k."
+  },
+  {
+   "step": "take the square root of both sides (plus or minus)",
+   "hint": "Write x = ± the square root of the number.",
+   "why": "A number and its opposite both square to k."
+  },
+  {
+   "step": "simplify the radical (use i if the number is negative)",
+   "hint": "Pull out square factors; a negative under the root becomes i.",
+   "why": "Exact answers are written with simplified radicals and i."
+  },
+  {
+   "step": "check",
+   "hint": "Square your answer and substitute it back.",
+   "why": "Squaring catches a lost i or a wrong radical."
+  }
+ ]
+}

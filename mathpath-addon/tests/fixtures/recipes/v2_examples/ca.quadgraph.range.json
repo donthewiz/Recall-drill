@@ -1,0 +1,29 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.quadgraph.range", "version": 1,
+ "title": "Range of a quadratic function that opens up",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.3", "title": "Analyzing Graphs of Quadratic Functions"},
+ "sources": ["Example recipe in the plugin's tests (format 2); Bittinger 7e §3.3"],
+ "priority": "high", "prerequisites": ["ca.quadgraph.vertex"],
+ "var": "x",
+ "params": {"a": {"choice": [1, 2, 3]}, "h": {"int": [-6, 6]}, "k": {"int": [-9, 9]}},
+ "let": {"f": "a (x - h)^2 + k", "fe": "expand(a (x - h)^2 + k)"},
+ "problem": {"task": "range", "prompt": "Find the range of f(x) = {tex:fe}.", "function": "{fe}"},
+ "steps": [
+  {"name": "find the vertex", "result": "{k}", "show": "vertex ({h}, {k})", "check": "equal", "to": "{k}"},
+  {"name": "decide whether the parabola opens up or down", "result": "", "show": "a = {a} > 0: opens up, so {k} is the minimum", "check": "text"},
+  {"name": "write the range in interval notation", "result": "", "show": "[{k}, inf)", "check": "text"}
+ ],
+ "answer": {"kind": "interval", "value": "[{k}, inf)", "form": ["interval"], "say": "The range is [{k}, ∞)."},
+ "mistakes": [
+  {"id": "open_bracket", "name": "used ( at the minimum", "rule": {"answer_equals": "({k}, inf)"},
+   "message": "The minimum value is reached, so it is included: use [."},
+  {"id": "x_not_y", "name": "used the x-coordinate", "applies_if": "h != k", "rule": {"answer_equals": "[{h}, inf)"},
+   "message": "The range is about y-values: use the y-coordinate of the vertex."}
+ ],
+ "hints": [
+  {"step": "find the vertex", "hint": "x = -b/(2a), then f of that.", "why": "The vertex holds the lowest y-value."},
+  {"step": "decide whether the parabola opens up or down", "hint": "Look at the sign of a.", "why": "Up means the vertex is a minimum."},
+  {"step": "write the range in interval notation", "hint": "From the minimum up to infinity.", "why": "Every y-value at or above the minimum is reached."}
+ ]
+}

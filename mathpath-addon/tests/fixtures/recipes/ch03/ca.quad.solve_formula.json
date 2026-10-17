@@ -1,0 +1,172 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.solve_formula",
+ "version": 1,
+ "title": "Solve with the quadratic formula (exact solutions)",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Bittinger 7e §3.2 Examples 7-8 (Video Notebook pp. 76-77)",
+  "Chapter 3 Test Form A #5, #6, #28",
+  "OpenStax College Algebra 2e §2.5 (CC BY 4.0, openstax.org)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.prereq.simplify_radicals",
+  "ca.cx.express_in_i"
+ ],
+ "process_card": "Solving with the quadratic formula",
+ "var": "x",
+ "domain": "complex",
+ "params": {
+  "a": {
+   "choice": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "c": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  }
+ },
+ "let": {
+  "D": "b^2 - 4 a c",
+  "std": "a x^2 + b x + c",
+  "lhs": "a x^2 + b x",
+  "negc": "-c",
+  "twoa": "2a",
+  "r1": "(-b + sqrt(D))/(2a)",
+  "r2": "(-b - sqrt(D))/(2a)",
+  "wr1": "(b + sqrt(D))/(2a)",
+  "wr2": "(b - sqrt(D))/(2a)",
+  "hr1": "-b + sqrt(D)/(2a)",
+  "hr2": "-b - sqrt(D)/(2a)"
+ },
+ "constraints": [
+  "D != 0",
+  "floor(sqrt(abs(D)))^2 != abs(D)",
+  "gcd(gcd(a, b), c) == 1"
+ ],
+ "problem": {
+  "prompt": "Solve: {tex:lhs} = {tex:negc}. Find exact solutions.",
+  "equation": "{lhs} = {negc}",
+  "also_asked_as": "Find the zeros of f(x) = {tex:std}"
+ },
+ "steps": [
+  {
+   "name": "write it in standard form (= 0)",
+   "result": "{std} = 0",
+   "check": "equivalent"
+  },
+  {
+   "name": "identify the coefficients (a, b, and c, with their signs)",
+   "result": "a = {a}, b = {b}, c = {c}",
+   "check": "values",
+   "names": {
+    "a": "a",
+    "b": "b",
+    "c": "c"
+   }
+  },
+  {
+   "name": "substitute into the quadratic formula",
+   "result": "(-({b}) +- sqrt(({b})^2 - 4({a})({c})))/(2({a}))",
+   "check": "solutions"
+  },
+  {
+   "name": "simplify the discriminant",
+   "result": "(-({b}) +- sqrt({D}))/({twoa})",
+   "check": "solutions"
+  },
+  {
+   "name": "simplify the radical and reduce",
+   "result": "{r1}, {r2}",
+   "check": "solutions"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{r1}, {r2}",
+  "form": [
+   "exact",
+   "simplified_radical",
+   "a+bi"
+  ],
+  "say": "The solutions are {r1} and {r2}."
+ },
+ "mistakes": [
+  {
+   "id": "minus_b",
+   "name": "-b sign slip",
+   "rule": {
+    "answer_equals": "{wr1}, {wr2}"
+   },
+   "message": "-b means the opposite of b: if b = -4, then -b = 4."
+  },
+  {
+   "id": "half_fraction",
+   "name": "2a under the radical only",
+   "rule": {
+    "answer_equals": "{hr1}, {hr2}"
+   },
+   "message": "2a divides the whole numerator, -b included."
+  },
+  {
+   "id": "c_from_wrong_side",
+   "name": "c sign from the wrong side",
+   "rule": {
+    "answer_solves": "{a} x^2 + {b} x + {negc} = 0"
+   },
+   "message": "Read c only after getting 0 on one side: ax^2 + bx = 7 means c = -7."
+  }
+ ],
+ "hints": [
+  {
+   "step": "write it in standard form (= 0)",
+   "hint": "Get 0 on the right side first.",
+   "why": "a, b and c are only defined for ax^2 + bx + c = 0."
+  },
+  {
+   "step": "identify the coefficients (a, b, and c, with their signs)",
+   "hint": "Read a, b, c with their signs.",
+   "why": "A dropped minus sign is the most common formula error."
+  },
+  {
+   "step": "substitute into the quadratic formula",
+   "hint": "Use parentheses around every substituted number.",
+   "why": "(-4)^2 = 16, but -4^2 = -16."
+  },
+  {
+   "step": "simplify the discriminant",
+   "hint": "Work out b^2 - 4ac as one number.",
+   "why": "The discriminant decides real or imaginary solutions."
+  },
+  {
+   "step": "simplify the radical and reduce",
+   "hint": "Simplify the root, then divide every term by a common factor.",
+   "why": "Exact answers are written fully simplified."
+  }
+ ]
+}

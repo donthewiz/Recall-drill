@@ -1,0 +1,133 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.3",
+  "title": "Analyzing Graphs of Quadratic Functions"
+ },
+ "id": "ca.quadgraph.vertex",
+ "title": "Find the vertex of f(x) = ax^2 + bx + c (vertex formula)",
+ "sources": [
+  "Bittinger 7e §3.3 Example 4 (Video Notebook p. 84)",
+  "Test Form A #29a type (numbers differ)",
+  "OpenStax College Algebra 2e §5.1 pp. 395-399 (CC BY 4.0): explanations only, no problems copied"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.prereq.evaluate_function"
+ ],
+ "process_card": "Finding the vertex with the vertex formula",
+ "var": "x",
+ "params": {
+  "a": {
+   "choice": [
+    1,
+    -1,
+    2,
+    -2,
+    -1,
+    3
+   ]
+  },
+  "h": {
+   "int": [
+    -6,
+    6
+   ],
+   "not": [
+    0
+   ]
+  },
+  "k": {
+   "int": [
+    -9,
+    9
+   ]
+  }
+ },
+ "let": {
+  "b": "-2 a h",
+  "c": "a h^2 + k",
+  "f": "a x^2 + b x + c",
+  "hn": "-h",
+  "kn": "a h^2 + 2 a h^2 + a h^2 + k"
+ },
+ "problem": {
+  "task": "vertex",
+  "prompt": "Find the vertex of f(x) = {tex:f}.",
+  "function": "{f}"
+ },
+ "steps": [
+  {
+   "name": "identify the coefficients (a and b with their signs)",
+   "result": "a = {a}, b = {b}",
+   "check": "values",
+   "names": {
+    "a": "a",
+    "b": "b"
+   }
+  },
+  {
+   "name": "compute the x-coordinate with the vertex formula",
+   "result": "{h}",
+   "show": "x = -({b})/(2({a})) = {h}",
+   "check": "equal",
+   "to": "{h}"
+  },
+  {
+   "name": "substitute to find the y-coordinate",
+   "result": "{k}",
+   "show": "f({h}) = {k}",
+   "check": "equal",
+   "to": "{k}"
+  },
+  {
+   "name": "write the vertex as a point",
+   "result": "",
+   "show": "({h}, {k})",
+   "check": "text"
+  }
+ ],
+ "answer": {
+  "kind": "point",
+  "value": "({h}, {k})",
+  "form": [
+   "exact"
+  ],
+  "say": "The vertex is ({h}, {k})."
+ },
+ "mistakes": [
+  {
+   "id": "sign_of_b",
+   "name": "dropped the minus in -b/(2a)",
+   "rule": {
+    "answer_equals": "({hn}, {kn})"
+   },
+   "message": "The formula is x = -b/(2a): if b = 14 and a = -1, then x = -14/(-2) = 7."
+  }
+ ],
+ "hints": [
+  {
+   "step": "identify the coefficients (a and b with their signs)",
+   "hint": "a is the number on x^2, b the number on x, signs included.",
+   "why": "The vertex formula uses a and b."
+  },
+  {
+   "step": "compute the x-coordinate with the vertex formula",
+   "hint": "x = -b/(2a).",
+   "why": "Completing the square on ax^2 + bx + c always gives h = -b/(2a)."
+  },
+  {
+   "step": "substitute to find the y-coordinate",
+   "hint": "Put that x into f.",
+   "why": "The vertex is a point on the graph, so its y is f(x)."
+  },
+  {
+   "step": "write the vertex as a point",
+   "hint": "Write (x, y).",
+   "why": "The question asks for a point."
+  }
+ ]
+}

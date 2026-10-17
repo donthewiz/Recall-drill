@@ -1,0 +1,98 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.1",
+  "title": "The Complex Numbers"
+ },
+ "var": "x",
+ "id": "ca.cx.power_i",
+ "title": "Simplify a power of i",
+ "sources": [
+  "OpenStax College Algebra 2e §2.4 Example 8 p. 129 (CC BY 4.0): method only (Bittinger 3.1 Example 4 is on the missing notebook p. 72)",
+  "Test Form A #26 type (numbers differ)"
+ ],
+ "priority": "high",
+ "prerequisites": [],
+ "process_card": "Simplifying a power of i",
+ "params": {
+  "n": {
+   "int": [
+    5,
+    99
+   ]
+  }
+ },
+ "let": {
+  "q": "floor(n/4)",
+  "r": "n - 4 floor(n/4)",
+  "v": "i^(n - 4 floor(n/4))",
+  "vneg": "-(i^(n - 4 floor(n/4)))"
+ },
+ "constraints": [
+  "n != 23",
+  "n != 35"
+ ],
+ "problem": {
+  "prompt": "Simplify: i^{{n}}",
+  "equation": "x = i^{n}"
+ },
+ "steps": [
+  {
+   "name": "divide the exponent by 4",
+   "result": "",
+   "show": "{n} = 4 · {q} + {r}",
+   "check": "text"
+  },
+  {
+   "name": "use the remainder as the new exponent",
+   "result": "i^{r}",
+   "check": "equal",
+   "to": "{v}"
+  },
+  {
+   "name": "read the value from the cycle",
+   "result": "{v}",
+   "show": "i, -1, -i, 1: {v}",
+   "check": "equal",
+   "to": "{v}"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{v}",
+  "form": [
+   "exact"
+  ],
+  "say": "i^{n} = {v}."
+ },
+ "mistakes": [
+  {
+   "id": "sign",
+   "name": "sign slip in the cycle",
+   "rule": {
+    "answer_equals": "{vneg}"
+   },
+   "message": "The cycle is i, -1, -i, 1: check which one the remainder points to."
+  }
+ ],
+ "hints": [
+  {
+   "step": "divide the exponent by 4",
+   "hint": "How many 4s fit in the exponent, and what is left?",
+   "why": "i^4 = 1, so every group of 4 disappears."
+  },
+  {
+   "step": "use the remainder as the new exponent",
+   "hint": "i^n = i^remainder.",
+   "why": "(i^4)^q = 1."
+  },
+  {
+   "step": "read the value from the cycle",
+   "hint": "i^0 = 1, i^1 = i, i^2 = -1, i^3 = -i.",
+   "why": "The powers repeat every four."
+  }
+ ]
+}

@@ -1,0 +1,119 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.4",
+  "title": "Solving Rational Equations and Radical Equations"
+ },
+ "id": "ca.radeq.solve_one_radical",
+ "title": "Solve d + sqrt(x + a) = x (one extraneous root)",
+ "sources": [
+  "Bittinger 7e §3.4 Examples 4-5 (Video Notebook pp. 89-90)",
+  "Test Form A #9 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.6 p. 149 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.quad.solve_factoring"
+ ],
+ "process_card": "Solving a radical equation",
+ "var": "x",
+ "domain": "real",
+ "params": {
+  "d": {
+   "int": [
+    -4,
+    7
+   ]
+  },
+  "g": {
+   "int": [
+    -3,
+    14
+   ]
+  }
+ },
+ "let": {
+  "a": "(g - d)^2 - g",
+  "h": "2 d + 1 - g",
+  "inner": "x + a",
+  "lhs": "d + sqrt(x + a)"
+ },
+ "constraints": [
+  "g - d >= 2",
+  "h != g",
+  "a != 0",
+  "d != 0"
+ ],
+ "problem": {
+  "prompt": "Solve: {d} + \\sqrt{{tex:inner}} = x",
+  "equation": "{lhs} = x"
+ },
+ "steps": [
+  {
+   "name": "isolate the radical",
+   "result": "sqrt(x + {a}) = x - {d}",
+   "check": "equivalent"
+  },
+  {
+   "name": "raise both sides to the same power",
+   "result": "x + {a} = (x - {d})^2",
+   "check": "equivalent",
+   "may_add": true
+  },
+  {
+   "name": "solve the resulting equation",
+   "result": "{g}, {h}",
+   "check": "solutions",
+   "of_equation": "x + {a} = (x - {d})^2"
+  },
+  {
+   "name": "check every answer in the original equation",
+   "result": "{h}",
+   "show": "x = {h} gives a principal square root equal to {h} - {d} < 0: false",
+   "check": "rejects"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{g}",
+  "form": [
+   "exact"
+  ],
+  "say": "The solution is {g}."
+ },
+ "mistakes": [
+  {
+   "id": "kept_extraneous",
+   "name": "kept the extraneous root",
+   "rule": {
+    "answer_equals": "{g}, {h}"
+   },
+   "message": "Squaring brought in an extra root: check each answer in the original equation."
+  }
+ ],
+ "hints": [
+  {
+   "step": "isolate the radical",
+   "hint": "Move everything else to the other side.",
+   "why": "Squaring a sum with a radical in it leaves a radical."
+  },
+  {
+   "step": "raise both sides to the same power",
+   "hint": "Square both sides; (x - d)^2 needs its middle term.",
+   "why": "Principle of powers: if a = b then a^2 = b^2."
+  },
+  {
+   "step": "solve the resulting equation",
+   "hint": "Write it as ... = 0 and factor.",
+   "why": "It is a quadratic now."
+  },
+  {
+   "step": "check every answer in the original equation",
+   "hint": "Put each answer back into the first equation.",
+   "why": "Squaring can create a solution that doesn't work."
+  }
+ ]
+}

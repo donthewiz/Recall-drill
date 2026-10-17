@@ -1,0 +1,27 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.rat.no_solution", "version": 1,
+ "title": "Rational equation whose only candidate is excluded (no solution)",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.4", "title": "Solving Rational Equations and Radical Equations"},
+ "sources": ["Example recipe in the plugin's tests (format 2); Bittinger 7e §3.4"],
+ "priority": "medium", "prerequisites": ["ca.rat.lcd"],
+ "var": "x", "domain": "real",
+ "params": {"a": {"int": [2, 9]}, "m": {"choice": [1, 2, 3]}},
+ "let": {"ma": "m a", "mx": "m x"},
+ "problem": {"prompt": "Solve: \\frac{{tex:mx}}{x - {tex:a}} = \\frac{{tex:ma}}{x - {tex:a}}", "equation": "{m} x/(x - {a}) = {ma}/(x - {a})"},
+ "steps": [
+  {"name": "note the excluded value", "result": "", "show": "x cannot be {a}", "check": "text"},
+  {"name": "multiply both sides by the LCD", "result": "{m} x = {ma}", "check": "equivalent", "may_add": true},
+  {"name": "check each answer against the excluded value", "result": "{a}", "show": "x = {a} is excluded", "check": "rejects"}
+ ],
+ "answer": {"kind": "none", "value": "no solution", "say": "There is no solution."},
+ "mistakes": [
+  {"id": "kept_excluded", "name": "kept the excluded value", "rule": {"answer_equals": "{a}"},
+   "message": "x = {a} makes a denominator 0, so it can't be a solution."}
+ ],
+ "hints": [
+  {"step": "note the excluded value", "hint": "Which x makes a denominator 0?", "why": "Those x-values can never be solutions."},
+  {"step": "multiply both sides by the LCD", "hint": "Multiply every term by x - {a}.", "why": "That clears the fractions."},
+  {"step": "check each answer against the excluded value", "hint": "Compare with the excluded value.", "why": "Clearing fractions can add an answer that doesn't work."}
+ ]
+}

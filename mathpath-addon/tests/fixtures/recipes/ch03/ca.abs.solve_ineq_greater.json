@@ -1,0 +1,146 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.5",
+  "title": "Solving Equations and Inequalities with Absolute Value"
+ },
+ "id": "ca.abs.solve_ineq_greater",
+ "title": "Solve |ax + b| > c (two pieces joined by or)",
+ "sources": [
+  "Bittinger 7e §3.5 Examples 3b, 5 (Video Notebook p. 92)",
+  "Test Form A #14, #16 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.7 p. 162 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.lin.solve_linear"
+ ],
+ "process_card": "Solving an absolute value inequality with greater than",
+ "var": "x",
+ "domain": "real",
+ "params": {
+  "m": {
+   "choice": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ]
+  },
+  "sg": {
+   "choice": [
+    1,
+    1,
+    -1
+   ]
+  },
+  "c": {
+   "int": [
+    1,
+    13
+   ]
+  },
+  "d": {
+   "choice": [
+    0
+   ]
+  }
+ },
+ "let": {
+  "inner": "expand(sg (m x + b))",
+  "absx": "abs(inner)",
+  "lhs": "abs(inner) - d",
+  "cd": "c - d",
+  "cn": "-c",
+  "lo": "(-c - b)/m",
+  "hi": "(c - b)/m"
+ },
+ "problem": {
+  "prompt": "Solve and write the solution set in interval notation: {tex:absx} > {tex:cd}",
+  "equation": "{lhs} > {cd}"
+ },
+ "steps": [
+  {
+   "name": "isolate the absolute value",
+   "result": "abs({inner}) > {c}",
+   "check": "equivalent"
+  },
+  {
+   "name": "write two inequalities joined by or",
+   "result": "{inner} < {cn} or {inner} > {c}",
+   "check": "equivalent"
+  },
+  {
+   "name": "solve each inequality",
+   "result": "x < {lo} or x > {hi}",
+   "check": "equivalent"
+  },
+  {
+   "name": "write the union in interval notation",
+   "result": "",
+   "show": "(-inf, {lo}) U ({hi}, inf)",
+   "check": "text"
+  }
+ ],
+ "answer": {
+  "kind": "interval",
+  "value": "(-inf, {lo}) U ({hi}, inf)",
+  "form": [
+   "interval",
+   "reduced_fraction"
+  ],
+  "say": "The solution set is (−∞, {lo}) ∪ ({hi}, ∞)."
+ },
+ "mistakes": [
+  {
+   "id": "used_and",
+   "name": "wrote one interval (that is for less than)",
+   "rule": {
+    "answer_equals": "[{lo}, {hi}]"
+   },
+   "message": "|X| > c means X < -c or X > c: two pieces on the outside."
+  },
+  {
+   "id": "brackets",
+   "name": "wrong bracket type",
+   "rule": {
+    "answer_equals": "(-inf, {lo}] U [{hi}, inf)"
+   },
+   "message": "< and > leave the endpoints out: ( ). ≤ and ≥ include them: [ ]."
+  }
+ ],
+ "hints": [
+  {
+   "step": "isolate the absolute value",
+   "hint": "Add the number subtracted outside the bars to both sides.",
+   "why": "The rule works only on |X| compared with c."
+  },
+  {
+   "step": "write two inequalities joined by or",
+   "hint": "X below -c, or X above c.",
+   "why": "More than c units from 0 is out on either side."
+  },
+  {
+   "step": "solve each inequality",
+   "hint": "Dividing by a negative reverses the sign.",
+   "why": "Multiplying by a negative flips the order on the number line."
+  },
+  {
+   "step": "write the union in interval notation",
+   "hint": "Left piece ∪ right piece; parenthesis at infinity.",
+   "why": "The set has two parts."
+  }
+ ]
+}
