@@ -114,6 +114,7 @@ FOLD_KEYS = ("cards", "settings", "pacing", "scope")
 REFRESH_MS = 300
 
 _REASON_LABELS = {
+    "math_path": "solved in Math Path",
     "image_occlusion": "image occlusion",
     "marked_ineligible": "marked ineligible",
     "unmapped": "no answer field",

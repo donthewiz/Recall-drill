@@ -26,6 +26,10 @@ A desktop add-on that drills your Anki cards by **typed recall** before Anki sch
 | Difficulty adjustment (+1 / −1 rep from FSRS difficulty) | Untick **Adjust reps by difficulty** for the deck, or set `difficulty_adjust` to false in the add-on config for every deck. |
 | Struggle tags `rd::hard`, `rd::final-miss` | Always written at handoff; they only add tags, and a tag search isn't needed to use them. `rd::long` is off by default (`tag_long`). |
 
+## What's new in 0.6.1
+
+- **Math Path notes are left alone.** A note whose note type has both a `RecipeId` and a `Recipe` field is solved in the separate Math Path add-on. Recall Drill never drills, holds back or releases it; the sections table counts it under "can't drill" and the exam tracker counts it as New.
+
 ## What's new in 0.6.0
 
 - **Math answers.** A card tagged `rd::math` with a `MathAnswer` field is drilled with a math field and a click palette instead of the text box: fraction, power, square root, ±, parentheses, absolute value, ≤, ≥, interval brackets `[ ) ( ]`, π, i, ∞, ∪, backspace and the arrows, all always on screen. Type letters and digits on the keyboard. Enter, Esc, Ctrl+Enter, Ctrl+I, Ctrl+E and Ctrl+R work with the cursor in the field.

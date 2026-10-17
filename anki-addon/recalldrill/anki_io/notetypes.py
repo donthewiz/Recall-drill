@@ -636,6 +636,16 @@ def answer_text(col: Collection, note: Note, mapping: NoteMapping, card_ord: int
     return standard_answer(note, mapping.answer_field, mapping.front_fields)
 
 
+MATH_PATH_FIELDS: tuple[str, str] = ("RecipeId", "Recipe")
+"""A note type with both fields is a Math Path note type, whatever its name: the Math Path
+add-on solves those notes; this drill never takes them (v0.6.1)."""
+
+
+def is_math_path_note(note: Note) -> bool:
+    names = set(note.keys())
+    return all(f in names for f in MATH_PATH_FIELDS)
+
+
 def is_io_note(note: Note, mapping: NoteMapping) -> bool:
     """A cloze-kind note whose cloze field holds Image Occlusion shapes."""
     return (
