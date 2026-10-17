@@ -86,6 +86,17 @@ class PageWindow(QDialog):
 
     # -- closing ----------------------------------------------------------------------
 
+    def on_escape(self) -> None:
+        """Esc with the focus outside the page (inside it the page sends ``mp:esc``). A dialog
+        closes; the learn and review windows only close their help text, never the window."""
+        self.close()
+
+    def reject(self) -> None:
+        self.on_escape()
+
+    def on_closed(self) -> None:
+        """Called once the window is really closing (after :meth:`allow_close` said yes)."""
+
     def allow_close(self) -> bool:
         """A subclass may ask first (a session in progress); False keeps the window open."""
         return True
@@ -95,6 +106,7 @@ class PageWindow(QDialog):
             a0.ignore()
             return
         self._closing = True
+        self.on_closed()
         saveGeom(self, self.GEOM_KEY)
         try:
             gui_hooks.theme_did_change.remove(self.redraw)
@@ -103,4 +115,5 @@ class PageWindow(QDialog):
         if self in self.ctx.windows:
             self.ctx.windows.remove(self)
         self.web.cleanup()
-        super().closeEvent(a0)
+        if a0 is not None:  # not super(): QDialog's closeEvent calls reject(), which is Esc here
+            a0.accept()

@@ -51,6 +51,11 @@ class PM:
         self.profile: dict[str, object] = {}
 
 
+class Progress:
+    def timer(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+
 class AddonManager:
     def __init__(self) -> None:
         self.exports: list[tuple[str, str]] = []
@@ -66,6 +71,7 @@ class StubMw:
     def __init__(self, col: Any = None) -> None:
         self.col = col
         self.pm = PM()
+        self.progress = Progress()
         self.addonManager = AddonManager()
         self.state = "deckBrowser"
         self.reviewer: Any = None

@@ -2,8 +2,8 @@
    .night-mode, light otherwise); nothing here has a colour of its own. */
 html, body { margin: 0; padding: 0; background: var(--mp-window); color: var(--mp-text);
   font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
-body { overflow-x: hidden; }
-#mp-root { min-height: 100vh; display: flex; flex-direction: column; }
+html, body { height: 100%; overflow: hidden; }
+#mp-root { height: 100vh; display: flex; flex-direction: column; }
 * { box-sizing: border-box; }
 .mp-strong { color: var(--mp-strong); font-weight: 600; }
 .mp-muted { color: var(--mp-muted); }
@@ -16,14 +16,17 @@ mjx-container { color: inherit; }
 /* header and footer strips */
 .mp-bar { background: var(--mp-footer); border-bottom: 1px solid var(--mp-border);
   padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.mp-bar.mp-foot { border-bottom: none; border-top: 1px solid var(--mp-border); margin-top: auto; }
+.mp-bar.mp-foot { border-bottom: none; border-top: 1px solid var(--mp-border); flex: none; }
+.mp-bar { flex: none; }
 .mp-names { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; }
 .mp-title { color: var(--mp-strong); font-size: 15px; font-weight: 700; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .mp-sub { color: var(--mp-muted); font-size: 12px; }
 .mp-spacer { flex: 1 1 auto; }
-.mp-main { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px;
-  max-width: 980px; width: 100%; margin: 0 auto; }
+.mp-main { --mp-side: max(16px, calc((100% - 980px) / 2)); padding: 14px var(--mp-side) 16px;
+  display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; }
+.mp-main > * { flex: none; }
 
 /* chips, dots, pills */
 .mp-chip { display: inline-block; border-radius: 10px; padding: 3px 10px; font-size: 12px;
@@ -49,6 +52,7 @@ mjx-container { color: inherit; }
   text-transform: uppercase; margin-bottom: 6px; }
 .mp-problem { font-size: 26px; line-height: 1.5; color: var(--mp-strong); }
 .mp-problem mjx-container { font-size: 112% !important; }
+.mp-stepbody + .mp-label { margin-top: 14px; }
 .mp-prompt-sub { color: var(--mp-muted); font-size: 12px; margin-top: 4px; }
 
 /* notes */
@@ -92,7 +96,7 @@ mjx-container { color: inherit; }
 .mp-stepbody.small { font-size: 14px; }
 .mp-help { grid-column: 2; font-size: 13px; color: var(--mp-text); }
 .mp-help .mp-chip { margin-right: 6px; }
-.mp-steprow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mp-steprow { grid-column: 2; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .mp-steprow .mp-fieldwrap { flex: 1 1 320px; }
 
 /* math fields and the palette */
@@ -109,6 +113,8 @@ math-field.mp-mf { width: 100%; font-size: 28px; background: transparent; color:
   --placeholder-color: var(--mp-muted); --text-font-family: inherit; }
 math-field.mp-mf::part(virtual-keyboard-toggle), math-field.mp-mf::part(menu-toggle) {
   display: none; }
+.mp-padwrap { flex: none; background: var(--mp-window); border-top: 1px solid var(--mp-border);
+  padding: 10px max(16px, calc((100% - 980px) / 2)) 8px; }
 .mp-pad { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
 .mp-padgroup { display: flex; flex-wrap: wrap; gap: 8px; }
 .mp-padbtn { min-width: 52px; min-height: 52px; padding: 0 10px; border-radius: 10px;

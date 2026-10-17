@@ -92,10 +92,11 @@ class Browser:
     def clear_cmds(self) -> None:
         self.page.evaluate("window.__cmds.length = 0")
 
-    def screenshot(self, path: Path, width: int = 1000, height: int = 900) -> None:
+    def screenshot(self, path: Path, width: int = 1000, height: int = 1100) -> None:
         self.page.set_viewport_size({"width": width, "height": height})
         self.page.wait_for_timeout(80)
         self.page.screenshot(path=str(path), full_page=True)
 
     def text(self, selector: str = "#mp-root") -> str:
-        return str(self.page.inner_text(selector))
+        """The text on screen with its capitals as written (labels are shown in capitals by CSS)."""
+        return str(self.page.text_content(selector) or "")

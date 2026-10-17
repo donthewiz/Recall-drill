@@ -172,8 +172,8 @@ def pad_html() -> str:
         )
         parts.append(f'<div class="mp-padgroup" data-group="{group}">{buttons}</div>')
     return (
-        '<div id="mp-pad" class="mp-pad" role="group" aria-label="Math palette">'
-        f"{''.join(parts)}</div>"
+        '<div class="mp-padwrap"><div id="mp-pad" class="mp-pad" role="group" '
+        f'aria-label="Math palette">{"".join(parts)}</div></div>'
     )
 
 
