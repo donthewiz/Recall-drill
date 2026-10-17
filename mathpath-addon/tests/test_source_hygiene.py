@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INVISIBLE = re.compile("[     ​-‍⁠﻿-]")
+INVISIBLE = re.compile("[\u2028\u2029\u00a0\u2007\u202f\u200b-\u200d\u2060\ufeff\ue000-\uf8ff]")
 SKIP = ("core/", "vendor/", "web/mathlive/")
 TEXT = {".py", ".md", ".json", ".js", ".css", ".txt", ".toml", ".yml"}
 
