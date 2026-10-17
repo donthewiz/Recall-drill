@@ -1,0 +1,149 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.3",
+  "title": "Analyzing Graphs of Quadratic Functions"
+ },
+ "id": "ca.quadgraph.max_area_wall",
+ "title": "Maximum area of a rectangle with a wall as one side",
+ "sources": [
+  "Bittinger 7e §3.3 Example 5 (Video Notebook p. 85)",
+  "Test Form A #30 type (fence length differs)",
+  "OpenStax College Algebra 2e §5.1 Example 5 p. 398 (CC BY 4.0): method only"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.quadgraph.vertex"
+ ],
+ "process_card": "Maximum area with a wall as one side",
+ "var": "w",
+ "params": {
+  "P": {
+   "choice": [
+    24,
+    32,
+    40,
+    48,
+    80,
+    100,
+    120
+   ]
+  }
+ },
+ "let": {
+  "A": "w (P - 2 w)",
+  "w0": "P/4",
+  "L0": "P/2",
+  "A0": "P^2/8",
+  "Asq": "P^2/16"
+ },
+ "problem": {
+  "task": "vertex",
+  "prompt": "{P} ft of fencing will enclose a rectangle; a wall forms one side. Find the width w that gives the largest area, and that area.",
+  "function": "{A}"
+ },
+ "steps": [
+  {
+   "name": "write the fencing equation",
+   "result": "",
+   "show": "2w + L = {P}",
+   "check": "text"
+  },
+  {
+   "name": "solve it for the length",
+   "result": "",
+   "show": "L = {P} - 2w",
+   "check": "text"
+  },
+  {
+   "name": "write the area as a function of the width",
+   "result": "w ({P} - 2 w)",
+   "show": "A(w) = w({P} - 2w) = -2w^2 + {P}w",
+   "check": "equal",
+   "to": "{A}"
+  },
+  {
+   "name": "find the width at the vertex",
+   "result": "{w0}",
+   "show": "w = -{P}/(2(-2)) = {w0} ft",
+   "check": "equal",
+   "to": "{w0}"
+  },
+  {
+   "name": "find the length",
+   "result": "{L0}",
+   "show": "L = {P} - 2({w0}) = {L0} ft",
+   "check": "equal",
+   "to": "{L0}"
+  },
+  {
+   "name": "find the maximum area",
+   "result": "{A0}",
+   "show": "A = {L0} · {w0} = {A0} ft^2",
+   "check": "equal",
+   "to": "{A0}"
+  }
+ ],
+ "answer": {
+  "kind": "point",
+  "value": "({w0}, {A0})",
+  "form": [
+   "exact"
+  ],
+  "units": "ft",
+  "say": "Make it {w0} ft wide and {L0} ft long (parallel to the wall); the maximum area is {A0} ft²."
+ },
+ "mistakes": [
+  {
+   "id": "four_sides",
+   "name": "fenced all four sides",
+   "rule": {
+    "answer_equals": "({w0}, {Asq})"
+   },
+   "message": "The wall is one side: the fence makes only two widths and one length."
+  },
+  {
+   "id": "length_for_width",
+   "name": "gave the length as the width",
+   "rule": {
+    "answer_equals": "({L0}, {A0})"
+   },
+   "message": "The vertex gives the width w (the side touching the wall); the length is P - 2w."
+  }
+ ],
+ "hints": [
+  {
+   "step": "write the fencing equation",
+   "hint": "Two widths and one length use all the fence.",
+   "why": "The wall is the fourth side, so it needs no fence."
+  },
+  {
+   "step": "solve it for the length",
+   "hint": "L = P - 2w.",
+   "why": "The area has to be a function of one variable."
+  },
+  {
+   "step": "write the area as a function of the width",
+   "hint": "A = L · w.",
+   "why": "That gives a quadratic in w that opens down."
+  },
+  {
+   "step": "find the width at the vertex",
+   "hint": "w = -b/(2a) with a = -2.",
+   "why": "The largest area is at the vertex."
+  },
+  {
+   "step": "find the length",
+   "hint": "Put w into L = P - 2w.",
+   "why": "The question asks for both dimensions."
+  },
+  {
+   "step": "find the maximum area",
+   "hint": "Multiply length by width.",
+   "why": "That is the maximum value of A."
+  }
+ ]
+}

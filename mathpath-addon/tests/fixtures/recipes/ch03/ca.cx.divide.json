@@ -1,0 +1,154 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.1",
+  "title": "The Complex Numbers"
+ },
+ "var": "x",
+ "id": "ca.cx.divide",
+ "title": "Divide complex numbers",
+ "sources": [
+  "OpenStax College Algebra 2e §2.4 Example 7 p. 128 (CC BY 4.0): method only (Bittinger 3.1 Example 6 is on the missing notebook p. 72)",
+  "Test Form A #25 type (numbers differ)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.cx.multiply"
+ ],
+ "process_card": "Dividing complex numbers",
+ "params": {
+  "a": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "c": {
+   "int": [
+    -6,
+    6
+   ],
+   "not": [
+    0
+   ]
+  },
+  "d": {
+   "int": [
+    -6,
+    6
+   ],
+   "not": [
+    0
+   ]
+  }
+ },
+ "let": {
+  "z1": "a + b i",
+  "z2": "c + d i",
+  "conj": "c - d i",
+  "num": "expand((a + b i)(c - d i))",
+  "den": "c^2 + d^2",
+  "z": "expand((a + b i)(c - d i)/(c^2 + d^2))",
+  "zbad": "expand((a + b i)/(c^2 + d^2))"
+ },
+ "constraints": [
+  "a d - b c != 0"
+ ],
+ "problem": {
+  "prompt": "Divide and simplify: \\dfrac{{tex:z1}}{{tex:z2}}",
+  "equation": "x = ({z1})/({z2})"
+ },
+ "steps": [
+  {
+   "name": "write the division as a fraction",
+   "result": "({z1})/({z2})",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "find the conjugate of the denominator",
+   "result": "{conj}",
+   "check": "equal",
+   "to": "{conj}"
+  },
+  {
+   "name": "multiply the fraction by the conjugate over itself",
+   "result": "(({z1})({conj}))/(({z2})({conj}))",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "replace i squared with negative one",
+   "result": "({num})/({den})",
+   "check": "equal",
+   "to": "{z}"
+  },
+  {
+   "name": "write the answer as a real part plus an imaginary part",
+   "result": "{z}",
+   "check": "equal",
+   "to": "{z}"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{z}",
+  "form": [
+   "a+bi",
+   "reduced_fraction"
+  ],
+  "say": "The quotient is {z}."
+ },
+ "mistakes": [
+  {
+   "id": "top_only",
+   "name": "multiplied only the numerator by the conjugate",
+   "rule": {
+    "answer_equals": "{zbad}"
+   },
+   "message": "Multiply the numerator AND the denominator by the conjugate (that is multiplying by 1)."
+  }
+ ],
+ "hints": [
+  {
+   "step": "write the division as a fraction",
+   "hint": "Numerator over denominator.",
+   "why": "Division by a complex number is done as a fraction."
+  },
+  {
+   "step": "find the conjugate of the denominator",
+   "hint": "Change the sign of the imaginary part.",
+   "why": "A number times its conjugate is real."
+  },
+  {
+   "step": "multiply the fraction by the conjugate over itself",
+   "hint": "Conjugate over conjugate is 1.",
+   "why": "Multiplying by 1 keeps the value."
+  },
+  {
+   "step": "replace i squared with negative one",
+   "hint": "i^2 = -1 top and bottom.",
+   "why": "The denominator becomes c^2 + d^2."
+  },
+  {
+   "step": "write the answer as a real part plus an imaginary part",
+   "hint": "Split the fraction: real/den + (imag/den) i.",
+   "why": "Answers go in a + bi form."
+  }
+ ]
+}

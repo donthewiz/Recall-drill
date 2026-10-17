@@ -1,0 +1,167 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.solve_completing_square",
+ "version": 1,
+ "title": "Solve by completing the square",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Bittinger 7e §3.2 Examples 5-6 (Video Notebook p. 75, missing from Don's PDF)",
+  "Chapter 3 Test Form A #19",
+  "OpenStax College Algebra 2e §2.5 (CC BY 4.0, openstax.org)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.quad.solve_square_root",
+  "ca.prereq.factor_trinomial"
+ ],
+ "process_card": "Solving by completing the square",
+ "var": "x",
+ "domain": "complex",
+ "params": {
+  "a": {
+   "choice": [
+    1,
+    1,
+    1,
+    2,
+    3
+   ]
+  },
+  "h": {
+   "int": [
+    -6,
+    6
+   ],
+   "not": [
+    0
+   ]
+  },
+  "m": {
+   "choice": [
+    2,
+    3,
+    5,
+    6,
+    7,
+    10,
+    11,
+    13,
+    14,
+    15,
+    17
+   ]
+  }
+ },
+ "let": {
+  "b": "-2h",
+  "c": "h^2 - m",
+  "std": "a(x^2 + b x + c)",
+  "negc": "-c",
+  "hsq": "h^2",
+  "hn": "-h",
+  "rhs3": "negc + hsq"
+ },
+ "problem": {
+  "prompt": "Solve by completing the square: {tex:std} = 0. Find exact solutions.",
+  "equation": "{std} = 0"
+ },
+ "steps": [
+  {
+   "name": "divide by a so the x-squared coefficient is 1",
+   "result": "x^2 + {b} x + {c} = 0",
+   "check": "equivalent"
+  },
+  {
+   "name": "move the constant to the other side",
+   "result": "x^2 + {b} x = {negc}",
+   "check": "equivalent"
+  },
+  {
+   "name": "add the square of half the x-coefficient to both sides",
+   "result": "x^2 + {b} x + {hsq} = {rhs3}",
+   "show": "x^2 + {b} x + {hsq} = {negc} + {hsq}",
+   "check": "equivalent"
+  },
+  {
+   "name": "write the left side as a binomial squared",
+   "result": "(x - {h})^2 = {m}",
+   "check": "factored"
+  },
+  {
+   "name": "use the principle of square roots",
+   "result": "{h} +- sqrt({m})",
+   "show": "x - {h} = +-sqrt({m})",
+   "check": "solutions"
+  },
+  {
+   "name": "solve for x",
+   "result": "{h} +- sqrt({m})",
+   "show": "x = {h} +- sqrt({m})",
+   "check": "solutions"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{h} +- sqrt({m})",
+  "form": [
+   "exact",
+   "simplified_radical"
+  ],
+  "say": "The solutions are {h} ± sqrt({m})."
+ },
+ "mistakes": [
+  {
+   "id": "one_side_only",
+   "name": "added (b/2)^2 to one side only",
+   "rule": {
+    "answer_equals": "{h} +- sqrt({negc})"
+   },
+   "message": "Whatever you add on the left, add on the right too."
+  },
+  {
+   "id": "sign_of_h",
+   "name": "sign of h flipped",
+   "rule": {
+    "answer_equals": "{hn} +- sqrt({m})"
+   },
+   "message": "(x - 3)^2 = 11 gives x = 3 ± sqrt(11), not -3 ± sqrt(11)."
+  }
+ ],
+ "hints": [
+  {
+   "step": "divide by a so the x-squared coefficient is 1",
+   "hint": "If a is not 1, divide every term by a.",
+   "why": "The (b/2)^2 trick only works when x^2 has coefficient 1."
+  },
+  {
+   "step": "move the constant to the other side",
+   "hint": "Move the constant term to the right side.",
+   "why": "Room is needed on the left for the number that completes the square."
+  },
+  {
+   "step": "add the square of half the x-coefficient to both sides",
+   "hint": "Take half of the x-coefficient, square it, add it to both sides.",
+   "why": "It makes the left side a perfect-square trinomial."
+  },
+  {
+   "step": "write the left side as a binomial squared",
+   "hint": "The left side is (x + half the x-coefficient)^2.",
+   "why": "x^2 + bx + (b/2)^2 = (x + b/2)^2."
+  },
+  {
+   "step": "use the principle of square roots",
+   "hint": "Take ± the square root of both sides.",
+   "why": "Principle of square roots: if X^2 = k, then X = ±sqrt(k)."
+  },
+  {
+   "step": "solve for x",
+   "hint": "Add the number next to x to both sides.",
+   "why": "That leaves x alone: the exact solutions."
+  }
+ ]
+}

@@ -1,0 +1,138 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.solve_reducible",
+ "version": 1,
+ "title": "Solve an equation reducible to quadratic (u = x^2)",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Bittinger 7e §3.2 Examples 9-11 (Video Notebook pp. 77-78)",
+  "Chapter 3 Test Form A #32 (u = x - 2)",
+  "OpenStax College Algebra 2e §2.6 (CC BY 4.0, openstax.org)"
+ ],
+ "priority": "medium",
+ "prerequisites": [
+  "ca.quad.solve_factoring",
+  "ca.quad.solve_square_root"
+ ],
+ "process_card": "Solving an equation reducible to quadratic",
+ "var": "x",
+ "domain": "complex",
+ "params": {
+  "u1": {
+   "choice": [
+    1,
+    4,
+    9,
+    16,
+    -1,
+    -4
+   ]
+  },
+  "u2": {
+   "choice": [
+    1,
+    4,
+    9,
+    16,
+    25,
+    -1,
+    -4,
+    -9
+   ]
+  }
+ },
+ "let": {
+  "B": "-(u1 + u2)",
+  "C": "u1 u2",
+  "eqx": "x^4 + B x^2 + C",
+  "s1": "sqrt(u1)",
+  "s2": "sqrt(u2)"
+ },
+ "constraints": [
+  "u1 != u2"
+ ],
+ "problem": {
+  "prompt": "Solve: {tex:eqx} = 0",
+  "equation": "{eqx} = 0"
+ },
+ "steps": [
+  {
+   "name": "choose u so the equation becomes quadratic in u",
+   "result": "u^2 + {B} u + {C} = 0",
+   "show": "Let u = x^2: u^2 + {B} u + {C} = 0",
+   "check": "u_equation",
+   "u": "x^2"
+  },
+  {
+   "name": "solve for u",
+   "result": "{u1}, {u2}",
+   "check": "solutions",
+   "of_equation": "u^2 + {B} u + {C} = 0",
+   "var": "u"
+  },
+  {
+   "name": "replace u and solve for the original variable",
+   "result": "x^2 = {u1}; x^2 = {u2}",
+   "check": "each"
+  },
+  {
+   "name": "check",
+   "result": "",
+   "check": "substitution"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "+-{s1}, +-{s2}",
+  "form": [
+   "exact",
+   "a+bi"
+  ],
+  "say": "The solutions are ±{s1} and ±{s2}."
+ },
+ "mistakes": [
+  {
+   "id": "stopped_at_u",
+   "name": "stopped at u",
+   "rule": {
+    "answer_equals": "{u1}, {u2}"
+   },
+   "message": "u is not the answer: put x^2 back and solve for x."
+  },
+  {
+   "id": "forgot_pm",
+   "name": "forgot ±",
+   "rule": {
+    "answer_equals": "{s1}, {s2}"
+   },
+   "message": "x^2 = 4 gives x = ±2: two solutions for each u."
+  }
+ ],
+ "hints": [
+  {
+   "step": "choose u so the equation becomes quadratic in u",
+   "hint": "x^4 = (x^2)^2, so let u = x^2.",
+   "why": "With u = x^2 the equation is an ordinary quadratic in u."
+  },
+  {
+   "step": "solve for u",
+   "hint": "Factor the u-equation.",
+   "why": "It's a quadratic you already know how to solve."
+  },
+  {
+   "step": "replace u and solve for the original variable",
+   "hint": "Write x^2 = each u value and use the principle of square roots.",
+   "why": "The question asks for x, not u."
+  },
+  {
+   "step": "check",
+   "hint": "Substitute each x into the original equation.",
+   "why": "Substitution steps can hide mistakes."
+  }
+ ]
+}

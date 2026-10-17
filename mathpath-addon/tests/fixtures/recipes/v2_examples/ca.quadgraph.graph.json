@@ -1,0 +1,28 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.quadgraph.graph", "version": 1,
+ "title": "Graph a quadratic function (MyMathLab tool: vertex, then one more point)",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.3", "title": "Analyzing Graphs of Quadratic Functions"},
+ "sources": ["Example recipe in the plugin's tests (format 2); Test Form A #29e type"],
+ "priority": "high", "prerequisites": ["ca.quadgraph.vertex"],
+ "var": "x",
+ "params": {"a": {"choice": [1, -1, 2, -2]}, "h": {"int": [-5, 5]}, "k": {"int": [-6, 6]}},
+ "let": {"fe": "expand(a (x - h)^2 + k)", "x2": "h + 1", "y2": "a + k"},
+ "problem": {"task": "graph", "prompt": "Graph f(x) = {tex:fe}.", "function": "{fe}"},
+ "steps": [
+  {"name": "choose the shape", "result": "", "show": "parabola", "check": "text"},
+  {"name": "plot the vertex", "result": "{k}", "show": "({h}, {k})", "check": "equal", "to": "{k}"},
+  {"name": "plot one more point", "result": "{y2}", "show": "({x2}, {y2})", "check": "equal", "to": "{y2}"}
+ ],
+ "answer": {"kind": "graph", "value": "parabola; ({h}, {k}); ({x2}, {y2})", "say": "Parabola with vertex ({h}, {k}) through ({x2}, {y2})."},
+ "mistakes": [
+  {"id": "wrong_side", "name": "vertex mirrored (sign of h)", "applies_if": "h != 0",
+   "rule": {"answer_equals": "parabola; (-{h}, {k}); (-{h} + 1, {y2})"},
+   "message": "f(x) = a(x - h)^2 + k has its vertex at x = h, not -h."}
+ ],
+ "hints": [
+  {"step": "choose the shape", "hint": "x squared: a parabola.", "why": "Quadratic functions graph as parabolas."},
+  {"step": "plot the vertex", "hint": "Find (h, k).", "why": "MyMathLab's tool asks for the vertex first."},
+  {"step": "plot one more point", "hint": "Try x = h + 1.", "why": "One more point fixes how wide the parabola is."}
+ ]
+}

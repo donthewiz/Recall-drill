@@ -1,0 +1,114 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.3",
+  "title": "Analyzing Graphs of Quadratic Functions"
+ },
+ "id": "ca.quadgraph.min_value",
+ "title": "Minimum value of a quadratic function",
+ "sources": [
+  "Bittinger 7e §3.3 Examples 1-4 (Video Notebook pp. 82-85)",
+  "Test Form A #29c type (numbers differ)",
+  "OpenStax College Algebra 2e §5.1 pp. 395-399 (CC BY 4.0): explanations only, no problems copied"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.quadgraph.vertex"
+ ],
+ "process_card": "Finding the maximum or minimum value",
+ "var": "x",
+ "params": {
+  "a": {
+   "choice": [
+    1,
+    2,
+    3,
+    1
+   ]
+  },
+  "h": {
+   "int": [
+    -6,
+    6
+   ]
+  },
+  "k": {
+   "int": [
+    -9,
+    9
+   ]
+  }
+ },
+ "constraints": [
+  "h != k"
+ ],
+ "let": {
+  "fe": "expand(a (x - h)^2 + k)"
+ },
+ "problem": {
+  "task": "extreme",
+  "prompt": "Does f(x) = {tex:fe} have a maximum or a minimum value? Find that value.",
+  "function": "{fe}"
+ },
+ "steps": [
+  {
+   "name": "find the vertex",
+   "result": "{k}",
+   "show": "vertex ({h}, {k})",
+   "check": "equal",
+   "to": "{k}"
+  },
+  {
+   "name": "decide maximum or minimum from the sign of a",
+   "result": "",
+   "show": "a = {a} > 0: minimum",
+   "check": "text"
+  },
+  {
+   "name": "give the y-coordinate of the vertex",
+   "result": "{k}",
+   "show": "the minimum value is {k} (when x = {h})",
+   "check": "equal",
+   "to": "{k}"
+  }
+ ],
+ "answer": {
+  "kind": "expr",
+  "type": "minimum",
+  "value": "{k}",
+  "form": [
+   "exact"
+  ],
+  "say": "The minimum value is {k}, when x = {h}."
+ },
+ "mistakes": [
+  {
+   "id": "gave_x",
+   "name": "gave the x-coordinate",
+   "rule": {
+    "answer_equals": "{h}"
+   },
+   "message": "The minimum VALUE is the y-coordinate of the vertex; x = h only says where it happens."
+  }
+ ],
+ "hints": [
+  {
+   "step": "find the vertex",
+   "hint": "x = -b/(2a), then f of that.",
+   "why": "The highest or lowest point is the vertex."
+  },
+  {
+   "step": "decide maximum or minimum from the sign of a",
+   "hint": "a < 0 opens down (maximum); a > 0 opens up (minimum).",
+   "why": "The vertex is the top of a parabola that opens down and the bottom of one that opens up."
+  },
+  {
+   "step": "give the y-coordinate of the vertex",
+   "hint": "The value is k, not h.",
+   "why": "A maximum or minimum value is an output (y)."
+  }
+ ]
+}

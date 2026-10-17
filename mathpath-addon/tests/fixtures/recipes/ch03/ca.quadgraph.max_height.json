@@ -1,0 +1,138 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.3",
+  "title": "Analyzing Graphs of Quadratic Functions"
+ },
+ "id": "ca.quadgraph.max_height",
+ "title": "Maximum height of a launched object, s(t) = -16t^2 + v t + h0",
+ "sources": [
+  "Bittinger 7e §3.3 Example 6 (Video Notebook p. 86)",
+  "OpenStax College Algebra 2e §5.1 Example 9 p. 403 (CC BY 4.0): method only"
+ ],
+ "priority": "medium",
+ "prerequisites": [
+  "ca.quadgraph.vertex"
+ ],
+ "var": "t",
+ "params": {
+  "g": {
+   "choice": [
+    -16
+   ]
+  },
+  "v": {
+   "choice": [
+    64,
+    80,
+    96,
+    112,
+    128,
+    144,
+    160
+   ]
+  },
+  "h0": {
+   "choice": [
+    0,
+    6,
+    20,
+    40,
+    48,
+    64
+   ]
+  }
+ },
+ "let": {
+  "s": "g t^2 + v t + h0",
+  "t0": "v/32",
+  "s0": "v^2/64 + h0",
+  "sn": "-v^2/64 - v^2/32 + h0"
+ },
+ "problem": {
+  "task": "vertex",
+  "prompt": "An object is launched upward at {v} ft/sec from {h0} ft. Its height after t sec is s(t) = {tex:s}. When does it reach its maximum height, and what is that height?",
+  "function": "{s}"
+ },
+ "steps": [
+  {
+   "name": "identify the coefficients (a and b with their signs)",
+   "result": "a = {g}, b = {v}",
+   "check": "values",
+   "names": {
+    "a": "g",
+    "b": "v"
+   }
+  },
+  {
+   "name": "compute the time with the vertex formula",
+   "result": "{t0}",
+   "show": "t = -{v}/(2(-16)) = {t0} sec",
+   "check": "equal",
+   "to": "{t0}"
+  },
+  {
+   "name": "substitute to find the maximum height",
+   "result": "{s0}",
+   "show": "s({t0}) = {s0} ft",
+   "check": "equal",
+   "to": "{s0}"
+  },
+  {
+   "name": "state the answer with units",
+   "result": "",
+   "show": "{s0} ft after {t0} sec",
+   "check": "text"
+  }
+ ],
+ "answer": {
+  "kind": "point",
+  "value": "({t0}, {s0})",
+  "form": [],
+  "units": "sec, ft",
+  "say": "It reaches its maximum height of {s0} ft after {t0} sec."
+ },
+ "mistakes": [
+  {
+   "id": "swapped",
+   "name": "swapped time and height",
+   "rule": {
+    "answer_equals": "({s0}, {t0})"
+   },
+   "message": "The vertex is (time, height): t first, then s(t)."
+  },
+  {
+   "id": "sign_of_b",
+   "name": "dropped the minus in -b/(2a)",
+   "rule": {
+    "answer_equals": "(-{t0}, {sn})"
+   },
+   "message": "t = -b/(2a) = -v/(2(-16)) is positive; a negative time means a sign slip."
+  }
+ ],
+ "hints": [
+  {
+   "step": "identify the coefficients (a and b with their signs)",
+   "hint": "a = -16 (gravity), b = the launch speed.",
+   "why": "The vertex formula uses a and b."
+  },
+  {
+   "step": "compute the time with the vertex formula",
+   "hint": "t = -b/(2a).",
+   "why": "The highest point is the vertex."
+  },
+  {
+   "step": "substitute to find the maximum height",
+   "hint": "Put that t into s(t).",
+   "why": "The maximum height is the y-coordinate of the vertex."
+  },
+  {
+   "step": "state the answer with units",
+   "hint": "Height in ft, time in sec.",
+   "why": "Bittinger's last step is State."
+  }
+ ]
+}

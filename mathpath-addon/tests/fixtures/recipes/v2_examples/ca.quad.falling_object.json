@@ -1,0 +1,32 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.quad.falling_object", "version": 1,
+ "title": "Applied: falling-object time from s = 16t^2 (rounded)",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.2", "title": "Quadratic Equations, Functions, Zeros, and Models"},
+ "sources": ["Example recipe in the plugin's tests (format 2); Test Form A #20 type (numbers differ)"],
+ "priority": "high", "prerequisites": ["ca.quad.solve_square_root"],
+ "var": "t", "domain": "real",
+ "params": {"s": {"choice": [500, 640, 1000, 1200, 1450]}},
+ "let": {"q": "s/16", "t1": "sqrt(s/16)", "tn": "-sqrt(s/16)"},
+ "problem": {"prompt": "An object falls {s} ft. Using s = 16t^2, how long does the fall take? Round to three decimal places.", "equation": "16 t^2 = {s}"},
+ "steps": [
+  {"name": "isolate the squared term", "result": "t^2 = {q}", "check": "equivalent"},
+  {"name": "take the square root of both sides (plus or minus)", "result": "t = +-sqrt({q})", "check": "pm_equation"},
+  {"name": "throw out the answer that doesn't make sense", "result": "{tn}", "show": "a time can't be negative", "check": "rejects"},
+  {"name": "round to three decimal places", "result": "", "show": "t ≈ {fix3:t1}", "check": "text"}
+ ],
+ "answer": {"kind": "list", "value": "{fix3:t1}", "form": ["approx:3"], "reject_if": ["t < 0"], "units": "sec",
+            "say": "It takes about {fix3:t1} sec."},
+ "mistakes": [
+  {"id": "kept_negative", "name": "kept the negative time", "rule": {"answer_equals": "{fix3:t1}, {fix3:tn}"},
+   "message": "A time can't be negative: keep only the positive root."},
+  {"id": "not_rounded", "name": "didn't round", "rule": {"form_violation": "approx:3", "example": "{t1}"},
+   "message": "The problem asks for three decimal places."}
+ ],
+ "hints": [
+  {"step": "isolate the squared term", "hint": "Divide both sides by 16.", "why": "The principle of square roots needs t^2 alone."},
+  {"step": "take the square root of both sides (plus or minus)", "hint": "t = ± the square root.", "why": "Both signs square to the same number."},
+  {"step": "throw out the answer that doesn't make sense", "hint": "Which answer is a negative time?", "why": "Time is measured forward from the drop."},
+  {"step": "round to three decimal places", "hint": "Use the calculator, keep 3 decimals.", "why": "The question asks for that."}
+ ]
+}

@@ -1,0 +1,32 @@
+{
+ "format": "mathpath-recipe/2", "id": "ca.abs.solve_ineq_less", "version": 1,
+ "title": "Solve |ax + b| < c (interval answer)",
+ "course": "College Algebra",
+ "section": {"book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e", "number": "3.5", "title": "Solving Equations and Inequalities with Absolute Value"},
+ "sources": ["Example recipe in the plugin's tests (format 2); Bittinger 7e §3.5 Example 4 type"],
+ "priority": "high", "prerequisites": ["ca.lin.solve_compound"],
+ "process_card": "Solving an absolute-value inequality with less than",
+ "var": "x", "domain": "real",
+ "params": {"a": {"choice": [1, 2, 3, 5]}, "b": {"int": [-9, 9]}, "c": {"int": [1, 9]}},
+ "let": {"inner": "a x + b", "lo": "(-c - b)/a", "hi": "(c - b)/a", "cn": "-c"},
+ "problem": {"prompt": "Solve and write the solution set in interval notation: \\left|{tex:inner}\\right| < {tex:c}", "equation": "abs({inner}) < {c}"},
+ "steps": [
+  {"name": "write it as a double inequality", "result": "{cn} < {inner} < {c}", "check": "equivalent"},
+  {"name": "solve the double inequality for x", "result": "{lo} < x < {hi}", "check": "equivalent"},
+  {"name": "write the answer in interval notation", "result": "", "show": "({lo}, {hi})", "check": "text"},
+  {"name": "check a number inside", "result": "", "check": "substitution"}
+ ],
+ "answer": {"kind": "interval", "value": "({lo}, {hi})", "form": ["interval", "reduced_fraction"], "say": "The solution set is ({lo}, {hi})."},
+ "mistakes": [
+  {"id": "used_or", "name": "wrote 'or' (that is for greater than)", "rule": {"answer_equals": "(-inf, {lo}) U ({hi}, inf)"},
+   "message": "|X| < c means -c < X < c: one interval between the two numbers."},
+  {"id": "brackets", "name": "used brackets with <", "rule": {"answer_equals": "[{lo}, {hi}]"},
+   "message": "< leaves the endpoints out: use ( )."}
+ ],
+ "hints": [
+  {"step": "write it as a double inequality", "hint": "|X| < c becomes -c < X < c.", "why": "The distance from 0 is less than c."},
+  {"step": "solve the double inequality for x", "hint": "Do the same thing to all three parts.", "why": "That keeps the double inequality true."},
+  {"step": "write the answer in interval notation", "hint": "Parentheses for <.", "why": "The endpoints are not included."},
+  {"step": "check a number inside", "hint": "Try a number between the endpoints in the original.", "why": "A quick check catches a flipped sign."}
+ ]
+}

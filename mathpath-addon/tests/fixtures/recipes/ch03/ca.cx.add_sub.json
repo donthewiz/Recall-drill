@@ -1,0 +1,120 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.1",
+  "title": "The Complex Numbers"
+ },
+ "var": "x",
+ "id": "ca.cx.add_sub",
+ "title": "Subtract complex numbers",
+ "sources": [
+  "Bittinger 7e §3.1 Example 2 (Video Notebook p. 70)",
+  "Test Form A #23 type (numbers differ)",
+  "OpenStax College Algebra 2e §2.4 pp. 123-129 (CC BY 4.0): method only"
+ ],
+ "priority": "medium",
+ "prerequisites": [],
+ "params": {
+  "a": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "b": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "c": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  },
+  "d": {
+   "int": [
+    -9,
+    9
+   ],
+   "not": [
+    0
+   ]
+  }
+ },
+ "let": {
+  "z1": "a + b i",
+  "z2": "c + d i",
+  "re": "a - c",
+  "im": "b - d",
+  "z": "(a - c) + (b - d) i",
+  "zbad": "(a - c) + (b + d) i"
+ },
+ "constraints": [
+  "b - d != 0",
+  "d != 0"
+ ],
+ "problem": {
+  "prompt": "Subtract and simplify: ({tex:z1}) - ({tex:z2})",
+  "equation": "x = ({z1}) - ({z2})"
+ },
+ "steps": [
+  {
+   "name": "combine the real parts",
+   "result": "{re}",
+   "show": "{a} - ({c}) = {re}",
+   "check": "equal",
+   "to": "{re}"
+  },
+  {
+   "name": "combine the imaginary parts",
+   "result": "{im}",
+   "show": "{b}i - ({d}i) = {im}i",
+   "check": "equal",
+   "to": "{im}"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{z}",
+  "form": [
+   "a+bi"
+  ],
+  "say": "The difference is {z}."
+ },
+ "mistakes": [
+  {
+   "id": "minus_not_distributed",
+   "name": "didn't subtract the imaginary part",
+   "rule": {
+    "answer_equals": "{zbad}"
+   },
+   "message": "The minus sign applies to both parts of the second number."
+  }
+ ],
+ "hints": [
+  {
+   "step": "combine the real parts",
+   "hint": "a - c.",
+   "why": "Real parts combine with real parts."
+  },
+  {
+   "step": "combine the imaginary parts",
+   "hint": "Subtract the whole second imaginary part.",
+   "why": "The minus in front applies to everything in the parentheses."
+  }
+ ]
+}

@@ -1,0 +1,141 @@
+{
+ "format": "mathpath-recipe/1",
+ "id": "ca.quad.rectangle_dimensions",
+ "version": 1,
+ "title": "Applied: rectangle from its perimeter and area",
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.2",
+  "title": "Quadratic Equations, Functions, Zeros, and Models"
+ },
+ "sources": [
+  "Bittinger 7e §3.2 Example 13 (Video Notebook p. 80)"
+ ],
+ "priority": "medium",
+ "prerequisites": [
+  "ca.quad.solve_factoring"
+ ],
+ "process_card": "Bittinger's five steps for applied problems",
+ "var": "x",
+ "domain": "complex",
+ "params": {
+  "w": {
+   "int": [
+    2,
+    9
+   ]
+  },
+  "l": {
+   "int": [
+    3,
+    15
+   ]
+  },
+  "scale": {
+   "choice": [
+    10,
+    100
+   ]
+  }
+ },
+ "let": {
+  "L": "l scale",
+  "W": "w scale",
+  "s": "L + W",
+  "P": "2 s",
+  "A": "L W"
+ },
+ "constraints": [
+  "l > w"
+ ],
+ "problem": {
+  "prompt": "A rectangle has perimeter {P} ft and area {A} ft^2. Find its dimensions.",
+  "equation": "x({s} - x) = {A}",
+  "unknown": "x = the length (ft); width = {s} - x"
+ },
+ "steps": [
+  {
+   "name": "familiarize",
+   "result": "",
+   "show": "Let x = the length; then the width is {s} - x (half the perimeter minus x).",
+   "check": "text"
+  },
+  {
+   "name": "translate",
+   "result": "x({s} - x) = {A}",
+   "check": "equivalent"
+  },
+  {
+   "name": "carry out",
+   "result": "{L}, {W}",
+   "check": "solutions"
+  },
+  {
+   "name": "check",
+   "result": "",
+   "show": "{L} + {W} = {s} and {L} * {W} = {A}",
+   "check": "substitution"
+  },
+  {
+   "name": "state",
+   "result": "",
+   "show": "The rectangle is {L} ft by {W} ft.",
+   "check": "text"
+  }
+ ],
+ "answer": {
+  "kind": "list",
+  "value": "{L}, {W}",
+  "form": [
+   "exact"
+  ],
+  "units": "ft",
+  "say": "The dimensions are {L} ft by {W} ft."
+ },
+ "mistakes": [
+  {
+   "id": "whole_perimeter",
+   "name": "used the whole perimeter as length + width",
+   "rule": {
+    "answer_solves": "x({P} - x) = {A}"
+   },
+   "message": "Length + width is half the perimeter, because P = 2l + 2w."
+  },
+  {
+   "id": "one_dimension",
+   "name": "gave one dimension",
+   "rule": {
+    "answer_equals": "{L}"
+   },
+   "message": "State both dimensions: length and width."
+  }
+ ],
+ "hints": [
+  {
+   "step": "familiarize",
+   "hint": "Name the length x and write the width in terms of x.",
+   "why": "One variable makes one equation."
+  },
+  {
+   "step": "translate",
+   "hint": "Area = length times width.",
+   "why": "The area gives the equation; the perimeter gave the width."
+  },
+  {
+   "step": "carry out",
+   "hint": "Expand, get 0 on one side, factor.",
+   "why": "It's a quadratic equation."
+  },
+  {
+   "step": "check",
+   "hint": "Do the two numbers give the perimeter and the area?",
+   "why": "Both facts must hold."
+  },
+  {
+   "step": "state",
+   "hint": "Answer in a sentence with units.",
+   "why": "The question asked for dimensions, not x."
+  }
+ ]
+}

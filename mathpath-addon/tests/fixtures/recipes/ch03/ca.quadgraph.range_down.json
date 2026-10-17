@@ -1,0 +1,120 @@
+{
+ "format": "mathpath-recipe/2",
+ "version": 1,
+ "course": "College Algebra",
+ "section": {
+  "book": "Bittinger, Beecher, Ellenbogen & Penna, College Algebra: Graphs and Models, 7e",
+  "number": "3.3",
+  "title": "Analyzing Graphs of Quadratic Functions"
+ },
+ "id": "ca.quadgraph.range_down",
+ "title": "Range of a quadratic function that opens down",
+ "sources": [
+  "Bittinger 7e §3.3 Example 4c (Video Notebook p. 85)",
+  "Test Form A #29d type (numbers differ)",
+  "OpenStax College Algebra 2e §5.1 p. 396 (CC BY 4.0)"
+ ],
+ "priority": "high",
+ "prerequisites": [
+  "ca.quadgraph.vertex"
+ ],
+ "process_card": "Finding the range of a quadratic function",
+ "var": "x",
+ "params": {
+  "a": {
+   "choice": [
+    -1,
+    -2,
+    -3,
+    -1
+   ]
+  },
+  "h": {
+   "int": [
+    -6,
+    6
+   ]
+  },
+  "k": {
+   "int": [
+    -9,
+    9
+   ]
+  }
+ },
+ "constraints": [
+  "h != k"
+ ],
+ "let": {
+  "fe": "expand(a (x - h)^2 + k)"
+ },
+ "problem": {
+  "task": "range",
+  "prompt": "Find the range of f(x) = {tex:fe}.",
+  "function": "{fe}"
+ },
+ "steps": [
+  {
+   "name": "find the vertex",
+   "result": "{k}",
+   "show": "vertex ({h}, {k})",
+   "check": "equal",
+   "to": "{k}"
+  },
+  {
+   "name": "decide whether the parabola opens up or down",
+   "result": "",
+   "show": "a = {a}: opens down, so {k} is the maximum",
+   "check": "text"
+  },
+  {
+   "name": "write the range in interval notation",
+   "result": "",
+   "show": "(-inf, {k}]",
+   "check": "text"
+  }
+ ],
+ "answer": {
+  "kind": "interval",
+  "value": "(-inf, {k}]",
+  "form": [
+   "interval"
+  ],
+  "say": "The range is (-∞, {k}]."
+ },
+ "mistakes": [
+  {
+   "id": "open_bracket",
+   "name": "used a parenthesis at k",
+   "rule": {
+    "answer_equals": "(-inf, {k})"
+   },
+   "message": "The graph reaches k at the vertex, so k is in the range: use a square bracket."
+  },
+  {
+   "id": "x_not_y",
+   "name": "used the x-coordinate",
+   "rule": {
+    "answer_equals": "(-inf, {h}]"
+   },
+   "message": "The range is y-values: use the y-coordinate of the vertex."
+  }
+ ],
+ "hints": [
+  {
+   "step": "find the vertex",
+   "hint": "x = -b/(2a), then f of that.",
+   "why": "The vertex holds the highest or lowest y-value."
+  },
+  {
+   "step": "decide whether the parabola opens up or down",
+   "hint": "Look at the sign of a.",
+   "why": "Up: k is the smallest output. Down: k is the largest."
+  },
+  {
+   "step": "write the range in interval notation",
+   "hint": "Up: [k, ∞). Down: (−∞, k].",
+   "why": "Every y-value on the open side of k is reached, and k itself is reached."
+  }
+ ]
+}
