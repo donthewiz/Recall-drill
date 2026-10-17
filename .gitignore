@@ -5,7 +5,10 @@ coverage/
 .DS_Store
 *.log
 .env*
-.claude/
+# Claude Code: the shared settings and hooks are committed; personal settings stay local.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 
 # Anki add-on (anki-addon/)
 anki-addon/.venv/
