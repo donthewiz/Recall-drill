@@ -30,8 +30,9 @@ decision you make there.
 
 ## Never
 
-- Never push to `main`, open a PR into anything but `main`, or merge. Work on a branch;
-  Don merges with **Rebase and merge** (commits are matched by message, not hash).
+- Never push to `main` or open a PR into anything but `main`. Work on a branch.
+- Never merge on your own. Merge only when Don asks in the conversation, and always with
+  **Rebase and merge** (commits are matched by message, not hash).
 - Never rewrite pushed history: no force-push, no amend or rebase of pushed commits.
 - Never hand-edit `mathpath-addon/core/` (copied from the anki-math-cards plugin, hashes
   tested) or `anki-addon/tests/golden/` (generated). A hook blocks both.
