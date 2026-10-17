@@ -43,7 +43,8 @@ suspended new cards the template filter left out whose note has a remaining
 card (the handoff's siblings).
 
 A card is ineligible, and counted by reason, when (first match wins):
-image occlusion, marked ineligible in mappings.json, unmapped, empty answer,
+a Math Path note (v0.6.1: it is solved in Math Path, never drilled here), image
+occlusion, marked ineligible in mappings.json, unmapped, empty answer,
 or (unless that class is enabled) in a filtered deck or buried. Every other
 card is eligible; it's picked when its class is enabled, up to ``max_cards``.
 """
@@ -76,7 +77,7 @@ from .cards import (
 )
 from .handoff import TAG_DRILLED
 from .mathcards import MathStatus, math_status
-from .notetypes import MappingTable, NoteMapping, answer_text, is_io_note
+from .notetypes import MappingTable, NoteMapping, answer_text, is_io_note, is_math_path_note
 
 OrderMode = Literal["priority_first", "deck_order"]
 
@@ -101,9 +102,16 @@ PRIORITY_RANK: tuple[CardClass, ...] = (
 _RANK = {c: i for i, c in enumerate(PRIORITY_RANK)}
 
 IneligibleReason = Literal[
-    "image_occlusion", "marked_ineligible", "unmapped", "empty_answer", "filtered_deck", "buried"
+    "math_path",
+    "image_occlusion",
+    "marked_ineligible",
+    "unmapped",
+    "empty_answer",
+    "filtered_deck",
+    "buried",
 ]
 INELIGIBLE_REASONS: tuple[IneligibleReason, ...] = (
+    "math_path",
     "image_occlusion",
     "marked_ineligible",
     "unmapped",
@@ -372,6 +380,8 @@ def content_check(
     col: Collection, snap: CardSnapshot, mapping: NoteMapping, notes: NoteCache
 ) -> tuple[IneligibleReason | None, str]:
     """(reason, answer text): why the card can't be drilled, else its answer."""
+    if is_math_path_note(notes.get(snap.nid)):
+        return "math_path", ""
     if mapping.kind == "image_occlusion":
         return "image_occlusion", ""
     if mapping.ineligible:

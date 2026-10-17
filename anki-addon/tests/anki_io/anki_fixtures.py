@@ -273,3 +273,18 @@ def add_iol_note(
         },
         AMC_TAGS,
     )
+
+
+MATH_PATH = "Math Path recipe"
+MATH_PATH_FIELDS = ["Title", "Section", "RecipeId", "Version", "Prompt", "Recipe", "Notes"]
+
+
+def add_math_path_model(col: Collection, name: str = MATH_PATH) -> NotetypeDict:
+    """A note type with the fields Math Path's recipe notes have (the contract: a
+    ``RecipeId`` and a ``Recipe`` field)."""
+    return _standard_model(
+        col,
+        name,
+        MATH_PATH_FIELDS,
+        [("Problem", "{{Title}}<br>{{Section}}", "{{FrontSide}}<hr id=answer>{{Prompt}}")],
+    )

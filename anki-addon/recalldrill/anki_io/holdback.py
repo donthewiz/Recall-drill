@@ -14,7 +14,8 @@ What a hold-back does to a deck (with its subdecks):
 - Their notes get the tag ``rd::held`` (where missing).
 - It leaves alone the cards the drill can never take (``select.content_check``:
   image occlusion, marked ineligible, unmapped, empty answer; v0.3.1): they go to
-  Anki as usual.
+  Anki as usual. Math Path notes (v0.6.1) are among them, and a suspended one is never
+  released by the repair below.
 - The same plan **repairs** cards already held that are undrillable: it unsuspends
   them and removes ``rd::held`` from notes with no held card left.
 - It never touches a card Anki has already introduced (not new), a card in a
@@ -187,8 +188,13 @@ def plan_hold_back(
     held_snaps = read_snapshots(col, held_cards(col, did), notes)
     table = mappings if mappings is not None else MappingTable(col, load_overrides(storage))
     undrillable: dict[int, str] = {}
+    held_ids = {s.cid for s in held_snaps}
     for s in [*snaps, *held_snaps]:
         reason, _answer = content_check(col, s, table.for_card(s.ntid, s.ord), notes)
+        if reason == "math_path" and s.cid in held_ids:
+            # A Math Path note stays suspended until Math Path hands it off: the repair
+            # below must never unsuspend it.
+            continue
         if reason is not None:
             undrillable[s.cid] = reason
     note_cards = {

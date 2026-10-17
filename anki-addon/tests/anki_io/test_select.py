@@ -124,8 +124,8 @@ def test_counts_by_class_and_reason(col: Collection, mixed: Mixed) -> None:
         "flagged": 1, "leech": 1, "suspended_new": 1, "lapsed": 1, "new": 2, "young": 1,
     }  # fmt: skip
     assert sel.ineligible == {
-        "image_occlusion": 1, "marked_ineligible": 0, "unmapped": 1, "empty_answer": 1,
-        "filtered_deck": 1, "buried": 1,
+        "math_path": 0, "image_occlusion": 1, "marked_ineligible": 0, "unmapped": 1,
+        "empty_answer": 1, "filtered_deck": 1, "buried": 1,
     }  # fmt: skip
     assert sel.template_excluded == 0
     assert set(sel.eligible_counts) == set(CARD_CLASSES)

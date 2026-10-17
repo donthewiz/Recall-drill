@@ -1190,6 +1190,13 @@ SymPy's `tests/` folders and subpackages nothing imports (`diffgeom`, `stats`, `
 
 `tests/test_math_answer.py` (the required table, same form, different form, ±, LaTeX in, engine safety), `tests/controller/test_math_controller.py`, `tests/anki_io/test_math_cards.py` (the contract; a Lab 2 deck with math notes drilled through every stage, handoff, history, outcomes), `tests/ui/test_ui_smoke.py` (window and setup panel offscreen), `tests/ui/test_math_palette.py` (the real page in Chromium through Playwright; it skips itself without a browser: `playwright install chromium`).
 
+## v0.6.1: Math Path cards are left alone (2026-10-17)
+
+Math Path (the separate add-on in `mathpath-addon/`) stores problem recipes as notes of a note type with both a `RecipeId` and a `Recipe` field (any name). Recall Drill's default mapping would otherwise pick a field of such a note as an answer.
+
+- `select.content_check` returns the new first-match reason `math_path` ("solved in Math Path") for those notes (`notetypes.is_math_path_note`). Every place that decides drillability already goes through `content_check`: selection (and so Drill next), hold back (a Math Path note is never held, never released: unsuspended ones are "left alone", suspended ones are not looked at), the sections table's "can't drill" bucket, and the exam tracker, which keeps counting can't-drill new cards as New, suspended or not.
+- Nothing under `engine/`, no golden file and no saved data changed.
+
 ## Changing the engine now
 
 Since Phase 1b the Python engine (`recalldrill/engine/`) is a step-for-step port of the TS engine (`src/utils/`), and CI holds the two together. The `addon-engine` job regenerates `tests/golden/` from the TS engine and fails if anything changed (`git diff --exit-code`). So a change to engine behavior is one commit with four parts:
