@@ -25,7 +25,7 @@ def test_every_prompt_step_and_answer_is_typeset(recipe: Recipe) -> None:
         assert "\\(" in problem.prompt_html or recipe.id == "ca.rat.no_solution"
         for step in problem.steps:
             assert _balanced(step.shown_html)
-            assert "" not in step.shown_html
+            assert "\ue200" not in step.shown_html
         assert _balanced(problem.answer_html)
         assert "mp-raw" not in problem.answer_html, (
             problem.answer_html
