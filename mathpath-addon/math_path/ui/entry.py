@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from aqt import gui_hooks, mw
 from aqt.qt import QAction, QMenu, qconnect
-from aqt.utils import showInfo
+from aqt.utils import showInfo, tooltip
 
 from .. import __version__, pages
 from .context import AddonContext
@@ -66,6 +68,42 @@ def register(module: str, user_files: str) -> None:
     mw.addonManager.setWebExports(module, pages.web_pattern())
     build_menu(mw.form.menuTools, mw)
     gui_hooks.profile_will_close.append(on_profile_will_close)
+    gui_hooks.reviewer_did_show_question.append(on_show_question)
+    gui_hooks.webview_did_receive_js_message.append(on_js_message)
+
+
+def on_show_question(card: Any) -> None:
+    """The reviewer showed a card's question: a Math Path card opens its window (when
+    ``auto_open_in_review`` is on); a window left over from another card closes."""
+    from .review_window import ReviewWindow, current_math_path_note, open_review
+
+    if _ctx is None:
+        return
+    for w in list(_ctx.windows):
+        if isinstance(w, ReviewWindow) and w.card_id != card.id:
+            w.close()  # the reviewer moved on: nothing was rated
+    note = current_math_path_note(card)
+    if note is None or not _ctx.config().auto_open_in_review:
+        return
+    if note.recipe is None:
+        tooltip(f"This Math Path note's recipe can't be read: {note.error}")
+        return
+    open_review(_ctx, note, int(card.id))
+
+
+def on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tuple[bool, Any]:
+    """The card face's "Solve in Math Path" link (``pycmd('mathpath:open')``)."""
+    from ..anki_io.notetype import PYCMD_OPEN
+    from .review_window import current_math_path_note, open_review
+
+    if message != PYCMD_OPEN:
+        return handled
+    card = getattr(context, "card", None)
+    if _ctx is not None and card is not None:
+        note = current_math_path_note(card)
+        if note is not None and note.recipe is not None:
+            open_review(_ctx, note, int(card.id))
+    return (True, None)
 
 
 def on_profile_will_close() -> None:

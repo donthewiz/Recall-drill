@@ -40,6 +40,7 @@ strict = [
     "math_path/plan_match.py",
     "math_path/run.py",
     "math_path/session.py",
+    "math_path/review.py",
     "math_path/notes.py",
     "math_path/course_model.py",
     "math_path/views",
