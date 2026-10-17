@@ -43,6 +43,7 @@ strict = [
     "math_path/review.py",
     "math_path/notes.py",
     "math_path/course_model.py",
+    "math_path/progress_controller.py",
     "math_path/views",
     "math_path/anki_io",
 ]
