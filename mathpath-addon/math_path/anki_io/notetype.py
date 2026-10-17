@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 # anki.collection must load before anki.cards (circular import).
 import anki.collection  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from anki.collection import Collection
@@ -11,6 +9,7 @@ from anki.models import NotetypeDict, NotetypeId
 from anki.notes import Note, NoteId
 
 from .. import recipe_note
+from ..notes import RecipeNote
 from ..recipe import Recipe, RecipeError, parse_recipe
 
 PYCMD_OPEN = "mathpath:open"
@@ -85,22 +84,6 @@ def ensure_notetype(col: Collection) -> NotetypeDict:
     return made
 
 
-@dataclass(frozen=True)
-class RecipeNote:
-    """A Math Path note as read from the collection."""
-
-    nid: int
-    recipe_id: str
-    version: int
-    title: str
-    section: str
-    recipe: Recipe | None
-    """None when the ``Recipe`` field can't be read (the note is shown but can't be solved)."""
-    error: str
-    tags: tuple[str, ...]
-    ntid: int
-
-
 def read_note(note: Note) -> RecipeNote:
     rid = recipe_note.decode_text(note[recipe_note.F_ID]).strip()
     try:
@@ -113,6 +96,7 @@ def read_note(note: Note) -> RecipeNote:
         recipe = parse_recipe(recipe_note.decode_recipe(note[recipe_note.F_RECIPE]))
     except (RecipeError, ValueError) as exc:
         error = str(exc)
+    cards = sorted(note.cards(), key=lambda c: c.ord)
     return RecipeNote(
         nid=int(note.id),
         recipe_id=rid,
@@ -127,6 +111,8 @@ def read_note(note: Note) -> RecipeNote:
         error=error,
         tags=tuple(note.tags),
         ntid=int(note.mid),
+        did=int(cards[0].odid or cards[0].did) if cards else 0,
+        cids=tuple(int(c.id) for c in cards),
     )
 
 

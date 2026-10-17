@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from drive import tex_of
 from problems_cache import problems
 from recipe_files import all_recipes, ch03, ids
 
@@ -44,6 +45,16 @@ def test_each_worked_result_passes_and_another_instances_result_fails(recipe: Re
                     step.name,
                     wrong,
                 )
+
+
+@pytest.mark.parametrize("recipe", all_recipes(), ids=ids(all_recipes()))
+def test_every_worked_result_also_passes_typed_through_the_palette(recipe: Recipe) -> None:
+    """Each blank step's worked result, as the palette would hold it, read back by the adapter."""
+    for problem in problems(recipe, 5):
+        for step in problem.steps:
+            if step.blankable:
+                verdict = grading.check_step_typed(problem, step.index, tex_of(step.result))
+                assert verdict.ok, (recipe.id, problem.seed, step.name, step.result)
 
 
 def test_a_brace_in_the_answer_is_never_read_as_a_template() -> None:

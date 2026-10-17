@@ -36,6 +36,12 @@ strict = [
     "math_path/theme.py",
     "math_path/storage.py",
     "math_path/config.py",
+    "math_path/progress.py",
+    "math_path/plan_match.py",
+    "math_path/run.py",
+    "math_path/session.py",
+    "math_path/notes.py",
+    "math_path/course_model.py",
     "math_path/views",
     "math_path/anki_io",
 ]

@@ -135,7 +135,8 @@
     if (!root) {
       root = document.getElementById("mp-root");
     }
-    var y = window.scrollY;
+    var oldMain = root.querySelector(".mp-main");
+    var y = oldMain ? oldMain.scrollTop : 0;
     readonly = {};
     (v.readonly || []).forEach(function (id) {
       readonly[id] = true;
@@ -155,7 +156,10 @@
       }
     });
     typeset();
-    window.scrollTo(0, y);
+    var newMain = root.querySelector(".mp-main");
+    if (newMain) {
+      newMain.scrollTop = y;
+    }
     var want = v.focus || active;
     if (want && (fieldEl(want) || textEl(want))) {
       focusId(want);

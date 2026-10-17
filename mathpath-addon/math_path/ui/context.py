@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,6 +21,9 @@ class AddonContext:
     windows: list[Any] = field(default_factory=list[Any])
     """Open Math Path windows, kept alive and closed with the profile."""
     bank: ProblemBank = field(default_factory=ProblemBank)
+    """One problem per recipe, prepared ahead on a worker thread."""
+    progress_opener: Callable[[], Any] | None = None
+    """Opens the progress map (set when that window exists); the learn window's Progress button."""
 
     @property
     def folder(self) -> str:

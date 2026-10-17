@@ -11,6 +11,7 @@ from .context import AddonContext
 
 MENU_LABEL = "Math Path"
 IMPORT_LABEL = "Import recipes…"
+LEARN_NEXT_LABEL = "Learn next"
 ABOUT_LABEL = "About Math Path"
 DEV_FOLDER = "math_path_dev"
 
@@ -46,6 +47,9 @@ def build_menu(tools: QMenu, parent: object) -> QMenu:
         qconnect(action.triggered, lambda _checked=False: fn())  # type: ignore[operator]
         menu.addAction(action)
 
+    from .launch import learn_next
+
+    add(LEARN_NEXT_LABEL, lambda: _ctx is not None and learn_next(_ctx))
     add(IMPORT_LABEL, lambda: _ctx is not None and open_import_dialog(_ctx))
     menu.addSeparator()
     add(ABOUT_LABEL, show_about)

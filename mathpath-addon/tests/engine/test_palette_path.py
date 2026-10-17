@@ -148,6 +148,26 @@ def test_a_union_of_intervals() -> None:
     assert not _key_is_graded(r"(-\infty,-2]\cup(3,\infty)", key, "interval", ["interval"])["ok"]
 
 
+def test_the_imaginary_unit_before_a_root_is_not_sympys_isqrt() -> None:
+    assert palette_to_keyboard(r"i\sqrt{448}") == "i*sqrt(448)"
+    assert palette_to_keyboard(r"2i\sqrt{7}") == "2i*sqrt(7)"
+    assert palette_to_keyboard(r"\pi\sqrt{2}") == "pi sqrt(2)"
+    assert palette_to_keyboard(r"x\left|y\right|") == "x*abs(y)"
+    assert palette_to_keyboard(r"2\sqrt{3}") == "2sqrt(3)"  # a number first: nothing to fix
+    assert palette_to_keyboard(r"\sin\left(x\right)") != ""  # real function names stay whole
+    core = loader.load()
+    key = "8*sqrt(7)*i"
+    for typed in (r"8i\sqrt{7}", r"8\sqrt{7}i"):
+        assert core.verify.check_answer(palette_to_keyboard(typed), key, "expr", [])["ok"], typed
+
+
+def test_or_between_inequalities_reads_as_or() -> None:
+    assert palette_to_keyboard(r"x<-1\lor x>3") == "x<-1 or x>3"
+    assert palette_to_keyboard(r"x\le-2\vee x\ge 5") == "x<=-2 or x>=5"
+    core = loader.load()
+    assert core.verify.is_inequality(palette_to_keyboard(r"x<-1\lor x>3"))
+
+
 def test_the_private_use_group_marks_never_reach_the_checker() -> None:
     for latex in (r"\frac{1}{2}", r"\frac{x+1}{2}", r"\sqrt{x+1}", r"(1,2)\cup[3,4]"):
         out = palette_to_keyboard(latex)
