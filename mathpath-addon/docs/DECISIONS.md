@@ -83,6 +83,12 @@ The click palette gives MathLive's LaTeX. Recall Drill's reader (`latex_to_keybo
 - Inner-scroll layout (header, scrolling body, palette, footer) instead of sticky bars.
 - Only Math Path's windows are styled, by the page's own CSS.
 
+## Found in review (2026-10-17)
+
+- **A list answer written with the variable is right:** `x = -5/2, x = -9` reads as `-5/2, -9` (`grading.drop_var_labels`), for answer kinds `list` and `expr` and for "solutions" steps. Only when every piece is `<var> = <value>` with no other relation; `y = …`, a half-labelled list or `x < 3` are left as typed. The equation kind (an axis, `x = 3`) is never touched. Before this, the labelled form counted as a wrong try (Hard in a review, back to Faded in a session).
+- **Commas between equations in an "each" step:** `2x+5=0, x+9=0` reads as `2x+5=0; x+9=0` (`grading.commas_between_equations`), because the palette has a comma button and no semicolon. Only when every comma-separated piece is one equation.
+- Tests: `tests/engine/test_labels_and_commas.py` (every list recipe, 5 instances, keyboard and palette path; every "each" step); 20 of its 23 tests fail without the change.
+
 ## Core bugs and workarounds
 
 No edit to `core/` was needed. Worked around in the wrapper:

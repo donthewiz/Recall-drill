@@ -129,10 +129,60 @@ def _typed_object(problem: Problem, typed: str) -> Any:
         return None
 
 
+def _var(problem: Problem) -> str:
+    v = problem.recipe.raw.get("var", "x")
+    return v if isinstance(v, str) and v else "x"
+
+
+def _top_split(text: str, sep: str = ",") -> list[str]:
+    """Split at ``sep`` outside any bracket (an interval's comma stays inside its piece)."""
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for i, ch in enumerate(text):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == sep and depth == 0:
+            parts.append(text[start:i])
+            start = i + 1
+    parts.append(text[start:])
+    return parts
+
+
+def drop_var_labels(typed: str, var: str) -> str:
+    """``x = -5/2, x = -9`` is the list ``-5/2, -9`` (built after review, 2026-10-17).
+
+    Only when *every* piece is ``<var> = <value>`` with nothing else relational in the value;
+    anything else is returned unchanged."""
+    label = re.compile(rf"^\s*{re.escape(var)}\s*=\s*(.+?)\s*$")
+    values: list[str] = []
+    for piece in _top_split(typed):
+        m = label.match(piece)
+        if m is None or any(op in m.group(1) for op in ("=", "<", ">")):
+            return typed
+        values.append(m.group(1))
+    return ", ".join(values)
+
+
+def commas_between_equations(typed: str) -> str:
+    """``2x+5=0, x+9=0`` is ``2x+5=0; x+9=0`` for an "each" step: the palette has a comma but
+    no semicolon (built after review, 2026-10-17). Unchanged unless every piece is one equation."""
+    if ";" in typed:
+        return typed
+    pieces = _top_split(typed)
+    if len(pieces) < 2 or any(p.count("=") != 1 for p in pieces):
+        return typed
+    return "; ".join(p.strip() for p in pieces)
+
+
 def check_keyboard(problem: Problem, typed: str) -> AnswerVerdict:
     """Grade keyboard-form text as the final answer (the palette path ends here)."""
     recipe = problem.recipe
     core = loader.load()
+    if recipe.kind in ("list", "expr"):
+        typed = drop_var_labels(typed, _var(problem))
     if recipe.kind == "graph":
         return AnswerVerdict(False, unreadable="Use the shape and point fields for a graph answer.")
     if recipe.kind in ("none", "all_reals"):
@@ -312,6 +362,11 @@ def check_step_keyboard(problem: Problem, index: int, typed: str) -> StepVerdict
     step = problem.recipe.steps[index]
     if not step.blankable:
         return StepVerdict(True)
+    if step.check == "each":
+        typed = commas_between_equations(typed)
+    elif step.check == "solutions":
+        var = step.raw.get("var", _var(problem))
+        typed = drop_var_labels(typed, var if isinstance(var, str) and var else _var(problem))
     as_typed = dict(step.raw, result="{" + TYPED + "}")
     try:
         problems: list[str] = core.validator.check_step(
