@@ -42,6 +42,8 @@ def test_every_ui_module_is_listed() -> None:
         "math_path.ui.launch",
         "math_path.ui.learn_window",
         "math_path.ui.page_window",
+        "math_path.ui.review_bridge",
+        "math_path.ui.review_window",
     } <= set(UI_MODULES)
 
 
@@ -166,6 +168,13 @@ def test_registration_wires_the_menu_and_the_web_exports(
     assert submenu is not None
     shown = [a.text() for a in submenu.actions() if a.text()]
     assert shown == ["Learn next", "Import recipes…", "About Math Path"]
+    from aqt import gui_hooks
+
+    assert entry.on_show_question in gui_hooks.reviewer_did_show_question._hooks  # type: ignore[attr-defined]
+    assert entry.on_js_message in gui_hooks.webview_did_receive_js_message._hooks  # type: ignore[attr-defined]
+    gui_hooks.reviewer_did_show_question.remove(entry.on_show_question)
+    gui_hooks.webview_did_receive_js_message.remove(entry.on_js_message)
+    gui_hooks.profile_will_close.remove(entry.on_profile_will_close)
 
 
 # -- the learn window -----------------------------------------------------------------------------
