@@ -1,4 +1,4 @@
-"""What every window needs from the add-on: storage, config, open windows."""
+"""What every window needs from the add-on: storage, config, open windows, the problem bank."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 from aqt import mw
 
 from ..config import Config, parse_config
+from ..problem import ProblemBank
 from ..storage import Storage
 
 
@@ -18,6 +19,7 @@ class AddonContext:
     user_files: str
     windows: list[Any] = field(default_factory=list[Any])
     """Open Math Path windows, kept alive and closed with the profile."""
+    bank: ProblemBank = field(default_factory=ProblemBank)
 
     @property
     def folder(self) -> str:
