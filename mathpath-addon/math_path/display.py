@@ -165,12 +165,38 @@ def math_span(tex: str) -> str:
 
 _LONE_NUMBER = re.compile(r"\(\s*(-?\d+(?:\.\d+)?(?:/\d+)?)\s*\)")
 _STAR = re.compile(r"(?<=[0-9A-Za-z)])\*(?=[A-Za-z(])")
+_RADICAL = r"sqrt\((?:[^()]|\([^()]*\))*\)"
+_UNIT_COEFFICIENT = re.compile(r"(?<![\w.^/\-)\]])(?<!\d )1(?:\s*\*\s*|\s+|(?=\())(?=[A-Za-z(])")
+_RADICAL_I = re.compile(rf"({_RADICAL})(?:\s*\*\s*|\s+)i(?![A-Za-z0-9_(])")
+_RADICAL_RADICAL = re.compile(rf"({_RADICAL})\s*(?=sqrt\()")
+
+
+def drop_unit_coefficient(text: str) -> str:
+    """Drop a leading coefficient 1 that only multiplies (``1 sqrt(-1) sqrt(108)`` is
+    ``sqrt(-1) sqrt(108)``; ``1 i sqrt(5)`` is ``i sqrt(5)``). Not ``1/2``, ``1.5``, ``10``,
+    ``1^2``, ``-1``, ``(1+x)`` or a ``1`` that ends a number."""
+    return _UNIT_COEFFICIENT.sub("", text)
+
+
+def i_before_radical(text: str) -> str:
+    """``6 sqrt(3) i`` is ``6 i sqrt(3)``: written the way a textbook does, so the ``i`` can't be
+    read as part of the root. Display only; the checker reads all the forms (Claude's call,
+    2026-10-18, for Don to confirm with Bittinger's Video Notebook; to undo, drop its call in
+    ``_tidy``)."""
+    return _RADICAL_I.sub(lambda m: "i " + m.group(1), text)
+
+
+def dot_between_radicals(text: str) -> str:
+    """``sqrt(-1) sqrt(108)`` is ``sqrt(-1)*sqrt(108)``: two roots side by side get a dot."""
+    return _RADICAL_RADICAL.sub(lambda m: m.group(1) + "*", text)
 
 
 def _tidy(text: str) -> str:
-    """Drop the ``*`` the checker's printer puts between a number or letter and a letter or
-    bracket (``8*x`` -> ``8x``), so it is shown the way a textbook writes it."""
-    return _STAR.sub("", text)
+    """The keyboard text as a textbook writes it: no ``*`` between a number or letter and a letter
+    or bracket (``8*x`` is ``8x``), no leading 1, the ``i`` before a radical, a dot between two
+    radicals. Every step and answer on screen goes through here."""
+    text = _STAR.sub("", i_before_radical(drop_unit_coefficient(text)))
+    return dot_between_radicals(text)
 
 
 def kb_math_html(text: str) -> str:
