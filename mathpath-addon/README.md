@@ -33,7 +33,7 @@ ln -s /home/don/dev/Recall-drill/mathpath-addon ~/.local/share/Anki2/addons21/ma
 
 The folder name must differ from the manifest package `math_path` on Windows (`math_path_dev`). **Never install a `.ankiaddon` over a linked folder**: Anki empties the target folder first, and through a link that deletes the repo's files. Remove the link first (`rmdir` on Windows, `rm` on Linux; never `del /s`). Fully close and reopen Anki after `git pull`.
 
-Checks: `cd mathpath-addon`, then (once) `uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python -r requirements-dev.txt`, then `.venv/bin/python -m pytest tests -q`, `.venv/bin/ruff check .` and `.venv/bin/pyright`. The Qt and browser tests need `aqt` (installed with the dev requirements; on Linux `libegl1`) and Chromium (`playwright install chromium`); they skip themselves when those are missing. `python build.py` writes `dist/math_path-0.1.0.ankiaddon`.
+Checks: `cd mathpath-addon`, then (once) `uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python -r requirements-dev.txt`, then `.venv/bin/python -m pytest tests -q`, `.venv/bin/ruff check .` and `.venv/bin/pyright`. The Qt and browser tests need `aqt` (installed with the dev requirements; on Linux `libegl1`) and Chromium (`playwright install chromium`); they skip themselves when those are missing. `python build.py` writes `dist/math_path-0.1.1.ankiaddon`.
 
 ## The note contract (for the skill, which can add recipe notes itself later)
 

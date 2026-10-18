@@ -21,13 +21,13 @@ def test_manifest_matches_package() -> None:
     manifest = json.loads((ADDON_ROOT / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["package"] == "math_path"
     assert manifest["name"] == "Math Path"
-    assert manifest["human_version"] == math_path.__version__ == "0.1.0"
+    assert manifest["human_version"] == math_path.__version__ == "0.1.1"
     # Anki's int_version(): YYMMPP. 26.08.1 -> 260801.
     assert manifest["min_point_version"] == 260801
 
 
 def test_the_entry_file_declares_the_same_version_as_the_package() -> None:
-    assert math_path.VERSION == "0.1.0"
+    assert math_path.VERSION == "0.1.1"
     entry = (ADDON_ROOT / "__init__.py").read_text(encoding="utf-8")
     assert "register(__name__" in entry
 
