@@ -31,7 +31,7 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def test_file_name_and_exact_file_list(built: Path) -> None:
-    assert built.name == f"math_path-{math_path.VERSION}.ankiaddon" == "math_path-0.1.0.ankiaddon"
+    assert built.name == f"math_path-{math_path.VERSION}.ankiaddon" == "math_path-0.1.1.ankiaddon"
     expected = (
         TOP_LEVEL
         | {
@@ -58,7 +58,7 @@ def test_manifest(built: Path) -> None:
     assert meta["package"] == "math_path"
     assert meta["name"] == "Math Path"
     assert meta["min_point_version"] == 260801
-    assert meta["human_version"] == math_path.VERSION == "0.1.0"
+    assert meta["human_version"] == math_path.VERSION == "0.1.1"
     assert isinstance(meta["mod"], int) and meta["mod"] > 1_700_000_000
     assert set(meta) == {"package", "name", "min_point_version", "human_version", "mod"}
 

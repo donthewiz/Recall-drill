@@ -38,6 +38,16 @@ hands off with handoff B.
   `_answerCard(ease)`, only when `mw.reviewer.card.id` is the card (`ui/review_bridge.py`).
 - **The `webview_did_receive_js_message` filter** sees every web view's messages: pass on
   anything that isn't Math Path's own, unchanged.
+- **The stub Qt web view never gets real focus** (no QtWebEngine offscreen), so typing and focus
+  work is tested in real Chromium with the `expose_function("__py", ...)` round-trip harness in
+  `tests/ui/test_typing.py` (`Trip`): an async `pycmd` into `LearnSession.command`, then the
+  redraw the window would send. Test at 0 and 30 ms between keys; wait for the *condition* (a
+  recorded `mp:field:` message, a field in the page), never a sleep.
+- **Palette keys and the caret (#9/#11):** palette buttons never take the focus (`mousedown`
+  is prevented); `press()` inserts into the field that last had it, or the first field, with
+  `{focus: true}`. Clicking √ then typing at once keeps the digits inside the root (tested), so no
+  caret fix is needed. A focused MathLive field must never be detached from the page in a redraw
+  (it drops the next ~60 ms of keys): that is what `morphAround` is for.
 - **Speed:** `math_path/fastgen.py` pre-filters numbers before any SymPy call;
   `tests/engine/test_speed.py` guards it. Keep problem generation well under a second.
 
