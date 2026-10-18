@@ -10,8 +10,9 @@ finishing rates nothing.
 What happened                                      Rating
 =================================================  ======
 right on the first try, no help                    Good
-right after a wrong try, or after Hint/Why only    Hard
-Show step or Show answer used, or gave up          Again
+right after Hint/Why only (no wrong try)           Hard
+a wrong try (even if then fixed), Show step or
+Show answer used, or gave up                       Again
 =================================================  ======
 
 Easy is never picked automatically (it is one click away).
@@ -46,9 +47,9 @@ EFFECT_CLOSE = "close"
 
 def suggested_rating(run: ProblemRun) -> int:
     """The rating the table above gives a finished problem (never Easy)."""
-    if run.used_show or run.answer_shown:
+    if run.used_show or run.answer_shown or run.wrong_tries > 0:
         return AGAIN
-    if run.wrong_tries > 0 or run.rungs:
+    if run.rungs:
         return HARD
     return GOOD
 

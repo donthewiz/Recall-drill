@@ -152,16 +152,16 @@ def test_a_clean_solve_rates_good_and_the_reviewer_moves_on(env: Any) -> None:
     assert lines[-1]["mode"] == "review" and lines[-1]["rating"] == 3 and lines[-1]["rated"] is True
 
 
-def test_a_wrong_try_rates_hard_and_the_chips_change_it(env: Any) -> None:
+def test_a_wrong_try_rates_again_and_the_chips_change_it(env: Any) -> None:
     w = _show(env)
     _solve(w, right_first=False)
-    assert w.session.suggested == 2 and w.session.rating == 2
+    assert w.session.suggested == 1 and w.session.rating == 1
     w.web.bridge("mp:act:rate:4")
     assert "Next (Easy)" in w.web.last_render()["html"]
     w.web.bridge("mp:act:next")
     assert _revlog(env) == [(int(_card(env).id), 4)]
     lines = env.ctx.storage().read_jsonl("history.jsonl")
-    assert lines[-1]["suggested"] == 2 and lines[-1]["rating"] == 4
+    assert lines[-1]["suggested"] == 1 and lines[-1]["rating"] == 4
 
 
 def test_a_shown_answer_rates_again(env: Any) -> None:

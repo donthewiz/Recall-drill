@@ -54,11 +54,11 @@ def test_the_review_screens(make_page, night: bool) -> None:  # type: ignore[no-
     draw(page, s, night)
     text = page.text()
     assert "Right after a wrong try." in text
-    assert "Math Path picked Hard for Anki" in text
+    assert "Math Path picked Again for Anki" in text
     pills = page.page.locator(".mp-rating .mp-pill")
     assert [pills.nth(i).inner_text() for i in range(4)] == ["Again", "Hard", "Good", "Easy"]
-    assert page.page.locator(".mp-rating .mp-pill.on").inner_text() == "Hard"
-    assert "Next (Hard)" in text and "Worked solution" in text
+    assert page.page.locator(".mp-rating .mp-pill.on").inner_text() == "Again"
+    assert "Next (Again)" in text and "Worked solution" in text
     assert page.page.locator("math-field").count() == 0
     if SHOTS is not None:
         page.screenshot(SHOTS / f"review_done_{'dark' if night else 'light'}.png")
