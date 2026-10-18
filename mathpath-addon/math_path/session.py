@@ -93,11 +93,19 @@ def pick_for_session(
     n = cfg.problems_per_session if limit is None else limit
     pool = [
         note
-        for note in sorted(section_notes, key=lambda x: x.nid)
+        for note in section_notes
         if note.recipe is not None
         and not is_learned(note, progress)
         and not locked_by(note, all_notes, progress, cfg)
     ]
+    return learn_order(pool, n)
+
+
+def learn_order(notes: Sequence[RecipeNote], limit: int | None = None) -> list[RecipeNote]:
+    """``notes`` in the order a learn session takes them: prerequisites first (among these
+    notes), then priority, then note order (the map shows a section's chips in this order too)."""
+    n = len(notes) if limit is None else limit
+    pool = sorted(notes, key=lambda x: x.nid)
     ids = {x.recipe_id for x in pool}
     ordered: list[RecipeNote] = []
     done: set[str] = set()

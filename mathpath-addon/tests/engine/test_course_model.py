@@ -168,3 +168,23 @@ def test_unhanded_lists_learned_notes_that_never_reached_anki() -> None:
         3: NoteProgress(stage=LEARNED),
     }
     assert [n.nid for n in unhanded([a, b, c], progress)] == [1]
+
+
+def test_the_chips_follow_the_learn_order_not_the_import_order() -> None:
+    # imported b (needs a), then a: a learn session takes a first
+    b, a = note("x.b", 1, ["x.a"]), note("x.a", 2)
+    cs = course([section(10, "3.1", [b, a])])
+    row = build_map(cs, {}, Config()).rows[0]
+    assert [chip.nid for chip in row.chips] == [2, 1]
+    # a learned note keeps its place in the order
+    row = build_map(cs, {2: NoteProgress(stage=LEARNED)}, Config()).rows[0]
+    assert [chip.nid for chip in row.chips] == [2, 1]
+    assert row.chips[0].kind == "learned"
+
+
+def test_the_chip_order_is_the_order_a_session_takes_them() -> None:
+    notes = [note("x.b", 1, ["x.a"]), note("x.c", 2), note("x.a", 3)]
+    cs = course([section(10, "3.1", notes)])
+    row = build_map(cs, {}, Config(prereq_lock=False)).rows[0]
+    picked = session_notes(cs.sections[0], cs, {}, Config(problems_per_session=9, prereq_lock=False))
+    assert [c.nid for c in row.chips] == [n.nid for n in picked] == [2, 3, 1]
