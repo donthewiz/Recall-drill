@@ -8,7 +8,7 @@ It is separate from **Recall Drill** (`../anki-addon/`) and works without it.
 
 1. **Recipes become Anki notes.** The *anki-math-cards* skill writes one JSON recipe per problem type (`docs/recipe-format.md`). **Tools → Math Path → Import recipes…** turns a folder of them into **suspended** notes in each section's deck.
 2. **A learn session** takes up to 3 recipes from a section (**Learn** on the progress map's row, or **Learn next**) and runs each through **Study → Faded → Plan → Solo**, one problem per turn, interleaved so solos are spaced. At the end the recipes that reached Learned are **handed to Anki** (unsuspended, front of the new queue, buried until tomorrow).
-3. **Reviews open Math Path.** When Anki's reviewer shows a Math Path card, the Math Path window opens with one fresh problem. When you finish it rates the card from how it went (Good / Hard / Again, Easy is yours to pick) and the reviewer moves on.
+3. **Reviews open Math Path.** When Anki's reviewer shows a Math Path card, the Math Path window opens with one fresh problem. When you finish it rates the card from how it went (Good / Hard / Again, Easy is yours to pick; a wrong try, even one you then fix, is Again) and the reviewer moves on.
 4. **The progress map** (Tools → Math Path → Progress…) has one row per section: Recall Drill cards drilled, and a chip per recipe with its stage.
 
 You work problems on paper; the window checks what you type. Math goes in with a **click palette** (fraction, power, root, ±, brackets, ∪, …): no keyboard shortcut is ever needed for a symbol. Letters and digits come from the keyboard.

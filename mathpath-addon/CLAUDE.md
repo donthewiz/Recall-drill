@@ -8,7 +8,7 @@ format is `docs/recipe-format.md` (a copy of the anki-math-cards plugin's refere
 A separate add-on (package `math_path`) that teaches problem types from the
 anki-math-cards skill's JSON **recipes**: a learn session (Study → Faded → Plan → Solo),
 then Anki reviews, where each review opens one fresh problem and rates the card by how it
-went (no help = Good, hint or wrong try = Hard, shown step = Again). It imports nothing from
+went (no help = Good, hint only = Hard, a wrong try or a shown step = Again). It imports nothing from
 Recall Drill. Anki is the only scheduler: Math Path never sets a due date or interval, and
 hands off with handoff B.
 

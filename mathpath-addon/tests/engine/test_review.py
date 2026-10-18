@@ -77,7 +77,15 @@ def test_the_rating_table() -> None:
     after_wrong.check_answer()
     type_answer(after_wrong)
     after_wrong.check_answer()
-    assert suggested_rating(after_wrong) == HARD
+    assert suggested_rating(after_wrong) == AGAIN
+
+    wrong_and_hint = run()
+    wrong_and_hint.use_help("hint")
+    type_answer(wrong_and_hint, right=False)
+    wrong_and_hint.check_answer()
+    type_answer(wrong_and_hint)
+    wrong_and_hint.check_answer()
+    assert suggested_rating(wrong_and_hint) == AGAIN
 
     for rungs in (["hint"], ["hint", "why"]):
         helped = run()
@@ -178,14 +186,14 @@ def test_finishing_picks_the_rating_and_next_applies_it() -> None:
     assert cmd(s, "act", "next") == EFFECT_RATE
 
 
-def test_a_wrong_try_then_right_suggests_hard_and_the_chips_change_it() -> None:
+def test_a_wrong_try_then_right_suggests_again_and_the_chips_change_it() -> None:
     s, _h = review()
     wrong(s)
     assert s.screen == RUN and s.run is not None and s.run.wrong_tries == 1
     right(s)
-    assert s.screen == DONE and (s.suggested, s.rating) == (HARD, HARD)
+    assert s.screen == DONE and (s.suggested, s.rating) == (AGAIN, AGAIN)
     assert cmd(s, "act", "rate", str(EASY)) == EFFECT_NONE
-    assert s.rating == EASY and s.suggested == HARD
+    assert s.rating == EASY and s.suggested == AGAIN
     cmd(s, "act", "rate", "7")  # not a rating
     cmd(s, "act", "rate", "x")
     assert s.rating == EASY
@@ -232,7 +240,7 @@ def test_the_choice_buttons_work_in_a_review() -> None:
     cmd(s, "act", "choose", "all_reals")
     assert s.screen == RUN and s.run is not None and s.run.wrong_tries == 1
     cmd(s, "act", "choose", "none")
-    assert s.screen == DONE and s.suggested == HARD
+    assert s.screen == DONE and s.suggested == AGAIN
 
 
 def test_close_asks_the_window_to_close() -> None:
@@ -253,7 +261,7 @@ def test_the_history_row_has_the_seed_the_typing_the_help_and_the_rating() -> No
     assert line["type"] == "problem" and line["mode"] == "review" and line["stage"] == "solo"
     assert line["nid"] == 100 and line["cid"] == 4242 and line["recipe"] == FACTORING.id
     assert line["version"] == 1 and line["seed"] == s.run.problem.seed
-    assert line["help"] == ["hint:0"] and line["suggested"] == HARD and line["rating"] == GOOD
+    assert line["help"] == ["hint:0"] and line["suggested"] == AGAIN and line["rating"] == GOOD
     assert line["rated"] is True and [e["ok"] for e in line["typed"]] == [False, True]
     s.log()
     s.applied_rating(True)

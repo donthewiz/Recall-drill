@@ -72,7 +72,7 @@ The click palette gives MathLive's LaTeX. Recall Drill's reader (`latex_to_keybo
 **Reviews**
 - One history line per finished problem, written at Next or when the window closes.
 - If the reviewer has moved on while the window was open, nothing is rated and the window says so.
-- Rating suggestion: Again if the answer or a step was shown, Hard after a wrong try or a hint, Good otherwise. **Easy is never automatic.**
+- Rating suggestion: Again if the answer or a step was shown or there was any wrong try (even if then fixed), Hard after a hint/why only, Good otherwise. **Easy is never automatic.** *Don, 2026-10-17: a wrong try that is then fixed is Again; this supersedes the first version, where a wrong try was Hard.*
 
 **The progress map**
 - Recall counts include `rd::drill::*` children. The amber line before Learn is a question (Learn anyway / Cancel), never a lock.
