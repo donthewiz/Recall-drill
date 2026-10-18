@@ -573,3 +573,35 @@ def test_the_progress_window_with_no_notes_offers_the_import(env: Any, tmp_path:
     assert "No Math Path notes yet" in w.web.last_render()["html"]
     w.web.bridge("mp:act:refresh")
     w.close()
+
+
+def test_a_focus_that_changes_nothing_sends_nothing_and_an_act_redraws_in_full(
+    env: Any, tmp_path: Path
+) -> None:
+    import json
+
+    _course(env, tmp_path)
+    w = _open_next(env, _learn_ctx(tmp_path))
+    n = len(w.web.evals)
+    w.web.bridge("mp:focus:nothing")
+    w.web.bridge("mp:text:nothing:x")
+    assert len(w.web.evals) == n
+    w.web.bridge("mp:act:next")  # an act is always a full redraw
+    assert len(w.web.evals) == n + 1
+    assert json.loads(w.web.evals[-1][len("mp.render(") : -2])["keep"] is False
+
+
+def test_a_field_message_that_changes_the_html_sends_a_keep_redraw(
+    env: Any, tmp_path: Path
+) -> None:
+    from math_path import pages
+
+    _course(env, tmp_path)
+    w = _open_next(env, _learn_ctx(tmp_path))
+    base = w.page_view().html
+    w.page_view = lambda: pages.PageView(base + "<i></i>")  # the field message changes the screen
+    n = len(w.web.evals)
+    w.web.bridge("mp:field:ans:x")
+    assert len(w.web.evals) == n + 1 and '"keep": true' in w.web.evals[-1]
+    w.web.bridge("mp:field:ans:xy")  # now unchanged: nothing is sent
+    assert len(w.web.evals) == n + 1

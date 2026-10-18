@@ -131,9 +131,86 @@
     }
   }
 
+  // Put the new screen in place without ever taking `el` (the focused field) out of the page:
+  // walk from the root down to it, and at each level swap in the new siblings around the one node
+  // on the path. False when the new screen has no element in the same place (then rebuild).
+  function morphAround(el, html) {
+    var tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    var id = el.getAttribute("data-id");
+    var twin = tpl.content.querySelector('[data-id="' + id + '"]');
+    if (!twin || twin.tagName !== el.tagName) {
+      return false;
+    }
+    var livePath = [];
+    var newPath = [];
+    for (var a = el; a && a !== root; a = a.parentNode) livePath.unshift(a);
+    for (var b = twin; b && b !== tpl.content; b = b.parentNode) newPath.unshift(b);
+    if (livePath.length !== newPath.length) {
+      return false;
+    }
+    for (var d = 0; d < livePath.length; d++) {
+      if (livePath[d].tagName !== newPath[d].tagName) {
+        return false;
+      }
+    }
+    var liveParent = root;
+    var newParent = tpl.content;
+    for (var i = 0; i < livePath.length; i++) {
+      var keep = livePath[i];
+      var repl = newPath[i];
+      // everything in liveParent except `keep` is replaced by repl's siblings, in order
+      var before = [];
+      var after = [];
+      var seen = false;
+      var kids = Array.prototype.slice.call(newParent.childNodes);
+      for (var k = 0; k < kids.length; k++) {
+        if (kids[k] === repl) { seen = true; continue; }
+        (seen ? after : before).push(kids[k]);
+      }
+      var old = Array.prototype.slice.call(liveParent.childNodes);
+      for (var o = 0; o < old.length; o++) {
+        if (old[o] !== keep) liveParent.removeChild(old[o]);
+      }
+      for (var x = 0; x < before.length; x++) liveParent.insertBefore(before[x], keep);
+      for (var y = 0; y < after.length; y++) liveParent.appendChild(after[y]);
+      if (i < livePath.length - 1) {
+        // sync the kept ancestor's attributes with the new one
+        var at;
+        for (at = keep.attributes.length - 1; at >= 0; at--) {
+          var n = keep.attributes[at].name;
+          if (!repl.hasAttribute(n)) keep.removeAttribute(n);
+        }
+        for (at = 0; at < repl.attributes.length; at++) {
+          keep.setAttribute(repl.attributes[at].name, repl.attributes[at].value);
+        }
+      }
+      liveParent = keep;
+      newParent = repl;
+    }
+    if (el.tagName === "INPUT") {
+      el.className = twin.className;
+      el.readOnly = twin.hasAttribute("readonly");
+    }
+    return true;
+  }
+
+  // v.keep: a redraw after a focus/field/text message. The live fields and text boxes stay the
+  // same elements (their value, caret and listeners survive); Python's copy of their value may be
+  // a keystroke behind, so it is not written back. The field that had the focus gets it back
+  // synchronously, before any key event can arrive.
   function render(v) {
     if (!root) {
       root = document.getElementById("mp-root");
+    }
+    var kept = {};
+    var had = "";
+    if (v.keep) {
+      had = currentId();
+      var live = root.querySelectorAll("math-field[data-id], input[data-id]");
+      for (var k = 0; k < live.length; k++) {
+        kept[live[k].getAttribute("data-id")] = live[k];
+      }
     }
     var oldMain = root.querySelector(".mp-main");
     var y = oldMain ? oldMain.scrollTop : 0;
@@ -142,16 +219,41 @@
       readonly[id] = true;
     });
     document.documentElement.classList.toggle("night-mode", !!v.night);
-    root.innerHTML = v.html;
+    var pinned = v.keep && had && kept[had] ? kept[had] : null;
+    if (!pinned || !morphAround(pinned, v.html)) {
+      root.innerHTML = v.html;
+    }
     var fields = v.fields || {};
     var mfs = root.querySelectorAll("math-field");
     for (var i = 0; i < mfs.length; i++) {
-      wireField(mfs[i], fields[mfs[i].getAttribute("data-id")] || "");
+      var mid = mfs[i].getAttribute("data-id");
+      var oldMf = kept[mid];
+      if (oldMf && oldMf.tagName === "MATH-FIELD") {
+        if (mfs[i] !== oldMf) mfs[i].replaceWith(oldMf);
+        oldMf.readOnly = !!readonly[mid];
+      } else {
+        delete kept[mid];
+        wireField(mfs[i], fields[mid] || "");
+      }
+    }
+    var ins = root.querySelectorAll("input[data-id]");
+    for (var j = 0; j < ins.length; j++) {
+      var iid = ins[j].getAttribute("data-id");
+      var oldIn = kept[iid];
+      if (oldIn && oldIn.tagName === "INPUT") {
+        if (ins[j] !== oldIn) {
+          oldIn.className = ins[j].className;
+          oldIn.readOnly = ins[j].hasAttribute("readonly");
+          ins[j].replaceWith(oldIn);
+        }
+      } else {
+        delete kept[iid];
+      }
     }
     var texts = v.texts || {};
     Object.keys(texts).forEach(function (id) {
       var el = textEl(id);
-      if (el && "value" in el) {
+      if (el && "value" in el && !kept[id]) {
         el.value = texts[id];
       }
     });
@@ -159,6 +261,13 @@
     var newMain = root.querySelector(".mp-main");
     if (newMain) {
       newMain.scrollTop = y;
+    }
+    if (v.keep) {
+      var back = had ? fieldEl(had) || textEl(had) : null;
+      if (back && currentId() !== had) {
+        back.focus();
+      }
+      return;
     }
     var want = v.focus || active;
     if (want && (fieldEl(want) || textEl(want))) {

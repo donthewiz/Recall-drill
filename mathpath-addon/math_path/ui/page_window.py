@@ -36,6 +36,7 @@ class PageWindow(QDialog):
         super().__init__(_parent(parent))
         self.ctx = ctx
         self._closing = False
+        self._shown: pages.Shown | None = None
         self.setWindowTitle(title)
         self.setProperty("mpWindow", True)
         disable_help_button(self)
@@ -70,18 +71,21 @@ class PageWindow(QDialog):
     def night(self) -> bool:
         return bool(theme_manager.night_mode)
 
-    def redraw(self) -> None:
+    def redraw(self, keep: bool = False) -> None:
+        """Draw the whole screen. ``keep`` (after a focus, field or text message) leaves the live
+        fields in the page and sends nothing when the screen is unchanged."""
         if self._closing:
             return
-        view = self.page_view()
-        self.web.eval(pages.render_call(view))
+        js, self._shown = pages.redraw_call(self.page_view(), keep, self._shown)
+        if js is not None:
+            self.web.eval(js)
 
     def _on_bridge(self, cmd: str) -> Any:
         parsed = pages.parse_command(cmd)
         if parsed is None or self._closing:
             return None
         self.on_command(parsed)
-        self.redraw()
+        self.redraw(keep=parsed.kind in pages.KEEP_KINDS)
         return None
 
     # -- closing ----------------------------------------------------------------------

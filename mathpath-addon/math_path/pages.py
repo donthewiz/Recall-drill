@@ -68,8 +68,14 @@ class PageView:
     night: bool = False
 
 
-def render_call(view: PageView) -> str:
-    """The JS that draws ``view``."""
+KEEP_KINDS: tuple[str, ...] = ("focus", "field", "text")
+"""Commands that only change state: the page already shows what was typed, so the redraw that
+follows is a *keep* redraw (the live fields stay in the page; ``mp.render`` in ``mp_page.js``)."""
+
+
+def render_call(view: PageView, keep: bool = False) -> str:
+    """The JS that draws ``view``. ``keep``: leave the page's live fields and text boxes in place
+    (a redraw after a focus, field or text message) instead of rebuilding them."""
     payload = {
         "html": view.html,
         "fields": view.fields,
@@ -77,8 +83,25 @@ def render_call(view: PageView) -> str:
         "readonly": list(view.readonly),
         "focus": view.focus,
         "night": view.night,
+        "keep": keep,
     }
     return f"mp.render({json.dumps(payload)});"
+
+
+Shown = tuple[str, tuple[str, ...], bool]
+"""What the page shows: the HTML, the read-only fields and the night flag."""
+
+
+def redraw_call(view: PageView, keep: bool, last: Shown | None) -> tuple[str | None, Shown]:
+    """The JS for a redraw (None: send nothing) and what is shown afterwards.
+
+    A keep redraw of a screen that has not changed sends nothing: that is what ends the
+    ``focusin`` -> ``mp:focus`` -> redraw -> ``focusin`` loop. Every redraw that is sent updates
+    what is remembered as shown."""
+    shown: Shown = (view.html, view.readonly, view.night)
+    if keep and last == shown:
+        return None, shown
+    return render_call(view, keep), shown
 
 
 @dataclass(frozen=True)
