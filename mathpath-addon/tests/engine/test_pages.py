@@ -52,6 +52,7 @@ def test_render_call_is_a_json_payload() -> None:
         "readonly": ["s1"],
         "focus": "ans",
         "night": True,
+        "keep": False,
     }
 
 
