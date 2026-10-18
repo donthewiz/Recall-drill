@@ -3,7 +3,7 @@
 html, body { margin: 0; padding: 0; background: var(--mp-window); color: var(--mp-text);
   font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
 html, body { height: 100%; overflow: hidden; }
-#mp-root { height: 100vh; display: flex; flex-direction: column; }
+#mp-root { position: fixed; inset: 0; display: flex; flex-direction: column; }
 * { box-sizing: border-box; }
 .mp-strong { color: var(--mp-strong); font-weight: 600; }
 .mp-muted { color: var(--mp-muted); }
@@ -23,9 +23,9 @@ mjx-container { color: inherit; }
   text-overflow: ellipsis; white-space: nowrap; }
 .mp-sub { color: var(--mp-muted); font-size: 12px; }
 .mp-spacer { flex: 1 1 auto; }
-.mp-main { --mp-side: max(16px, calc((100% - 980px) / 2)); padding: 14px var(--mp-side) 16px;
+.mp-main { --mp-side: max(16px, calc((100% - 980px) / 2)); padding: 14px var(--mp-side) 28px;
   display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; min-height: 0;
-  overflow-y: auto; }
+  overflow-y: auto; scroll-padding-bottom: 24px; }
 .mp-main > * { flex: none; }
 
 /* chips, dots, pills */
