@@ -18,7 +18,7 @@ from recipe_files import CH03, load
 
 from math_path import pages
 from math_path.pages import PageView
-from math_path.progress import FADED, PLAN, NoteProgress
+from math_path.progress import FADED, PLAN, SOLO, NoteProgress
 from math_path.session import RESULT, LearnSession
 from math_path.views import learn_view
 
@@ -253,3 +253,26 @@ def test_a_whole_faded_problem_through_the_round_trip(make_page, tmp_path: Path)
     t.page.page.click('[data-act="next"]')
     t.wait()
     assert t.s.screen != RESULT
+
+
+@pytest.mark.parametrize("focus_first", [True, False], ids=["field-focused", "nothing-focused"])
+@pytest.mark.parametrize("delay", DELAYS)
+@pytest.mark.parametrize("stage", [FADED, SOLO])
+def test_the_sqrt_key_keeps_the_digits_inside_the_root(  # type: ignore[no-untyped-def]
+    make_page, tmp_path: Path, stage: str, delay: int, focus_first: bool
+) -> None:
+    """Click the root key and type straight away (no wait): the digits go inside the root (the
+    recording of the first real Anki check showed them right of an empty box)."""
+    t = trip(make_page, tmp_path, stage)
+    if focus_first:
+        t.click_field("ans")
+    # the key goes to the field that last had the focus, else to the page's first field
+    target = t.active() or str(
+        t.page.page.evaluate("document.querySelector('math-field').getAttribute('data-id')")
+    )
+    t.page.page.click("#mp-pad-sqrt")
+    t.page.page.keyboard.type("108", delay=delay)
+    t.wait()
+    assert t.value(target) == "\\sqrt{108}"
+    assert t.active() == target
+    assert t.s.run is not None and t.s.run.fields[target] == "\\sqrt{108}"
