@@ -186,5 +186,6 @@ def test_the_chip_order_is_the_order_a_session_takes_them() -> None:
     notes = [note("x.b", 1, ["x.a"]), note("x.c", 2), note("x.a", 3)]
     cs = course([section(10, "3.1", notes)])
     row = build_map(cs, {}, Config(prereq_lock=False)).rows[0]
-    picked = session_notes(cs.sections[0], cs, {}, Config(problems_per_session=9, prereq_lock=False))
+    cfg = Config(problems_per_session=9, prereq_lock=False)
+    picked = session_notes(cs.sections[0], cs, {}, cfg)
     assert [c.nid for c in row.chips] == [n.nid for n in picked] == [2, 3, 1]
