@@ -392,6 +392,10 @@ def check_step_typed(problem: Problem, index: int, latex: str) -> StepVerdict:
     return check_step_keyboard(problem, index, typed)
 
 
+def _count_pieces(text: str) -> int:
+    return sum(1 for p in text.split(";") if p.strip())
+
+
 def check_step_keyboard(problem: Problem, index: int, typed: str) -> StepVerdict:
     core = loader.load()
     step = problem.recipe.steps[index]
@@ -399,6 +403,8 @@ def check_step_keyboard(problem: Problem, index: int, typed: str) -> StepVerdict
         return StepVerdict(True)
     if step.check == "each":
         typed = commas_between_equations(typed)
+        if _count_pieces(typed) < _count_pieces(problem.steps[index].result):
+            return StepVerdict(False)  # the factored equation again is not "each factor = 0"
     elif step.check == "solutions":
         var = step.raw.get("var", _var(problem))
         typed = drop_var_labels(typed, var if isinstance(var, str) and var else _var(problem))

@@ -76,3 +76,35 @@ def test_labels_change_nothing_else() -> None:
     assert grading.commas_between_equations("[1, 2)") == "[1, 2)"
     assert grading.commas_between_equations("x+1=0, x-2=0") == "x+1=0; x-2=0"
     assert grading.commas_between_equations("x+1=0, 3") == "x+1=0, 3"
+
+
+@pytest.mark.parametrize("recipe", EACH, ids=ids(EACH))
+def test_an_each_step_needs_one_equation_per_piece(recipe: Recipe) -> None:
+    for problem in problems(recipe, 5):
+        for step in problem.steps:
+            if step.check != "each" or not step.blankable:
+                continue
+            pieces = [p.strip() for p in step.result.split(";")]
+            if len(pieces) < 2:
+                continue
+            for typed in ("; ".join(pieces), ", ".join(pieces), "; ".join(reversed(pieces))):
+                assert grading.check_step_keyboard(problem, step.index, typed).ok, typed
+                assert grading.check_step_typed(problem, step.index, tex_of(typed)).ok, typed
+            # retyping the equation the step starts from is not one equation per piece
+            prev = problem.steps[step.index - 1].result if step.index else ""
+            if prev and prev.count("=") == 1 and ";" not in prev:
+                assert not grading.check_step_keyboard(problem, step.index, prev).ok, (
+                    recipe.id,
+                    prev,
+                )
+                assert not grading.check_step_typed(problem, step.index, tex_of(prev)).ok
+
+
+def test_the_factored_equation_is_not_the_each_step() -> None:
+    recipe = load(CH03 / "ca.quad.solve_factoring.json")
+    each = next(i for i, s in enumerate(recipe.steps) if s.check == "each")
+    problem = problems(recipe, 1)[0]
+    step = problem.steps[each]
+    factored = problem.steps[each - 1].result
+    assert "(" in factored and not grading.check_step_keyboard(problem, each, factored).ok
+    assert grading.check_step_keyboard(problem, each, step.result).ok
