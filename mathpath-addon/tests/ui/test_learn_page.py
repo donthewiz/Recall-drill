@@ -243,7 +243,10 @@ def test_a_redraw_keeps_what_was_typed_and_the_focus(make_page, tmp_path: Path) 
         timeout=5000,
     )
     page.page.keyboard.type("ab")
-    page.page.wait_for_function("mp.fieldValue('s1') === 'ab'", timeout=5000)
+    # The field's value changes before its `input` event reaches pycmd, so wait for the message
+    # the loop below needs (the last keystroke's), not for the value: copying the commands earlier
+    # fed Python "a", and the redraw then showed "a" (the race, seen under load).
+    page.page.wait_for_function("window.__cmds.includes('mp:field:s1:ab')", timeout=5000)
     for c in page.cmds():  # the window feeds every field message back into the session
         if c.startswith("mp:field:") or c.startswith("mp:focus:"):
             from math_path.pages import parse_command
@@ -252,6 +255,7 @@ def test_a_redraw_keeps_what_was_typed_and_the_focus(make_page, tmp_path: Path) 
             assert cmd is not None
             s.command(cmd)
     draw(page, s)
+    page.page.wait_for_selector('math-field[data-id="s1"]', timeout=5000)  # the redrawn field
     page.page.wait_for_function("mp.fieldValue('s1') === 'ab'", timeout=5000)
     page.page.wait_for_function(
         "document.activeElement && document.activeElement.getAttribute('data-id') === 's1'",
