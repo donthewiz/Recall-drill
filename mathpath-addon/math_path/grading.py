@@ -72,6 +72,8 @@ class AnswerVerdict:
     unreadable: str = ""
     """Why the input couldn't be read at all (an unfinished fraction...). Not a wrong try."""
     graph_problems: tuple[str, ...] = field(default=())
+    partial: str = ""
+    """For a list answer with some pieces right: how many, without giving any away."""
 
     @property
     def counts_as_try(self) -> bool:
@@ -87,6 +89,8 @@ class AnswerVerdict:
             return "Right value, but " + "; ".join(self.forms) + "."
         if self.graph_problems:
             return "Not right yet: " + " ".join(self.graph_problems)
+        if self.partial:
+            return "Not right yet: " + self.partial
         return "Not right yet."
 
 
@@ -220,7 +224,38 @@ def _verdict(
         return AnswerVerdict(True, True)
     broken: set[str] = _broken_forms(problem, typed) if value_ok else set[str]()
     mistake = _find_mistake(problem, typed, obj, value_ok, broken)
-    return AnswerVerdict(False, value_ok, forms, mistake)
+    partial = "" if value_ok else _partial_words(problem, obj)
+    return AnswerVerdict(False, value_ok, forms, mistake, partial=partial)
+
+
+def _partial_words(problem: Problem, obj: Any) -> str:
+    """How many typed values of a list answer are right (2026-10-18). Empty unless the answer
+    has several values, the typed text reads as a set and at least one of its pieces is right.
+    It is only words: ok, ``value_ok`` and the try count come from the checker, unchanged."""
+    recipe = problem.recipe
+    truth = problem.truth
+    if recipe.kind != "list" or not isinstance(obj, (set, frozenset)):
+        return ""
+    if not isinstance(truth, (set, frozenset)) or len(cast(Any, truth)) < 2:
+        return ""
+    core = loader.load()
+    typed_vals = list(cast(Any, obj))
+    try:
+        right = sum(
+            1 for v in typed_vals if any(core.verify.same_value(v, t) for t in cast(Any, truth))
+        )
+    except Exception:  # noqa: BLE001 (a value the checker can't compare is just not counted)
+        return ""
+    total = len(cast(Any, truth))
+    if right == 0 or right >= total and right == len(typed_vals):
+        return ""
+    wrong = len(typed_vals) - right
+    if wrong == 0:
+        more = total - right
+        rest = "there is another" if more == 1 else f"there are {more} more"
+        return f"you have {right} of {total} solutions; {rest}."
+    verb = "is" if right == 1 else "are"
+    return f"{right} of your {len(typed_vals)} values {verb} right."
 
 
 def _broken_forms(problem: Problem, typed: str) -> set[str]:
