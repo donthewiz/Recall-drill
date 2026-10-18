@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from .config import Config
 from .notes import RecipeNote
 from .progress import LEARNED, STAGE_LABELS, NoteProgress
-from .session import is_learned, locked_by, pick_for_session
+from .session import is_learned, learn_order, locked_by, pick_for_session
 
 
 def natural_key(name: str) -> list[tuple[int, int, str]]:
@@ -132,7 +132,7 @@ def build_map(course: CourseData, progress: Mapping[int, NoteProgress], cfg: Con
     rows: list[RowModel] = []
     next_taken = False
     for section in course.sections:
-        chips = tuple(chip_for(n, course, progress, cfg) for n in section.notes)
+        chips = tuple(chip_for(n, course, progress, cfg) for n in learn_order(section.notes))
         can_learn = any(c.learnable for c in chips)
         is_next = can_learn and not next_taken
         next_taken = next_taken or is_next
