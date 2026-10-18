@@ -142,6 +142,9 @@ def test_focusing_a_field_does_not_start_a_loop(make_page, tmp_path: Path) -> No
 def test_a_correction_after_a_wrong_step_check_keeps_every_key(  # type: ignore[no-untyped-def]
     make_page, tmp_path: Path, delay: int
 ) -> None:
+    """After a wrong check the red note is on screen; click back into the field, select what is
+    typed and type the correction over the selection at once (no Backspace, no wait). The focus
+    and field messages and the redraws they cause race with these keys: every key must land."""
     t = trip(make_page, tmp_path, FADED)
     t.click_field("s2")
     t.type("x=1", 0)
@@ -149,14 +152,14 @@ def test_a_correction_after_a_wrong_step_check_keeps_every_key(  # type: ignore[
     t.wait()
     assert "Not right yet." in t.page.text()
     assert "mp:act:check_step:2" in t.log
-    t.click_field("s2")
+    t.page.page.click('math-field[data-id="s2"]')
     t.page.page.keyboard.press("Control+A")
-    t.page.page.keyboard.press("Backspace")
+    t.page.page.keyboard.type("2x+3=0;x+6=0", delay=delay)
     t.wait()
-    t.type("2x+3=0;x+6=0", delay)
     assert t.value("s2") == "2x+3=0;x+6=0"
     assert "Not right yet." not in t.page.text()
     assert t.active() == "s2"
+    assert t.s.run is not None and t.s.run.fields["s2"] == "2x+3=0;x+6=0"
 
 
 def test_the_palette_keys_all_land(make_page, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
