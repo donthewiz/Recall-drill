@@ -169,8 +169,8 @@ PALETTE: tuple[PadButton, ...] = (
     PadButton("inf", "∞", "Infinity", "symbols", "insert", "\\infty"),
     PadButton("cup", "∪", "Union", "symbols", "insert", "\\cup"),
     PadButton("lbracket", "[", "Left square bracket (closed end)", "brackets", "insert", "["),
-    PadButton("rparen", ")", "Right parenthesis (open end)", "brackets", "insert", ")"),
     PadButton("lparen", "(", "Left parenthesis (open end)", "brackets", "insert", "("),
+    PadButton("rparen", ")", "Right parenthesis (open end)", "brackets", "insert", ")"),
     PadButton("rbracket", "]", "Right square bracket (closed end)", "brackets", "insert", "]"),
     PadButton("comma", ",", "Comma", "brackets", "insert", ","),
     PadButton("backspace", "⌫", "Backspace", "edit", "command", "deleteBackward"),
@@ -178,7 +178,8 @@ PALETTE: tuple[PadButton, ...] = (
     PadButton("right", "→", "Move right", "edit", "command", "moveToNextChar"),
 )
 """The palette in reading order: structure, symbols, interval brackets, editing. The buttons and
-sizes of Recall Drill v0.6, plus a comma."""
+sizes of Recall Drill v0.6, plus a comma. The brackets read ``[ ( ) ]`` (Recall Drill has them
+``[ ) ( ]``, with no reason recorded for it; changed here 2026-10-18)."""
 
 
 def pad_html() -> str:

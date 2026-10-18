@@ -60,7 +60,7 @@ def test_the_palette_has_every_button_of_recall_drill_v06_and_a_comma() -> None:
     keys = [b.key for b in pages.PALETTE]
     assert keys == [
         "frac", "power", "sqrt", "parens", "abs", "pm", "le", "ge", "pi", "i", "inf", "cup",
-        "lbracket", "rparen", "lparen", "rbracket", "comma", "backspace", "left", "right",
+        "lbracket", "lparen", "rparen", "rbracket", "comma", "backspace", "left", "right",
     ]  # fmt: skip
     html = pages.pad_html()
     for key in keys:
