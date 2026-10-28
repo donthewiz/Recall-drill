@@ -90,3 +90,64 @@ def test_save_config_writes_to_the_add_on_config(monkeypatch: pytest.MonkeyPatch
     entry.save_config({"set_aside_key": "q"})
     mgr: StubAddonManager = mw.addonManager
     assert mgr.saved == [("card_triage", {"set_aside_key": "q"})]
+
+
+# menu shortcuts (found in review) -------------------------------------------------------------
+
+
+def _window_with_menu_key(key: str, label: str = "Create Filtered Deck") -> tuple[Any, Any]:
+    """A main window with one menu item on ``key``; returns (window, item)."""
+    from aqt.qt import QAction, QMainWindow
+
+    w = QMainWindow()
+    bar = w.menuBar()
+    assert bar is not None
+    menu = bar.addMenu("&Tools")
+    assert menu is not None
+    action = QAction(label, w)
+    action.setShortcut(key)
+    menu.addAction(action)
+    return w, action
+
+
+def test_a_menu_shortcut_and_a_reviewer_key_on_one_key_both_stop_working(qt_app: object) -> None:
+    """Why menu keys are refused: Qt calls the pair ambiguous and fires neither."""
+    from aqt.qt import QKeySequence, QShortcut, Qt, qconnect
+    from PyQt6.QtTest import QTest
+
+    def press_f(menu_key: str) -> list[str]:
+        w, action = _window_with_menu_key(menu_key)
+        fired: list[str] = []
+        qconnect(action.triggered, lambda *_: fired.append("menu"))
+        ours = QShortcut(QKeySequence("f"), w)
+        qconnect(ours.activated, lambda: fired.append("ours"))
+        w.show()
+        QTest.qWaitForWindowExposed(w)  # pyright: ignore[reportCallIssue]
+        QTest.keyClick(w, Qt.Key.Key_F)  # pyright: ignore[reportCallIssue]
+        w.close()
+        return fired
+
+    assert press_f("G") == ["ours"]  # the key reaches the window when nothing else has it
+    assert press_f("F") == []  # with Create Filtered Deck on F, nothing happens at all
+
+
+def test_menu_shortcuts_are_read_from_the_window(qt_app: object) -> None:
+    w, _ = _window_with_menu_key("F")
+    found = entry.action_keys(w)
+    assert found == {"f": "the menu item “Create Filtered Deck”"}
+    w2, _ = _window_with_menu_key("Ctrl+Shift+K", "&Some Add-on")
+    assert entry.action_keys(w2) == {"ctrl+shift+k": "the menu item “Some Add-on”"}
+
+
+def test_another_add_ons_menu_key_is_refused_in_the_dialog(qt_app: object) -> None:
+    w, _ = _window_with_menu_key("Ctrl+Shift+K", "Some Add-on")
+    d, saved = dialog(qt_app, live_keys=lambda: entry.action_keys(w))
+    d.key.setText("Ctrl+Shift+K")
+    assert d.try_accept() is False and saved == []
+    assert "Some Add-on" in d.error.text()
+
+
+def test_settings_use_the_reviewer_and_the_menu_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(entry, "live_reviewer_keys", lambda: {"q": "the reviewer"})
+    monkeypatch.setattr(entry, "action_keys", lambda _w: {"f": "the menu item"})
+    assert entry.live_keys() == {"q": "the reviewer", "f": "the menu item"}
