@@ -29,3 +29,9 @@ mathpath-addon/meta.json
 mathpath-addon/user_files/*
 !mathpath-addon/user_files/README.txt
 mathpath-addon/dist/
+
+# Card Triage add-on (triage-addon/)
+triage-addon/.venv
+triage-addon/**/__pycache__/
+triage-addon/meta.json
+triage-addon/dist/
