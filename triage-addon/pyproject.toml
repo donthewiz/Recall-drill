@@ -24,6 +24,7 @@ strict = [
     "card_triage/__init__.py",
     "card_triage/config.py",
     "card_triage/bar.py",
+    "card_triage/keys.py",
     "card_triage/marker.py",
     "card_triage/rules.py",
     "card_triage/anki_io",

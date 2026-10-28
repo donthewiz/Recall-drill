@@ -57,3 +57,12 @@ def test_good_values_are_kept() -> None:
          "again_count": 3}
     )
     assert cfg == Config("q", True, 45, True, 3)
+
+
+@pytest.mark.parametrize("key", ["e", "u", "1", "@", "t", "T", "xy", "Ctrl+"])
+def test_a_bad_key_in_a_hand_edited_config_falls_back(key: str) -> None:
+    assert parse_config({"set_aside_key": key}).set_aside_key == "x"
+
+
+def test_a_valid_other_key_is_kept() -> None:
+    assert parse_config({"set_aside_key": "Ctrl+Q"}).set_aside_key == "Ctrl+Q"
