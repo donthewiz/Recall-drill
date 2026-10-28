@@ -22,6 +22,8 @@ typeCheckingMode = "standard"
 # parts and at Anki's backend on purpose.
 strict = [
     "card_triage/__init__.py",
+    "card_triage/marker.py",
+    "card_triage/rules.py",
     "card_triage/anki_io",
 ]
 
