@@ -35,3 +35,6 @@ triage-addon/.venv
 triage-addon/**/__pycache__/
 triage-addon/meta.json
 triage-addon/dist/
+
+# Screenshots written by the page tests (looked at by hand, not committed).
+triage-addon/tests/ui/_shots/
