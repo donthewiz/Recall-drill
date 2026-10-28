@@ -79,3 +79,19 @@ jobs:
       - run: pip install anki==26.8.1 pytest==9.1.1 ruff==0.16.10
       - run: ruff check mathpath-addon
       - run: pytest mathpath-addon/tests -q
+
+  # Card Triage (triage-addon/): the rules and the config are plain Python; the Anki I/O runs on
+  # scratch collections (never a real profile). The Qt tests skip themselves when aqt isn't
+  # installed (tests/ui), so the job installs anki only.
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Anki 26.08.1's bundled Python (anki-addon/docs/DECISIONS.md, Versions).
+          python-version: '3.13.13'
+      # Versions match triage-addon/requirements-dev.txt.
+      - run: pip install anki==26.8.1 pytest==9.1.1 ruff==0.16.10
+      - run: ruff check triage-addon
+      - run: pytest triage-addon/tests -q

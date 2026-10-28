@@ -1,7 +1,7 @@
 # Recall Drill repo: instructions for Claude Code
 
 Loaded at the start of every session. Keep it under 200 lines. Folder rules live in
-`anki-addon/CLAUDE.md` and `mathpath-addon/CLAUDE.md` (they load when you work there).
+`anki-addon/CLAUDE.md`, `mathpath-addon/CLAUDE.md` and `triage-addon/CLAUDE.md` (they load when you work there).
 Workflows such as writing build prompts or reviews live in skills, not here.
 
 ## What's here
@@ -10,6 +10,7 @@ Workflows such as writing build prompts or reviews live in skills, not here.
 |---|---|---|
 | `anki-addon/` | **Recall Drill** Anki add-on (package `recall_drill`): typed-recall drill, then handoff to Anki | `anki-addon/docs/DECISIONS.md` |
 | `mathpath-addon/` | **Math Path** Anki add-on (package `math_path`): solve fresh-number math problems from recipes | `mathpath-addon/docs/DECISIONS.md` |
+| `triage-addon/` | **Card Triage** Anki add-on (package `card_triage`): set a stuck new/learning card aside during review, release them later. Standalone | `triage-addon/docs/DECISIONS.md` |
 | `src/`, `test/` | Recall Drill web app (React 19, TS 7, Vite 8; low priority). `src/utils/` is the **TS engine** the add-on's Python engine is ported from | `docs/V2-HANDOFF.md` (history) |
 | `docs/` | Older project docs (history, not instructions) | |
 
@@ -59,7 +60,7 @@ A behavior the add-on adds on top of the TS engine goes under "Engine extensions
 ## Setup
 
 Cloud sessions: the SessionStart hook (`.claude/hooks/session_setup.sh`) makes one Python
-3.13 venv per add-on in `~/venvs/` from its `requirements-dev.txt`, links it as
+3.13 venv per add-on (three: Recall Drill, Math Path, Card Triage) in `~/venvs/` from its `requirements-dev.txt`, links it as
 `<add-on>/.venv`, and runs `npm ci`. The two venvs must stay apart (Math Path's tests check
 that no system SymPy is installed; Recall Drill's dev pins install it). If the hook reports
 FAILED, read the log it names and fix the install before writing code.
@@ -74,8 +75,9 @@ Before the final push, run the full gate for every part you touched:
 | `src/` or `test/` | `npm run lint && npm test && npm run build` | ~1 min |
 | `anki-addon/` | `anki-addon/.venv/bin/ruff check anki-addon && anki-addon/.venv/bin/python -m pytest anki-addon/tests -q` | ~2 min |
 | `mathpath-addon/` | `mathpath-addon/.venv/bin/ruff check mathpath-addon && mathpath-addon/.venv/bin/python -m pytest mathpath-addon/tests -q` | ~5 min |
+| `triage-addon/` | `triage-addon/.venv/bin/ruff check triage-addon && triage-addon/.venv/bin/python -m pytest triage-addon/tests -q` | ~1 min |
 | TS or Python engine | both of the first two rows, plus the golden regeneration and `git diff --exit-code anki-addon/tests/golden` | ~3 min |
-| Typed modules | `cd <add-on> && .venv/bin/pyright` | ~1 min |
+| Typed modules | `cd <add-on> && .venv/bin/pyright` (Card Triage too: its pure modules and `anki_io/` are strict) | ~1 min |
 
 A PreToolUse hook pipes pytest, vitest and `npm test` output through
 `.claude/hooks/test_filter.py`: you see failures, errors and the pass/fail count line, not

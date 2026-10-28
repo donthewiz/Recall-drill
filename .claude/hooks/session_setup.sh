@@ -33,6 +33,7 @@ setup_venv() {
 
 setup_venv anki-addon
 setup_venv mathpath-addon
+setup_venv triage-addon
 
 hashes=node_modules/.session_setup.sha256
 if sha256sum --check --status "$hashes" 2>/dev/null; then
