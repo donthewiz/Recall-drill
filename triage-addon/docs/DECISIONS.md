@@ -30,6 +30,10 @@ Don wants a quick way to set aside a new card he is stuck on during normal revie
 - **Menu shortcuts clash too.** The main window's menu items have their own keys (`_aqt/forms/main_qt6.py`: `F` Create Filtered Deck, `/` Study Deck, `Ctrl+Z` Undo, `Ctrl+Shift+Z` Redo, `Ctrl+Q`, `Ctrl+P`, `Ctrl+E`, `Ctrl+Shift+I`, `Ctrl+Shift+P`, `Ctrl+Shift+N`, `Ctrl+Shift+A`, `Ctrl+0`, `F1`). A set-aside key on one of them is ambiguous to Qt exactly like `T`: neither fires (reproduced offscreen, now a test). Fix: `keys.py` lists them as "Anki's menus" (a test re-reads the form source), and the Settings dialog also reads every menu shortcut on Anki's main window at that moment (`entry.action_keys`), which catches other add-ons' menu keys too. Keys other add-ons bind with a bare `QShortcut` still can't be known.
 - Checked and fine: gates (ruff, pytest, pyright); the bar in light and dark, both texts; the Settings dialog with the clash message; the Release confirm; a scratch probe with a scheduler-made learning card, a prior orange flag, a prior `custom_data` key, one card of a two-card note whose sibling another tool suspended, 3 other-tool red-flagged `rd::drill` cards, one undo, one hand-unsuspend, then release, undo and redo of the release: every card back to its start state field by field, no revlog rows, other-tool cards and the sibling untouched.
 
+## 0.1.1 (2026-10-28)
+
+- **The bar pushes the card down instead of covering it (Don, after seeing it in real Anki).** In 0.1.0 the bar was `position: fixed` over the page and hid a cloze question's first line. Now it is the body's first element, `position: sticky` (stays at the top if the card scrolls), spanning edge to edge by reading the body's margin (Anki's page isn't restyled). The card moves down while the bar shows and goes back when it's hidden (tested in Chromium; the test fails on 0.1.0).
+
 ## Facts (Anki 26.8.1)
 
 | Item | Fact | Consequence |

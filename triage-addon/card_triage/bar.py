@@ -1,8 +1,10 @@
 """The prompt bar: its text, its messages and the JavaScript that shows and hides it (pure).
 
-The bar is one element, ``#card-triage-bar``, added to the reviewer page's ``<body>`` together
+The bar is one element, ``#card-triage-bar``, put first in the reviewer page's ``<body>`` together
 with one ``<style>`` element whose rules all start with that id (nothing of Anki's page is
-restyled). Light or dark follows Anki's own night-mode classes on ``<html>`` and ``<body>``. It
+restyled). It takes its own space at the top, so the card moves down below it instead of being
+covered (Don, 2026-10-28, after seeing it cover a cloze question in real Anki). Light or dark
+follows Anki's own night-mode classes on ``<html>`` and ``<body>``. It
 never takes keyboard focus: its buttons are out of the tab order and ignore the mouse-down that
 would focus them.
 """
@@ -40,7 +42,7 @@ def key_label(key: str) -> str:
 
 _CSS = f"""
 #{BAR_ID} {{
-  position: fixed; top: 0; left: 0; right: 0; z-index: 2147483000;
+  position: sticky; top: 0; z-index: 2147483000; margin-bottom: 12px;
   box-sizing: border-box; padding: 4px 12px; text-align: center;
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
   background: #fff4cc; color: #3d3200; border-bottom: 1px solid #e3cf7a;
@@ -91,8 +93,13 @@ def show_js(message: str, key: str) -> str:
                       {_js_str(CMD_SET_ASIDE)}, "ct-primary"));
   bar.appendChild(dot);
   bar.appendChild(btn({_js_str(KEEP_GOING_LABEL)}, {_js_str(CMD_KEEP_GOING)}, "ct-secondary"));
+  // Span the page edge to edge across the body's own margin (read, not changed).
+  var cs = getComputedStyle(document.body);
+  bar.style.marginTop = "-" + cs.marginTop;
+  bar.style.marginLeft = "-" + cs.marginLeft;
+  bar.style.marginRight = "-" + cs.marginRight;
   document.body.appendChild(style);
-  document.body.appendChild(bar);
+  document.body.insertBefore(bar, document.body.firstChild);
 }})();"""
 
 

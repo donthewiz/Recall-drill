@@ -20,8 +20,8 @@ def page_html(night: bool) -> str:
     body_cls = "card card1 nightMode night_mode" if night else "card card1"
     colors = "background:#2c2c2c;color:#eee" if night else "background:#fff;color:#000"
     return f"""<!doctype html><html{html_cls}><head><meta charset="utf-8"></head>
-<body class="{body_cls}" style="margin:0;{colors};font:20px sans-serif">
-<div id="qa" style="padding:60px 24px;text-align:center">
+<body class="{body_cls}" style="margin:20px;{colors};font:20px sans-serif">
+<div id="qa" style="text-align:center">
 <p>What attaches a muscle to a bone?</p>
 <input id="type" value="tendon" style="font-size:18px"></div>
 <script>window.sent = []; function pycmd(m) {{ window.sent.push(m); }}
@@ -60,6 +60,7 @@ def test_bar_shows_and_buttons_send_our_messages(browser: Any, tmp_path: Path) -
     assert el.inner_text() == "Stuck on this one? Set aside (X) · Keep going"
     box = el.bounding_box()
     assert box is not None and box["y"] == 0 and box["height"] < 40  # slim, at the very top
+    assert box["x"] == 0 and box["width"] == 800  # edge to edge across the body's margin
     page.get_by_role("button", name="Set aside (X)").click()
     page.get_by_role("button", name="Keep going").click()
     assert page.evaluate("window.sent") == [bar.CMD_SET_ASIDE, bar.CMD_KEEP_GOING]
@@ -103,3 +104,16 @@ def test_bar_follows_ankis_night_mode(browser: Any, tmp_path: Path) -> None:
     assert colors[False] != colors[True]
     assert colors[False] == "rgb(255, 244, 204)"
     assert colors[True] == "rgb(58, 52, 24)"
+
+
+def test_bar_pushes_the_card_down_instead_of_covering_it(browser: Any, tmp_path: Path) -> None:
+    """Found in real Anki (2026-10-28): a bar laid over the page hid a cloze question's line."""
+    page = open_page(browser, tmp_path, night=True)
+    qa = page.locator("#qa")
+    top_before = qa.bounding_box()["y"]
+    page.evaluate(bar.show_js(bar.TIMER_TEXT, "x"))
+    bar_box = page.locator(f"#{bar.BAR_ID}").bounding_box()
+    assert bar_box is not None
+    assert qa.bounding_box()["y"] >= bar_box["y"] + bar_box["height"]  # nothing hidden
+    page.evaluate(bar.hide_js())
+    assert qa.bounding_box()["y"] == top_before  # the card goes back where it was
