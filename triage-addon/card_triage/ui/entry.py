@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QMenu, qconnect
+from aqt.qt import QAction, QMenu, QTimer, qconnect
 
+from .. import bar
 from ..config import Config, parse_config
+from .prompt import PromptController
 
 MENU_LABEL = "Card Triage"
 RELEASE_LABEL = "Release all set-aside cards…"
 SHOW_LABEL = "Show set-aside cards"
 
 _module: str | None = None
+_prompt: PromptController | None = None
+_timer: QTimer | None = None
 
 
 def config() -> Config:
@@ -28,6 +33,81 @@ def on_shortcuts(state: str, shortcuts: list[tuple[str, Callable[[], None]]]) ->
 
     if state == "review":
         shortcuts.append((config().set_aside_key, set_aside_current))
+
+
+def _schedule(seconds: int, fn: Callable[[], None]) -> None:
+    global _timer
+    _cancel()
+    timer = QTimer(mw)
+    timer.setSingleShot(True)
+    qconnect(timer.timeout, fn)
+    timer.start(seconds * 1000)
+    _timer = timer
+
+
+def _cancel() -> None:
+    global _timer
+    if _timer is not None:
+        _timer.stop()
+        _timer.deleteLater()
+        _timer = None
+
+
+def _run_js(js: str) -> None:
+    if mw.reviewer is not None and mw.reviewer.web is not None:
+        mw.reviewer.web.eval(js)
+
+
+def _again_count(card_id: int) -> int:
+    from anki.cards import CardId
+
+    from ..anki_io import triage
+
+    return triage.learn_again_count(mw.col, CardId(card_id))  # pyright: ignore[reportArgumentType]
+
+
+def _current_card_id() -> int | None:
+    card = mw.reviewer.card if mw.state == "review" else None
+    return int(card.id) if card is not None else None
+
+
+def make_prompt() -> PromptController:
+    from .actions import set_aside_current
+
+    return PromptController(
+        config=config,
+        run_js=_run_js,
+        again_count=_again_count,
+        schedule=_schedule,
+        cancel=_cancel,
+        current_card_id=_current_card_id,
+        set_aside=set_aside_current,
+    )
+
+
+def on_show_question(card: Any) -> None:
+    if _prompt is not None:
+        _prompt.question_shown(card)
+
+
+def on_answered(_reviewer: Any, _card: Any, _ease: int) -> None:
+    if _prompt is not None:
+        _prompt.card_answered()
+
+
+def on_reviewer_will_end() -> None:
+    if _prompt is not None:
+        _prompt.reviewer_ended()
+
+
+def on_js_message(handled: tuple[bool, Any], message: str, _context: Any) -> tuple[bool, Any]:
+    """The bar's buttons (``pycmd('card_triage:...')``). This filter sees every web view's
+    messages: anything that isn't ours goes on unchanged."""
+    if not bar.is_ours(message):
+        return handled
+    if _prompt is not None:
+        _prompt.command(message)
+    return (True, None)
 
 
 def build_menu(tools: QMenu) -> QMenu:
@@ -49,10 +129,15 @@ def build_menu(tools: QMenu) -> QMenu:
 
 def register(module: str) -> None:
     """Called once from the add-on's ``__init__``."""
-    global _module
+    global _module, _prompt
     # aqt.mw is typed AnkiQt but is None until Anki's main window exists (and under pytest).
     if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
         return
     _module = module
+    _prompt = make_prompt()
     build_menu(mw.form.menuTools)
     gui_hooks.state_shortcuts_will_change.append(on_shortcuts)
+    gui_hooks.reviewer_did_show_question.append(on_show_question)
+    gui_hooks.reviewer_did_answer_card.append(on_answered)
+    gui_hooks.reviewer_will_end.append(on_reviewer_will_end)
+    gui_hooks.webview_did_receive_js_message.append(on_js_message)
