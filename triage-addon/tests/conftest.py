@@ -10,7 +10,7 @@ ADDON_ROOT = Path(__file__).resolve().parent.parent
 if str(ADDON_ROOT) not in sys.path:
     sys.path.insert(0, str(ADDON_ROOT))
 _TESTS = Path(__file__).resolve().parent
-for sub in ("", "anki_io"):
+for sub in ("", "anki_io", "ui"):
     p = str(_TESTS / sub) if sub else str(_TESTS)
     if p not in sys.path:
         sys.path.insert(0, p)
