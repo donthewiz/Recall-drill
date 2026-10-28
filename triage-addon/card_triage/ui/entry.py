@@ -15,6 +15,7 @@ from .prompt import PromptController
 MENU_LABEL = "Card Triage"
 RELEASE_LABEL = "Release all set-aside cards…"
 SHOW_LABEL = "Show set-aside cards"
+SETTINGS_LABEL = "Settings…"
 
 _module: str | None = None
 _prompt: PromptController | None = None
@@ -110,6 +111,38 @@ def on_js_message(handled: tuple[bool, Any], message: str, _context: Any) -> tup
     return (True, None)
 
 
+def live_reviewer_keys() -> dict[str, str]:
+    """The reviewer's keys right now (answer keys can be rebound), minus our own."""
+    from ..keys import normalize_key
+    from .actions import set_aside_current
+
+    found: dict[str, str] = {}
+    try:
+        for key, fn in mw.reviewer._shortcutKeys():  # pyright: ignore[reportPrivateUsage]
+            norm = normalize_key(key) if isinstance(key, str) else None
+            if norm is not None and fn is not set_aside_current:
+                found[norm] = "the reviewer"
+    except Exception:  # a custom reviewer, or no collection loaded: the built-in list still applies
+        return {}
+    return found
+
+
+def save_config(conf: dict[str, Any]) -> None:
+    assert _module is not None
+    mw.addonManager.writeConfig(_module, conf)
+    if mw.state == "review":  # the new key works now, not at the next review session
+        mw.clearStateShortcuts()
+        mw.setStateShortcuts(list(mw.reviewer._shortcutKeys()))  # type: ignore  # pyright: ignore
+
+
+def open_settings() -> bool:
+    """Tools → Card Triage → Settings… and the Add-ons screen's Config button."""
+    from .settings_dialog import SettingsDialog
+
+    SettingsDialog(config(), save_config, live_reviewer_keys, parent=mw).exec()
+    return True
+
+
 def build_menu(tools: QMenu) -> QMenu:
     """Tools → Card Triage with its items; returns the submenu."""
     from .actions import release_all, show_set_aside
@@ -117,13 +150,15 @@ def build_menu(tools: QMenu) -> QMenu:
     menu = tools.addMenu(MENU_LABEL)
     assert menu is not None
 
-    def add(label: str, fn: Callable[[], None]) -> None:
+    def add(label: str, fn: Callable[[], object]) -> None:
         action = QAction(label, menu)
         qconnect(action.triggered, lambda _checked=False: fn())
         menu.addAction(action)
 
     add(SHOW_LABEL, show_set_aside)
     add(RELEASE_LABEL, release_all)
+    menu.addSeparator()
+    add(SETTINGS_LABEL, open_settings)
     return menu
 
 
@@ -134,6 +169,7 @@ def register(module: str) -> None:
     if mw is None:  # pyright: ignore[reportUnnecessaryComparison]
         return
     _module = module
+    mw.addonManager.setConfigAction(module, open_settings)
     _prompt = make_prompt()
     build_menu(mw.form.menuTools)
     gui_hooks.state_shortcuts_will_change.append(on_shortcuts)

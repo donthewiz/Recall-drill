@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .keys import check_key
+
 DEFAULT_KEY = "x"
 MIN_SECONDS = 5
 MAX_SECONDS = 600
@@ -39,9 +41,10 @@ def _bool(value: Any, default: bool) -> bool:
 
 
 def _key(value: Any, default: str) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
         return default
-    return value.strip()
+    checked = check_key(value)
+    return checked.key if checked.ok else default
 
 
 def parse_config(raw: Mapping[str, Any] | None) -> Config:
