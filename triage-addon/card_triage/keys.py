@@ -3,8 +3,10 @@
 A reviewer shortcut is a Qt ``QShortcut`` on Anki's main window. If two shortcuts there have the
 same key, Qt treats it as ambiguous and neither fires. So the key must differ from the reviewer's
 own keys (``Reviewer._shortcutKeys``) **and** from the main window's global keys
-(``AnkiQt.setupKeys``: d, s, a, b, t, Shift+t, y, Ctrl+:). ``tests/test_keys.py`` reads the
-installed ``aqt`` source and fails if either list there has a key this module doesn't know.
+(``AnkiQt.setupKeys``: d, s, a, b, t, Shift+t, y, Ctrl+:) **and** from the main window's menu
+shortcuts (``_aqt/forms/main_qt6.py``: F = Create Filtered Deck, / = Study Deck, Ctrl+Z…).
+``tests/test_keys.py`` reads the installed ``aqt`` source and fails if any of those lists has a
+key this module doesn't know.
 """
 
 from __future__ import annotations
@@ -27,10 +29,15 @@ _REVIEWER = (
     "ctrl+1 ctrl+2 ctrl+3 ctrl+4 ctrl+5 ctrl+6 ctrl+7"
 )
 _MAIN_WINDOW = "ctrl+: d s a b t shift+t y f11"
+_MENUS = (
+    "ctrl+q ctrl+p ctrl+z f1 ctrl+shift+p ctrl+e ctrl+shift+i / f ctrl+shift+n ctrl+shift+a "
+    "ctrl+shift+z ctrl+0"
+)
 
 RESERVED: dict[str, str] = {
     **{k: "the reviewer" for k in _REVIEWER.split()},
     **{k: "Anki's main window" for k in _MAIN_WINDOW.split()},
+    **{k: "Anki's menus" for k in _MENUS.split()},
 }
 """Normalized key → where Anki already uses it."""
 

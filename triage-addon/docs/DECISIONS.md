@@ -25,6 +25,11 @@ Don wants a quick way to set aside a new card he is stuck on during normal revie
 - **built** Bar messages carry the prefix `card_triage:`; the `webview_did_receive_js_message` filter claims only those and returns `handled` untouched for all else.
 - **built** Release asks with `askUser`; 0 set-aside cards → tooltip `No set-aside cards.`, no dialog.
 
+## Found in review (2026-10-28, Opus review of the v0.1.0 build)
+
+- **Menu shortcuts clash too.** The main window's menu items have their own keys (`_aqt/forms/main_qt6.py`: `F` Create Filtered Deck, `/` Study Deck, `Ctrl+Z` Undo, `Ctrl+Shift+Z` Redo, `Ctrl+Q`, `Ctrl+P`, `Ctrl+E`, `Ctrl+Shift+I`, `Ctrl+Shift+P`, `Ctrl+Shift+N`, `Ctrl+Shift+A`, `Ctrl+0`, `F1`). A set-aside key on one of them is ambiguous to Qt exactly like `T`: neither fires (reproduced offscreen, now a test). Fix: `keys.py` lists them as "Anki's menus" (a test re-reads the form source), and the Settings dialog also reads every menu shortcut on Anki's main window at that moment (`entry.action_keys`), which catches other add-ons' menu keys too. Keys other add-ons bind with a bare `QShortcut` still can't be known.
+- Checked and fine: gates (ruff, pytest, pyright); the bar in light and dark, both texts; the Settings dialog with the clash message; the Release confirm; a scratch probe with a scheduler-made learning card, a prior orange flag, a prior `custom_data` key, one card of a two-card note whose sibling another tool suspended, 3 other-tool red-flagged `rd::drill` cards, one undo, one hand-unsuspend, then release, undo and redo of the release: every card back to its start state field by field, no revlog rows, other-tool cards and the sibling untouched.
+
 ## Facts (Anki 26.8.1)
 
 | Item | Fact | Consequence |

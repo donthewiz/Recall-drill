@@ -65,4 +65,4 @@ def test_a_bad_key_in_a_hand_edited_config_falls_back(key: str) -> None:
 
 
 def test_a_valid_other_key_is_kept() -> None:
-    assert parse_config({"set_aside_key": "Ctrl+Q"}).set_aside_key == "Ctrl+Q"
+    assert parse_config({"set_aside_key": "Ctrl+K"}).set_aside_key == "Ctrl+K"

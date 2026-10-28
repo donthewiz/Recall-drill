@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QMenu, QTimer, qconnect
+from aqt.qt import QAction, QKeySequence, QMenu, QTimer, QWidget, qconnect
 
 from .. import bar
 from ..config import Config, parse_config
@@ -127,6 +127,34 @@ def live_reviewer_keys() -> dict[str, str]:
     return found
 
 
+def action_keys(window: QWidget) -> dict[str, str]:
+    """The menu shortcuts on ``window`` right now (Anki's and other add-ons'). A state shortcut
+    with one of these keys is ambiguous to Qt, and then neither fires."""
+    from ..keys import normalize_key
+
+    actions: list[QAction] = list(window.findChildren(QAction))
+    for menu in window.findChildren(QMenu):
+        actions.extend(menu.actions())
+    found: dict[str, str] = {}
+    for action in actions:
+        name = action.text().replace("&", "").strip()
+        for seq in action.shortcuts():
+            norm = normalize_key(seq.toString(QKeySequence.SequenceFormat.PortableText))
+            if norm is not None:
+                found[norm] = f"the menu item \u201c{name}\u201d" if name else "a menu"
+    return found
+
+
+def live_keys() -> dict[str, str]:
+    """Every key Anki's main window is using right now: the reviewer's and the menus'."""
+    found = live_reviewer_keys()
+    try:
+        found.update(action_keys(mw))
+    except Exception:  # no main window: the built-in lists still apply
+        pass
+    return found
+
+
 def save_config(conf: dict[str, Any]) -> None:
     assert _module is not None
     mw.addonManager.writeConfig(_module, conf)
@@ -139,7 +167,7 @@ def open_settings() -> bool:
     """Tools → Card Triage → Settings… and the Add-ons screen's Config button."""
     from .settings_dialog import SettingsDialog
 
-    SettingsDialog(config(), save_config, live_reviewer_keys, parent=mw).exec()
+    SettingsDialog(config(), save_config, live_keys, parent=mw).exec()
     return True
 
 

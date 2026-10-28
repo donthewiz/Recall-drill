@@ -60,6 +60,11 @@ def test_default_key_is_free() -> None:
         ("Shift+T", "Anki's main window"),
         ("d", "Anki's main window"),
         ("y", "Anki's main window"),
+        ("f", "Anki's menus"),  # Tools -> Create Filtered Deck: F would do nothing at all
+        ("F", "Anki's menus"),
+        ("/", "Anki's menus"),  # Study Deck
+        ("Ctrl+Z", "Anki's menus"),  # Undo
+        ("Ctrl+Shift+Z", "Anki's menus"),  # Redo
     ],
 )
 def test_clashing_keys_are_refused_with_a_clear_message(typed: str, where: str | None) -> None:
@@ -143,5 +148,27 @@ def test_every_main_window_key_is_known() -> None:
     main = _aqt_source("main.py")
     typed = _first_elements(_function(main, "setupKeys"))
     assert {"d", "s", "a", "b", "t", "Shift+t", "y"} <= typed
+    unknown = {k for k in typed if normalize_key(k) not in keys.RESERVED}
+    assert unknown == set()
+
+
+@needs_aqt
+def test_every_menu_key_is_known() -> None:
+    """The main window's menu shortcuts (Qt Designer form), e.g. F = Create Filtered Deck."""
+    spec = importlib.util.find_spec("_aqt.forms.main_qt6")
+    assert spec is not None and spec.origin
+    tree = ast.parse(Path(spec.origin).read_text(encoding="utf-8"))
+    typed: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setShortcut"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            typed.add(node.args[0].value)
+    assert {"F", "/", "Ctrl+Z"} <= typed
     unknown = {k for k in typed if normalize_key(k) not in keys.RESERVED}
     assert unknown == set()

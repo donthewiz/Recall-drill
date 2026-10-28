@@ -30,9 +30,10 @@ No module imports `recalldrill` or `math_path` (tested).
   `CollectionOp` so the reviewer refreshes and moves on. Anki keeps only 30 undo steps, so writes
   are bulk calls.
 - **Keys:** the reviewer's `_shortcutKeys` is not the whole story. The main window's global keys
-  (d, s, a, b, t, Shift+t, y) clash with a state shortcut too (Qt makes the pair ambiguous and
-  neither fires). `card_triage/keys.py` lists both; `tests/test_keys.py` re-reads the installed
-  `aqt` source so the list can't drift.
+  (d, s, a, b, t, Shift+t, y) and its menu shortcuts (F, /, Ctrl+Z…) clash with a state shortcut
+  too (Qt makes the pair ambiguous and neither fires). `card_triage/keys.py` lists all three;
+  `tests/test_keys.py` re-reads the installed `aqt` source so the lists can't drift, and Settings
+  also reads the live menu shortcuts (`entry.action_keys`).
 - **The `webview_did_receive_js_message` filter** sees every web view's messages: only
   `card_triage:` ones are ours; pass everything else on unchanged.
 - **The bar** is injected into the reviewer page and removed on every new question. QtWebEngine
