@@ -14,7 +14,7 @@ pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
 include = ["__init__.py", "card_triage", "tests"]
-extraPaths = ["tests", "tests/anki_io"]
+extraPaths = ["tests", "tests/anki_io", "tests/ui"]
 exclude = [".venv", "dist", "**/__pycache__"]
 typeCheckingMode = "standard"
 # The Qt-free layers are held to strict. ui/ stays at standard because PyQt6's stubs leave
@@ -22,6 +22,7 @@ typeCheckingMode = "standard"
 # parts and at Anki's backend on purpose.
 strict = [
     "card_triage/__init__.py",
+    "card_triage/config.py",
     "card_triage/marker.py",
     "card_triage/rules.py",
     "card_triage/anki_io",
