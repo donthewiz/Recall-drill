@@ -246,3 +246,33 @@ def test_both_cards_of_a_note_set_aside_then_released_drop_the_tag_and_keep_othe
     triage.release_all(col)
 
     assert col.get_note(nid).tags == ["keep"]
+
+
+def test_a_card_really_answered_again_is_learning_and_stays_so(col: Collection) -> None:
+    """Not a hand-made learning card: one the scheduler put in learning by answering Again."""
+    (cid,) = card_ids(col, add_note(col, "d", "x"))
+    col.decks.select(col.get_card(cid).did)
+    from anki.scheduler.v3 import CardAnswer, Scheduler
+
+    sched = col.sched
+    assert isinstance(sched, Scheduler)
+    queued = sched.get_queued_cards().cards[0]
+    sched.answer_card(
+        CardAnswer(
+            card_id=cid,
+            current_state=queued.states.current,
+            new_state=queued.states.again,
+            rating=CardAnswer.AGAIN,
+            milliseconds_taken=1000,
+        )
+    )
+    learned = state(col, cid)
+    assert learned.type == 1
+    assert triage.learn_again_count(col, cid) == 1
+    revlogs = revlog_count(col)
+
+    assert triage.set_aside(col, cid).verdict is Verdict.OK
+    assert revlog_count(col) == revlogs
+    triage.release_all(col)
+
+    assert state(col, cid) == learned
